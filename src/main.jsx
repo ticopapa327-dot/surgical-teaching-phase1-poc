@@ -229,6 +229,23 @@ function canceledReasonLabel(reason) {
   return labels[reason] || reason || "已取消";
 }
 
+function signalingErrorLabel(payload = {}) {
+  const labels = {
+    bad_message: "信令消息格式错误",
+    not_registered: "请先完成终端注册",
+    target_offline: "目标终端不在线",
+    endpoint_busy: "本端或目标终端忙线",
+    call_not_found: "待处理呼叫不存在或已失效",
+    session_not_found: "会话不存在或当前终端无权访问",
+    annotation_forbidden: "只有手术室端可以更新标注",
+    target_not_in_session: "目标终端不在当前会话中",
+    bad_signal: "协商消息无效",
+    participant_limit: "已达到参与上限",
+    unknown_type: "不支持的信令消息类型"
+  };
+  return labels[payload.code] || payload.message || payload.code || "未知信令错误";
+}
+
 function resolveMode(requestMode, confirmMode) {
   return requestMode === "view" || confirmMode === "view" ? "view" : "interactive";
 }
@@ -749,18 +766,18 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     }
 
     if (type === "error") {
-      const messageText = payload.message || payload.code || "未知信令错误";
+      const messageText = signalingErrorLabel(payload);
       if (payload.code === "participant_limit") {
         setOverLimitNotice("信令服务器拒绝加入：已达到参与上限。");
-        setStatus("信令错误：已达到参与上限。");
+        setStatus(`信令错误：${messageText}。`);
         return;
       }
       if (payload.code === "endpoint_busy") {
         setOverLimitNotice("信令服务器拒绝呼叫：本端或目标终端忙线。");
-        setStatus("信令错误：本端或目标终端忙线。");
+        setStatus(`信令错误：${messageText}。`);
         return;
       }
-      setStatus(`信令错误：${messageText}`);
+      setStatus(`信令错误：${messageText}。`);
     }
   }
 
