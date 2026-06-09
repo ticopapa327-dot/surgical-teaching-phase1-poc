@@ -206,6 +206,50 @@ async function main() {
   );
   duplicateClientB.close();
 
+  const resumeOrClient = await connect(url);
+  const resumeTeachingClientA = await connect(url);
+  const resumeTeachingClientB = await connect(url);
+  send(resumeOrClient, "endpoint.register", {
+    endpointId: "resume-or",
+    role: "operating-room",
+    name: "Resume OR"
+  });
+  await waitFor(resumeOrClient, "endpoint.registered");
+  send(resumeTeachingClientA, "endpoint.register", {
+    endpointId: "resume-teach",
+    role: "teaching-room",
+    name: "Resume Teaching A"
+  });
+  await waitFor(resumeTeachingClientA, "endpoint.registered");
+  const resumeIncoming = waitFor(resumeTeachingClientA, "call.incoming");
+  send(resumeOrClient, "call.request", { toEndpointId: "resume-teach", mode: "interactive", participantLimit: 2 });
+  const resumeCall = await resumeIncoming;
+  const resumeStartedForOr = waitFor(resumeOrClient, "session.started");
+  send(resumeTeachingClientA, "call.accept", {
+    callId: resumeCall.payload.call.callId,
+    mode: "interactive",
+    participantLimit: 2
+  });
+  const resumeSession = await resumeStartedForOr;
+  const resumeReplaced = waitFor(resumeTeachingClientA, "endpoint.replaced");
+  const resumeClosed = new Promise((resolve) => resumeTeachingClientA.once("close", resolve));
+  const resumedSession = waitFor(resumeTeachingClientB, "session.resumed");
+  send(resumeTeachingClientB, "endpoint.register", {
+    endpointId: "resume-teach",
+    role: "teaching-room",
+    name: "Resume Teaching B"
+  });
+  await waitFor(resumeTeachingClientB, "endpoint.registered");
+  assert.equal((await resumeReplaced).payload.endpointId, "resume-teach");
+  await resumeClosed;
+  const resumed = await resumedSession;
+  assert.equal(resumed.payload.session.sessionId, resumeSession.payload.session.sessionId);
+  assert.deepEqual(resumed.payload.session.participants, ["resume-or", "resume-teach"]);
+  send(resumeOrClient, "session.end", { sessionId: resumeSession.payload.session.sessionId });
+  await waitFor(resumeTeachingClientB, "session.ended");
+  resumeOrClient.close();
+  resumeTeachingClientB.close();
+
   send(teachingClient, "peer.signal", {
     sessionId: session.sessionId,
     toEndpointId: "or-1",

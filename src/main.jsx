@@ -700,6 +700,12 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       return;
     }
 
+    if (type === "session.resumed") {
+      applySignalingSession(payload.session, true, true);
+      setStatus(`信令会话已恢复，最终模式为 ${modeLabel(payload.session?.mode)}。`);
+      return;
+    }
+
     if (type === "session.joined") {
       applySignalingSession(payload.session, false, true);
       return;

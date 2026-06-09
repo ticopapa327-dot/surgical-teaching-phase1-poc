@@ -580,6 +580,62 @@ test("phase 2 UI reports when its signaling endpoint id is replaced", async ({ p
   }
 });
 
+test("phase 2 UI resumes an existing signaling session after endpoint replacement", async ({ page }) => {
+  const server = createSignalingServer({ port: 0 });
+  const address = await server.start();
+  const url = `ws://127.0.0.1:${address.port}/signal`;
+  const orClient = await connect(url);
+  const teachingClient = await connect(url);
+
+  try {
+    send(orClient, "endpoint.register", {
+      endpointId: "or-resume",
+      role: "operating-room",
+      name: "Resume OR",
+      address: "192.168.10.61",
+      capabilities: ["call-control", "publish-video"]
+    });
+    await waitFor(orClient, "endpoint.registered");
+
+    send(teachingClient, "endpoint.register", {
+      endpointId: "teach-resume",
+      role: "teaching-room",
+      name: "Resume Teaching Room",
+      address: "192.168.10.62",
+      capabilities: ["subscribe-video", "interactive-audio"]
+    });
+    await waitFor(teachingClient, "endpoint.registered");
+
+    const incoming = waitFor(teachingClient, "call.incoming");
+    send(orClient, "call.request", { toEndpointId: "teach-resume", mode: "interactive", participantLimit: 2 });
+    const incomingCall = await incoming;
+    const startedForOr = waitFor(orClient, "session.started");
+    send(teachingClient, "call.accept", {
+      callId: incomingCall.payload.call.callId,
+      mode: "interactive",
+      participantLimit: 2
+    });
+    const started = await startedForOr;
+    const replaced = waitFor(teachingClient, "endpoint.replaced");
+
+    await page.goto("/");
+    await page.getByLabel("信令地址").fill(url);
+    await page.getByLabel("本端 ID").fill("teach-resume");
+    await page.getByLabel("本端名称").fill("Resume Teaching UI");
+    await page.getByLabel("本端角色").selectOption("teaching-room");
+    await page.getByRole("button", { name: "连接信令" }).click();
+    await replaced;
+
+    await expect(page.locator(".footer")).toContainText("信令会话已恢复");
+    await expect(page.locator(".session-list dd").filter({ hasText: started.payload.session.sessionId })).toBeVisible();
+    await expect(page.locator(".session-list dd").filter({ hasText: "2 / 2" })).toBeVisible();
+  } finally {
+    orClient.close();
+    teachingClient.close();
+    await server.stop();
+  }
+});
+
 test("phase 2 UI clears signaling session when server disconnects", async ({ page }) => {
   const server = createSignalingServer({ port: 0 });
   const address = await server.start();

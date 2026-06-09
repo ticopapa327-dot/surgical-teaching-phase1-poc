@@ -273,6 +273,11 @@ function createSignalingServer(options = {}) {
         });
         previousSocket.close(4000, "endpoint replaced");
       }
+      for (const session of sessions.values()) {
+        if (session.participants.includes(endpointId)) {
+          send(ws, "session.resumed", { session: publicSession(session) });
+        }
+      }
       sendDirectory();
       return;
     }
