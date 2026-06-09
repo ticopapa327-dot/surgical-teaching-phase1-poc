@@ -279,6 +279,71 @@ test("phase 2 UI leaves a signaling session without ending the remaining meeting
   }
 });
 
+test("phase 2 UI joins an existing signaling session by session id", async ({ page }) => {
+  const server = createSignalingServer({ port: 0 });
+  const address = await server.start();
+  const url = `ws://127.0.0.1:${address.port}/signal`;
+  const orClient = await connect(url);
+  const teachingClient = await connect(url);
+
+  try {
+    send(orClient, "endpoint.register", {
+      endpointId: "or-join-host",
+      role: "operating-room",
+      name: "Join Host OR",
+      address: "192.168.10.54",
+      capabilities: ["call-control", "publish-video", "interactive-audio"]
+    });
+    await waitFor(orClient, "endpoint.registered");
+
+    send(teachingClient, "endpoint.register", {
+      endpointId: "teach-join-host",
+      role: "teaching-room",
+      name: "Join Teaching Host",
+      address: "192.168.10.55",
+      capabilities: ["subscribe-video", "interactive-audio"]
+    });
+    await waitFor(teachingClient, "endpoint.registered");
+
+    const incoming = waitFor(teachingClient, "call.incoming");
+    send(orClient, "call.request", { toEndpointId: "teach-join-host", mode: "interactive", participantLimit: 3 });
+    const incomingCall = await incoming;
+    const startedForOr = waitFor(orClient, "session.started");
+    send(teachingClient, "call.accept", {
+      callId: incomingCall.payload.call.callId,
+      mode: "interactive",
+      participantLimit: 2
+    });
+    const started = await startedForOr;
+
+    await page.goto("/");
+    await page.getByLabel("信令地址").fill(url);
+    await page.getByLabel("本端 ID").fill("observer-ui");
+    await page.getByLabel("本端名称").fill("Observer UI");
+    await page.getByLabel("本端角色").selectOption("observer");
+    await page.getByLabel("加入会话 ID").fill(started.payload.session.sessionId);
+    await page.getByRole("button", { name: "连接信令" }).click();
+    await expect(page.getByText("已注册 Observer UI")).toBeVisible();
+
+    const joinedUpdate = waitFor(
+      orClient,
+      "session.updated",
+      (message) => message.payload.session.participants.includes("observer-ui")
+    );
+    await page.getByRole("button", { name: "加入信令会话" }).click();
+    const update = await joinedUpdate;
+    assert.equal(update.payload.session.sessionId, started.payload.session.sessionId);
+    assert.equal(update.payload.session.participants.length, 3);
+    await expect(page.locator(".session-list dd").filter({ hasText: started.payload.session.sessionId })).toBeVisible();
+    await expect(page.locator(".session-list dd").filter({ hasText: "3 / 3" })).toBeVisible();
+    await expect(page.locator(".session-list dd").filter({ hasText: "Join Host OR" })).toBeVisible();
+  } finally {
+    orClient.close();
+    teachingClient.close();
+    await server.stop();
+  }
+});
+
 test("phase 2 UI rejects incoming signaling call", async ({ page }) => {
   const server = createSignalingServer({ port: 0 });
   const address = await server.start();

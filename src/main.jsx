@@ -280,6 +280,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   const [signalingDirectory, setSignalingDirectory] = useState([]);
   const [signalingTargetId, setSignalingTargetId] = useState("");
   const [signalingHealth, setSignalingHealth] = useState("-");
+  const [joinSessionId, setJoinSessionId] = useState("");
 
   const [callTargetId, setCallTargetId] = useState(ADDRESS_BOOK[0].id);
   const [customAddress, setCustomAddress] = useState("");
@@ -836,6 +837,17 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     }
   }
 
+  function joinSignalingSession() {
+    const sessionId = joinSessionId.trim();
+    if (!sessionId) {
+      setStatus("请输入要加入的信令会话 ID。");
+      return;
+    }
+    if (sendSignaling("session.join", { sessionId })) {
+      setStatus(`已请求加入信令会话：${sessionId}。`);
+    }
+  }
+
   function syncSignalingAnnotation(text, visible) {
     if (activeSession?.source !== "signaling") return;
     sendSignaling("session.annotation", {
@@ -1346,6 +1358,10 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
                   ))}
                 </select>
               </label>
+              <label>
+                加入会话 ID
+                <input value={joinSessionId} onChange={(event) => setJoinSessionId(event.target.value)} />
+              </label>
             </div>
             <dl className="status-list compact">
               <div>
@@ -1378,6 +1394,12 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
                 disabled={!signalingState.connected || !signalingTargetId || Boolean(activeSession || pendingCall)}
               >
                 信令呼叫选中终端
+              </button>
+              <button
+                onClick={joinSignalingSession}
+                disabled={!signalingState.connected || !joinSessionId.trim() || Boolean(activeSession || pendingCall)}
+              >
+                加入信令会话
               </button>
             </div>
             <p className="hint">该面板只验证 C/S 控制面，音视频媒体仍由本地预览流模拟。</p>
@@ -1463,6 +1485,10 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
             <h2>会话状态</h2>
             {activeSession ? (
               <dl className="session-list">
+                <div>
+                  <dt>会话 ID</dt>
+                  <dd>{activeSession.id}</dd>
+                </div>
                 <div>
                   <dt>最终模式</dt>
                   <dd>{modeLabel(activeSession.mode)}</dd>
