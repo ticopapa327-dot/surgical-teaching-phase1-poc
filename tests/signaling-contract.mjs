@@ -54,6 +54,30 @@ async function main() {
   const teachingClient = await connect(url);
   const observerClient = await connect(url);
 
+  const protocolErrorClient = await connect(url);
+  protocolErrorClient.send("not-json");
+  const badMessage = await waitFor(protocolErrorClient, "error", (message) => message.payload.code === "bad_message");
+  assert.equal(badMessage.payload.code, "bad_message");
+  send(protocolErrorClient, "call.request", { toEndpointId: "or-1" });
+  const notRegistered = await waitFor(
+    protocolErrorClient,
+    "error",
+    (message) => message.payload.code === "not_registered"
+  );
+  assert.equal(notRegistered.payload.code, "not_registered");
+  send(protocolErrorClient, "endpoint.register", {
+    endpointId: "protocol-error-client",
+    role: "observer",
+    name: "Protocol Error Client"
+  });
+  await waitFor(protocolErrorClient, "endpoint.registered");
+  send(protocolErrorClient, "unsupported.type");
+  const unknownType = await waitFor(protocolErrorClient, "error", (message) => message.payload.code === "unknown_type");
+  assert.equal(unknownType.payload.code, "unknown_type");
+  const protocolClientClosed = new Promise((resolve) => protocolErrorClient.once("close", resolve));
+  protocolErrorClient.close();
+  await protocolClientClosed;
+
   send(orClient, "endpoint.register", {
     endpointId: "or-1",
     role: "operating-room",
