@@ -174,6 +174,7 @@ async function main() {
   const sessionStarted = await waitFor(teachingClient, "session.started");
   const session = sessionStarted.payload.session;
   assert.equal(session.mode, "interactive");
+  assert.equal(session.ownerEndpointId, "or-1");
   assert.equal(session.participantLimit, 2);
   assert.deepEqual(session.subscriptions["teach-1"], ["ch1"]);
   const activeHealth = await getJson(`${httpBase}/health`);
@@ -419,6 +420,7 @@ async function main() {
     participantLimit: 2
   });
   const orOwnedLimitSession = await waitFor(orClient, "session.started");
+  assert.equal(orOwnedLimitSession.payload.session.ownerEndpointId, "or-1");
   assert.equal(orOwnedLimitSession.payload.session.participantLimit, 4);
   send(observerClient, "session.join", { sessionId: orOwnedLimitSession.payload.session.sessionId });
   const observerJoined = await waitFor(observerClient, "session.joined");

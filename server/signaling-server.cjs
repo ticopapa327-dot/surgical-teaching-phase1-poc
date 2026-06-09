@@ -486,10 +486,16 @@ function createSignalingServer(options = {}) {
           : normalizeParticipantLimit(
               callerEndpoint?.role === "operating-room" ? call.participantLimit : payload.participantLimit
             );
+      const ownerEndpointId =
+        fromEndpoint.role === "operating-room"
+          ? fromEndpoint.endpointId
+          : callerEndpoint?.role === "operating-room"
+            ? callerEndpoint.endpointId
+            : call.toEndpointId;
       const session = {
         sessionId: createId("session"),
         mode: resolveMode(call.requestedMode, normalizeMode(payload.mode)),
-        ownerEndpointId: call.toEndpointId,
+        ownerEndpointId,
         participantLimit,
         participants: [call.fromEndpointId, call.toEndpointId],
         subscriptions: {
