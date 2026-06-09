@@ -977,6 +977,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   }
 
   function syncSignalingAnnotation(text, visible) {
+    if (localEndpointRole !== "operating-room") return;
     if (activeSession?.source !== "signaling") return;
     sendSignaling("session.annotation", {
       sessionId: activeSession.id,
@@ -1718,7 +1719,11 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
             </div>
             <label className="annotation-input">
               标注内容
-              <input value={annotationText} onChange={(event) => updateAnnotationText(event.target.value)} />
+              <input
+                value={annotationText}
+                onChange={(event) => updateAnnotationText(event.target.value)}
+                disabled={localEndpointRole !== "operating-room"}
+              />
             </label>
             <label className="checkline">
               <input
