@@ -206,6 +206,43 @@ async function main() {
   );
   duplicateClientB.close();
 
+  const switchClient = await connect(url);
+  const switchTarget = await connect(url);
+  send(switchClient, "endpoint.register", {
+    endpointId: "switch-a",
+    role: "teaching-room",
+    name: "Switch A"
+  });
+  await waitFor(switchClient, "endpoint.registered");
+  send(switchTarget, "endpoint.register", {
+    endpointId: "switch-target",
+    role: "operating-room",
+    name: "Switch Target"
+  });
+  await waitFor(switchTarget, "endpoint.registered");
+  send(switchClient, "call.request", { toEndpointId: "switch-target", mode: "view" });
+  const switchCall = await waitFor(switchClient, "call.requested");
+  await waitFor(switchTarget, "call.incoming", (message) => message.payload.call.callId === switchCall.payload.call.callId);
+  const switchedCanceled = waitFor(
+    switchTarget,
+    "call.canceled",
+    (message) => message.payload.reason === "endpoint_reregistered"
+  );
+  send(switchClient, "endpoint.register", {
+    endpointId: "switch-b",
+    role: "observer",
+    name: "Switch B"
+  });
+  await waitFor(switchClient, "endpoint.registered", (message) => message.payload.endpoint.endpointId === "switch-b");
+  const canceledByReregister = await switchedCanceled;
+  assert.equal(canceledByReregister.payload.callId, switchCall.payload.call.callId);
+  send(switchClient, "endpoint.list");
+  const switchDirectory = await waitFor(switchClient, "directory.snapshot");
+  assert.equal(switchDirectory.payload.endpoints.some((endpoint) => endpoint.endpointId === "switch-a"), false);
+  assert.equal(switchDirectory.payload.endpoints.some((endpoint) => endpoint.endpointId === "switch-b"), true);
+  switchClient.close();
+  switchTarget.close();
+
   const resumeOrClient = await connect(url);
   const resumeTeachingClientA = await connect(url);
   const resumeTeachingClientB = await connect(url);
