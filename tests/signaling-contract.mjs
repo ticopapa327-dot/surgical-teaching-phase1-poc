@@ -176,6 +176,33 @@ async function main() {
   assert.equal(malformedRegistration.payload.endpoint.channels[1].label.length, 80);
   malformedClient.close();
 
+  const duplicateClientA = await connect(url);
+  const duplicateClientB = await connect(url);
+  send(duplicateClientA, "endpoint.register", {
+    endpointId: "duplicate-endpoint",
+    role: "observer",
+    name: "Duplicate A"
+  });
+  await waitFor(duplicateClientA, "endpoint.registered");
+  const replaced = waitFor(duplicateClientA, "endpoint.replaced");
+  const duplicateClosed = new Promise((resolve) => duplicateClientA.once("close", resolve));
+  send(duplicateClientB, "endpoint.register", {
+    endpointId: "duplicate-endpoint",
+    role: "observer",
+    name: "Duplicate B"
+  });
+  const duplicateRegistration = await waitFor(duplicateClientB, "endpoint.registered");
+  assert.equal(duplicateRegistration.payload.endpoint.name, "Duplicate B");
+  assert.equal((await replaced).payload.endpointId, "duplicate-endpoint");
+  await duplicateClosed;
+  send(duplicateClientB, "endpoint.list");
+  const duplicateDirectory = await waitFor(duplicateClientB, "directory.snapshot");
+  assert.equal(
+    duplicateDirectory.payload.endpoints.filter((endpoint) => endpoint.endpointId === "duplicate-endpoint").length,
+    1
+  );
+  duplicateClientB.close();
+
   send(teachingClient, "peer.signal", {
     sessionId: session.sessionId,
     toEndpointId: "or-1",

@@ -211,6 +211,22 @@ function createSignalingServer(options = {}) {
     }
   }
 
+  function removeEndpoint(endpointId, reason = "endpoint_disconnected") {
+    for (const [, call] of pendingCalls.entries()) {
+      if (call.fromEndpointId === endpointId || call.toEndpointId === endpointId) {
+        cancelPendingCall(call, endpointId, reason);
+      }
+    }
+    sockets.delete(endpointId);
+    endpoints.delete(endpointId);
+    for (const session of Array.from(sessions.values())) {
+      if (session.participants.includes(endpointId)) {
+        endSession(session, endpointId, reason);
+      }
+    }
+    sendDirectory();
+  }
+
   function handleMessage(ws, raw) {
     const msg = safeJsonParse(raw);
     if (!msg || !msg.type) {
@@ -221,6 +237,10 @@ function createSignalingServer(options = {}) {
 
     if (type === "endpoint.register") {
       const endpointId = normalizeText(payload.endpointId, "", 64) || createId("endpoint");
+      const previousEndpointId = endpointForSocket(ws);
+      if (previousEndpointId && previousEndpointId !== endpointId) {
+        removeEndpoint(previousEndpointId, "endpoint_reregistered");
+      }
       const endpoint = {
         endpointId,
         role: normalizeRole(payload.role),
@@ -230,9 +250,17 @@ function createSignalingServer(options = {}) {
         channels: normalizeChannels(payload.channels),
         registeredAt: new Date().toISOString()
       };
+      const previousSocket = sockets.get(endpointId);
       endpoints.set(endpointId, endpoint);
       sockets.set(endpointId, ws);
       send(ws, "endpoint.registered", { endpoint: publicEndpoint(endpoint) }, requestId);
+      if (previousSocket && previousSocket !== ws) {
+        send(previousSocket, "endpoint.replaced", {
+          endpointId,
+          replacedAt: new Date().toISOString()
+        });
+        previousSocket.close(4000, "endpoint replaced");
+      }
       sendDirectory();
       return;
     }
@@ -459,19 +487,7 @@ function createSignalingServer(options = {}) {
     ws.on("close", () => {
       const endpointId = endpointForSocket(ws);
       if (!endpointId) return;
-      for (const [callId, call] of pendingCalls.entries()) {
-        if (call.fromEndpointId === endpointId || call.toEndpointId === endpointId) {
-          cancelPendingCall(call, endpointId, "endpoint_disconnected");
-        }
-      }
-      sockets.delete(endpointId);
-      endpoints.delete(endpointId);
-      for (const session of Array.from(sessions.values())) {
-        if (session.participants.includes(endpointId)) {
-          endSession(session, endpointId, "endpoint_disconnected");
-        }
-      }
-      sendDirectory();
+      removeEndpoint(endpointId, "endpoint_disconnected");
     });
   });
 
