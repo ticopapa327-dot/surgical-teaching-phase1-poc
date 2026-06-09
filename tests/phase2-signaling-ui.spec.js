@@ -344,6 +344,62 @@ test("phase 2 UI joins an existing signaling session by session id", async ({ pa
   }
 });
 
+test("phase 2 UI reports participant limit when joining a full signaling session", async ({ page }) => {
+  const server = createSignalingServer({ port: 0 });
+  const address = await server.start();
+  const url = `ws://127.0.0.1:${address.port}/signal`;
+  const orClient = await connect(url);
+  const teachingClient = await connect(url);
+
+  try {
+    send(orClient, "endpoint.register", {
+      endpointId: "or-limit-host",
+      role: "operating-room",
+      name: "Limit Host OR",
+      address: "192.168.10.65",
+      capabilities: ["call-control", "publish-video"]
+    });
+    await waitFor(orClient, "endpoint.registered");
+
+    send(teachingClient, "endpoint.register", {
+      endpointId: "teach-limit-host",
+      role: "teaching-room",
+      name: "Limit Teaching Host",
+      address: "192.168.10.66",
+      capabilities: ["subscribe-video"]
+    });
+    await waitFor(teachingClient, "endpoint.registered");
+
+    const incoming = waitFor(teachingClient, "call.incoming");
+    send(orClient, "call.request", { toEndpointId: "teach-limit-host", mode: "interactive", participantLimit: 2 });
+    const incomingCall = await incoming;
+    const startedForOr = waitFor(orClient, "session.started");
+    send(teachingClient, "call.accept", {
+      callId: incomingCall.payload.call.callId,
+      mode: "interactive",
+      participantLimit: 2
+    });
+    const started = await startedForOr;
+
+    await page.goto("/");
+    await page.getByLabel("信令地址").fill(url);
+    await page.getByLabel("本端 ID").fill("observer-limit");
+    await page.getByLabel("本端名称").fill("Observer Limit UI");
+    await page.getByLabel("本端角色").selectOption("observer");
+    await page.getByLabel("加入会话 ID").fill(started.payload.session.sessionId);
+    await page.getByRole("button", { name: "连接信令" }).click();
+    await expect(page.getByText("已注册 Observer Limit UI")).toBeVisible();
+    await page.getByRole("button", { name: "加入信令会话" }).click();
+
+    await expect(page.getByText("信令服务器拒绝加入：已达到参与上限。")).toBeVisible();
+    await expect(page.getByText("尚未建立互动连接")).toBeVisible();
+  } finally {
+    orClient.close();
+    teachingClient.close();
+    await server.stop();
+  }
+});
+
 test("phase 2 UI rejects incoming signaling call", async ({ page }) => {
   const server = createSignalingServer({ port: 0 });
   const address = await server.start();
