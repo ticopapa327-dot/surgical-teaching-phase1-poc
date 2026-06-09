@@ -99,6 +99,9 @@ async function main() {
   send(teachingClient, "call.request", { toEndpointId: "or-1", mode: "view" });
   const cancelableCall = await waitFor(teachingClient, "call.requested");
   await waitFor(orClient, "call.incoming", (message) => message.payload.call.callId === cancelableCall.payload.call.callId);
+  send(teachingClient, "call.request", { toEndpointId: "or-1", mode: "view" });
+  const busyCall = await waitFor(teachingClient, "error", (message) => message.payload.code === "endpoint_busy");
+  assert.equal(busyCall.payload.code, "endpoint_busy");
   send(teachingClient, "call.cancel", { callId: cancelableCall.payload.call.callId });
   const canceledCall = await waitFor(orClient, "call.canceled");
   assert.equal(canceledCall.payload.callId, cancelableCall.payload.call.callId);

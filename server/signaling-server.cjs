@@ -102,6 +102,10 @@ function resolveMode(requestMode, acceptMode) {
   return requestMode === "view" || acceptMode === "view" ? "view" : "interactive";
 }
 
+function normalizeMode(mode) {
+  return mode === "view" ? "view" : "interactive";
+}
+
 function normalizeParticipantLimit(value) {
   const numericValue = Number(value);
   if (!Number.isFinite(numericValue)) return 2;
@@ -179,6 +183,14 @@ function createSignalingServer(options = {}) {
       const ws = sockets.get(endpointId);
       if (ws) send(ws, "session.updated", { session: publicSession(session) });
     }
+  }
+
+  function endpointIsBusy(endpointId) {
+    const hasPendingCall = Array.from(pendingCalls.values()).some(
+      (call) => call.fromEndpointId === endpointId || call.toEndpointId === endpointId
+    );
+    if (hasPendingCall) return true;
+    return Array.from(sessions.values()).some((session) => session.participants.includes(endpointId));
   }
 
   function cancelPendingCall(call, canceledByEndpointId, reason = "canceled", requestId = null) {
@@ -285,11 +297,15 @@ function createSignalingServer(options = {}) {
         send(ws, "error", { code: "target_offline", message: "target endpoint is offline" }, requestId);
         return;
       }
+      if (endpointIsBusy(fromEndpoint.endpointId) || endpointIsBusy(toEndpoint.endpointId)) {
+        send(ws, "error", { code: "endpoint_busy", message: "caller or target endpoint is busy" }, requestId);
+        return;
+      }
       const call = {
         callId: createId("call"),
         fromEndpointId: fromEndpoint.endpointId,
         toEndpointId: toEndpoint.endpointId,
-        requestedMode: payload.mode || "interactive",
+        requestedMode: normalizeMode(payload.mode),
         participantLimit:
           fromEndpoint.role === "operating-room" ? normalizeParticipantLimit(payload.participantLimit) : null,
         createdAt: new Date().toISOString()
@@ -319,7 +335,7 @@ function createSignalingServer(options = {}) {
             );
       const session = {
         sessionId: createId("session"),
-        mode: resolveMode(call.requestedMode, payload.mode || "interactive"),
+        mode: resolveMode(call.requestedMode, normalizeMode(payload.mode)),
         ownerEndpointId: call.toEndpointId,
         participantLimit,
         participants: [call.fromEndpointId, call.toEndpointId],
