@@ -254,6 +254,7 @@ test("phase 2 UI leaves a signaling session without ending the remaining meeting
     await page.getByRole("button", { name: "接受呼叫" }).click();
     const started = await startedForOr;
     await expect(page.locator(".session-list dd").filter({ hasText: "2 / 3" })).toBeVisible();
+    await expect(page.getByLabel("手术室端标注远端可见")).toBeDisabled();
 
     send(observerClient, "session.join", { sessionId: started.payload.session.sessionId });
     await waitFor(observerClient, "session.joined");

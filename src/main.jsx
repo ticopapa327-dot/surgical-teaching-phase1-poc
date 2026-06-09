@@ -1725,7 +1725,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
                 type="checkbox"
                 checked={annotationVisible}
                 onChange={(event) => updateAnnotationVisible(event.target.checked)}
-                disabled={!activeSession}
+                disabled={!activeSession || localEndpointRole !== "operating-room"}
               />
               手术室端标注远端可见
             </label>
