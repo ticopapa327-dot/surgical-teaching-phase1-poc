@@ -164,6 +164,19 @@ async function main() {
   );
   assert.equal(disconnectedCall.payload.reason, "endpoint_disconnected");
 
+  send(teachingClient, "call.request", { toEndpointId: "or-1", mode: "view" });
+  await waitFor(teachingClient, "call.requested");
+  const viewIncoming = await waitFor(orClient, "call.incoming");
+  send(orClient, "call.accept", {
+    callId: viewIncoming.payload.call.callId,
+    mode: "interactive",
+    participantLimit: 2
+  });
+  const viewSessionStarted = await waitFor(teachingClient, "session.started");
+  assert.equal(viewSessionStarted.payload.session.mode, "view");
+  send(orClient, "session.end", { sessionId: viewSessionStarted.payload.session.sessionId });
+  await waitFor(teachingClient, "session.ended");
+
   send(teachingClient, "call.request", { toEndpointId: "or-1", mode: "interactive" });
   const requested = await waitFor(teachingClient, "call.requested");
   const incoming = await waitFor(orClient, "call.incoming");
