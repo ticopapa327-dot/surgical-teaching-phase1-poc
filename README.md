@@ -62,6 +62,12 @@ npm run server:signaling
 ## 验证
 
 ```powershell
+npm run verify
+```
+
+`verify` 会依次执行构建、高危依赖审计、前端烟测和信令契约测试。也可以单独执行：
+
+```powershell
 npm run build
 npm audit --audit-level=high
 npm run test:smoke

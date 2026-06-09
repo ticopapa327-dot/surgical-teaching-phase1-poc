@@ -10,6 +10,8 @@
     "server:signaling": "node server/signaling-server.cjs",
     "build": "vite build",
     "start": "electron .",
+    "test": "npm run test:smoke && npm run test:signaling",
+    "verify": "npm run build && npm audit --audit-level=high && npm run test",
     "test:smoke": "playwright test",
     "test:signaling": "node tests/signaling-contract.mjs"
   },
