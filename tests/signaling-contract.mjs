@@ -647,6 +647,24 @@ async function main() {
   timeoutTarget.close();
   await timeoutServer.stop();
 
+  const heartbeatServer = createSignalingServer({ port: 0, heartbeatMs: 25 });
+  const heartbeatAddress = await heartbeatServer.start();
+  const heartbeatUrl = `ws://127.0.0.1:${heartbeatAddress.port}/signal`;
+  const heartbeatHttpBase = `http://127.0.0.1:${heartbeatAddress.port}`;
+  const heartbeatClient = await connect(heartbeatUrl);
+  send(heartbeatClient, "endpoint.register", {
+    endpointId: "heartbeat-client",
+    role: "observer",
+    name: "Heartbeat Client"
+  });
+  await waitFor(heartbeatClient, "endpoint.registered");
+  const serverSocket = Array.from(heartbeatServer.wss.clients)[0];
+  serverSocket.isAlive = false;
+  await new Promise((resolve) => heartbeatClient.once("close", resolve));
+  const heartbeatHealth = await getJson(`${heartbeatHttpBase}/health`);
+  assert.equal(heartbeatHealth.endpoints, 0);
+  await heartbeatServer.stop();
+
   const authServer = createSignalingServer({ port: 0, authToken: "shared-secret" });
   const authAddress = await authServer.start();
   const authUrl = `ws://127.0.0.1:${authAddress.port}/signal`;

@@ -148,10 +148,18 @@ function normalizeEventLogLimit(value) {
   return Math.max(20, Math.min(1000, Math.trunc(numericValue)));
 }
 
+function normalizeHeartbeatMs(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return 30000;
+  if (numericValue <= 0) return 0;
+  return Math.max(10, Math.trunc(numericValue));
+}
+
 function createSignalingServer(options = {}) {
   const port = options.port ?? Number(process.env.SIGNALING_PORT || 7077);
   const host = options.host || process.env.SIGNALING_HOST || "127.0.0.1";
   const callTimeoutMs = normalizeCallTimeoutMs(options.callTimeoutMs ?? process.env.SIGNALING_CALL_TIMEOUT_MS);
+  const heartbeatMs = normalizeHeartbeatMs(options.heartbeatMs ?? process.env.SIGNALING_HEARTBEAT_MS);
   const authToken = normalizeText(options.authToken ?? process.env.SIGNALING_AUTH_TOKEN, "", 256);
   const eventLogLimit = normalizeEventLogLimit(options.eventLogLimit ?? process.env.SIGNALING_EVENT_LOG_LIMIT);
   const endpoints = new Map();
@@ -159,6 +167,7 @@ function createSignalingServer(options = {}) {
   const pendingCalls = new Map();
   const sessions = new Map();
   const eventLog = [];
+  let heartbeatInterval = null;
   const jsonHeaders = {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
@@ -686,6 +695,10 @@ function createSignalingServer(options = {}) {
   }
 
   wss.on("connection", (ws) => {
+    ws.isAlive = true;
+    ws.on("pong", () => {
+      ws.isAlive = true;
+    });
     ws.on("message", (raw) => handleMessage(ws, raw.toString()));
     ws.on("close", () => {
       const endpointId = endpointForSocket(ws);
@@ -694,14 +707,43 @@ function createSignalingServer(options = {}) {
     });
   });
 
+  function startHeartbeat() {
+    if (!heartbeatMs || heartbeatInterval) return;
+    heartbeatInterval = setInterval(() => {
+      for (const ws of wss.clients) {
+        if (ws.isAlive === false) {
+          ws.terminate();
+          continue;
+        }
+        ws.isAlive = false;
+        try {
+          ws.ping();
+        } catch {
+          ws.terminate();
+        }
+      }
+    }, heartbeatMs);
+    heartbeatInterval.unref?.();
+  }
+
+  function stopHeartbeat() {
+    if (!heartbeatInterval) return;
+    clearInterval(heartbeatInterval);
+    heartbeatInterval = null;
+  }
+
   function start() {
     return new Promise((resolve) => {
-      httpServer.listen(port, host, () => resolve(httpServer.address()));
+      httpServer.listen(port, host, () => {
+        startHeartbeat();
+        resolve(httpServer.address());
+      });
     });
   }
 
   function stop() {
     return new Promise((resolve) => {
+      stopHeartbeat();
       for (const call of pendingCalls.values()) {
         if (call.timeoutHandle) clearTimeout(call.timeoutHandle);
       }

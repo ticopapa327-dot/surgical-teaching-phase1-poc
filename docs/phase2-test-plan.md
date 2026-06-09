@@ -84,6 +84,7 @@
 | P2-68 | Owner 离会结束多人会话 | 三方会话中，手术室 owner 发送 `session.leave`。 | owner 收到 `session.left`，剩余参与方收到 reason 为 `owner_left` 的 `session.ended`，服务端移除该会话。 |  |
 | P2-69 | 扩展窗口目标显示器 | Electron API 返回多个显示器时，前端选择扩展显示器并点击远端画面扩展窗口。 | 弹窗打开对应通道画面，前端状态显示目标扩展显示器；浏览器模式无显示器清单时仍使用默认窗口位置。 |  |
 | P2-70 | 协议错误分支完整性 | 对离线目标、缺失呼叫、缺失会话、非参会目标和缺失 peer.signal 负载分别发送请求。 | 服务端分别返回 `target_offline`、`call_not_found`、`session_not_found`、`target_not_in_session` 和 `bad_signal`。 |  |
+| P2-71 | 信令心跳清理 | 创建短心跳信令服务，注册终端后模拟服务端检测到该 WebSocket 未响应。 | 服务端终止连接，在线终端数量归零，并按断线流程清理该终端状态。 |  |
 
 ## 自动化冒烟测试
 
