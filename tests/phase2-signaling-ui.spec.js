@@ -544,6 +544,40 @@ test("phase 2 UI clears canceled incoming signaling call", async ({ page }) => {
   }
 });
 
+test("phase 2 UI clears a timed-out incoming signaling call", async ({ page }) => {
+  const server = createSignalingServer({ port: 0, callTimeoutMs: 50 });
+  const address = await server.start();
+  const url = `ws://127.0.0.1:${address.port}/signal`;
+  const teachingClient = await connect(url);
+
+  try {
+    send(teachingClient, "endpoint.register", {
+      endpointId: "teach-incoming-timeout",
+      role: "teaching-room",
+      name: "Incoming Timeout Teaching Room",
+      address: "192.168.10.64",
+      capabilities: ["subscribe-video"]
+    });
+    await waitFor(teachingClient, "endpoint.registered");
+
+    await page.goto("/");
+    await page.getByLabel("信令地址").fill(url);
+    await page.getByLabel("本端 ID").fill("or-ui");
+    await page.getByLabel("本端名称").fill("OR UI");
+    await page.getByRole("button", { name: "连接信令" }).click();
+    await expect(page.getByText("已注册 OR UI")).toBeVisible();
+
+    send(teachingClient, "call.request", { toEndpointId: "or-ui", mode: "interactive" });
+    await waitFor(teachingClient, "call.requested");
+    await expect(page.getByText("待确认呼叫")).toBeVisible();
+    await expect(page.locator(".footer")).toContainText("信令呼叫已取消：超时");
+    await expect(page.locator(".call-banner")).toHaveCount(0);
+  } finally {
+    teachingClient.close();
+    await server.stop();
+  }
+});
+
 test("phase 2 UI reports invalid signaling URL", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("信令地址").fill("not-a-websocket-url");
