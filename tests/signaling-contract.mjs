@@ -134,6 +134,18 @@ async function main() {
   const subscribed = await waitFor(teachingClient, "session.subscribed");
   assert.deepEqual(subscribed.payload.session.subscriptions["teach-1"], ["ch1", "ch2", "ch3"]);
 
+  send(teachingClient, "session.annotation", {
+    sessionId: session.sessionId,
+    text: "Forbidden annotation",
+    visible: true
+  });
+  const forbiddenAnnotation = await waitFor(
+    teachingClient,
+    "error",
+    (message) => message.payload.code === "annotation_forbidden"
+  );
+  assert.equal(forbiddenAnnotation.payload.code, "annotation_forbidden");
+
   send(orClient, "session.annotation", {
     sessionId: session.sessionId,
     text: "Key anatomy",

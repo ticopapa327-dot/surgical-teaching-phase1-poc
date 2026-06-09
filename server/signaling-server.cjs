@@ -289,6 +289,10 @@ function createSignalingServer(options = {}) {
         send(ws, "error", { code: "session_not_found", message: "session not found" }, requestId);
         return;
       }
+      if (fromEndpoint.role !== "operating-room") {
+        send(ws, "error", { code: "annotation_forbidden", message: "only operating-room can update annotation" }, requestId);
+        return;
+      }
       session.annotation = {
         visible: Boolean(payload.visible),
         text: String(payload.text || "").slice(0, 200),
