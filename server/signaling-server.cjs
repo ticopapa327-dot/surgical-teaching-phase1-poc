@@ -408,6 +408,9 @@ function createSignalingServer(options = {}) {
       return;
     }
 
+    const fromEndpoint = requireRegistration(ws, requestId);
+    if (!fromEndpoint) return;
+
     if (type === "endpoint.list") {
       send(
         ws,
@@ -417,9 +420,6 @@ function createSignalingServer(options = {}) {
       );
       return;
     }
-
-    const fromEndpoint = requireRegistration(ws, requestId);
-    if (!fromEndpoint) return;
 
     if (type === "session.list") {
       send(

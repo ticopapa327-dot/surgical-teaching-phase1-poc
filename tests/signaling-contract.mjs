@@ -67,6 +67,13 @@ async function main() {
     (message) => message.payload.code === "not_registered"
   );
   assert.equal(notRegistered.payload.code, "not_registered");
+  send(protocolErrorClient, "endpoint.list");
+  const notRegisteredDirectory = await waitFor(
+    protocolErrorClient,
+    "error",
+    (message) => message.payload.code === "not_registered"
+  );
+  assert.equal(notRegisteredDirectory.payload.code, "not_registered");
   send(protocolErrorClient, "endpoint.register", {
     endpointId: "protocol-error-client",
     role: "observer",
