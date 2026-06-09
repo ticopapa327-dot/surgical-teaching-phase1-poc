@@ -175,6 +175,17 @@ async function main() {
   });
   const orOwnedLimitSession = await waitFor(orClient, "session.started");
   assert.equal(orOwnedLimitSession.payload.session.participantLimit, 4);
+  send(observerClient, "session.join", { sessionId: orOwnedLimitSession.payload.session.sessionId });
+  const observerJoined = await waitFor(observerClient, "session.joined");
+  assert.equal(observerJoined.payload.session.participants.length, 3);
+  send(observerClient, "session.leave", { sessionId: orOwnedLimitSession.payload.session.sessionId });
+  await waitFor(observerClient, "session.left");
+  const observerLeftUpdate = await waitFor(
+    orClient,
+    "session.updated",
+    (message) => message.payload.session.participants.length === 2
+  );
+  assert.equal(observerLeftUpdate.payload.session.participants.includes("observer-1"), false);
   send(orClient, "session.end", { sessionId: orOwnedLimitSession.payload.session.sessionId });
   await waitFor(teachingClient, "session.ended");
 

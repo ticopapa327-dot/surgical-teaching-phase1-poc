@@ -335,6 +335,23 @@ function createSignalingServer(options = {}) {
       return;
     }
 
+    if (type === "session.leave") {
+      const session = sessions.get(payload.sessionId);
+      if (!session || !session.participants.includes(fromEndpoint.endpointId)) {
+        send(ws, "error", { code: "session_not_found", message: "session not found" }, requestId);
+        return;
+      }
+      session.participants = session.participants.filter((endpointId) => endpointId !== fromEndpoint.endpointId);
+      delete session.subscriptions[fromEndpoint.endpointId];
+      send(ws, "session.left", { sessionId: session.sessionId }, requestId);
+      if (session.participants.length < 2) {
+        endSession(session, fromEndpoint.endpointId, "participant_left");
+        return;
+      }
+      notifySession(session);
+      return;
+    }
+
     if (type === "session.join") {
       const session = sessions.get(payload.sessionId);
       if (!session) {
