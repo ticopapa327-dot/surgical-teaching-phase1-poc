@@ -756,6 +756,7 @@ test("phase 2 UI resumes an existing signaling session after endpoint replacemen
     await expect(page.locator(".footer")).toContainText("信令会话已恢复");
     await expect(page.locator(".session-list dd").filter({ hasText: started.payload.session.sessionId })).toBeVisible();
     await expect(page.locator(".session-list dd").filter({ hasText: "2 / 2" })).toBeVisible();
+    await expect(page.locator(".session-list dd").filter({ hasText: "Resume OR" })).toBeVisible();
   } finally {
     orClient.close();
     teachingClient.close();

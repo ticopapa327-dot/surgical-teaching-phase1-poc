@@ -353,6 +353,13 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
 
   useEffect(() => {
     signalingDirectoryRef.current = signalingDirectory;
+    setActiveSession((session) => {
+      if (session?.source !== "signaling" || !session.participantIds) return session;
+      return {
+        ...session,
+        participants: session.participantIds.map(endpointLabelById)
+      };
+    });
   }, [signalingDirectory]);
 
   useEffect(() => {
@@ -651,6 +658,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       source: "signaling",
       startedAt: session.startedAt,
       mode: session.mode,
+      participantIds: session.participants,
       participants: session.participants.map(endpointLabelById),
       participantLimit: session.participantLimit,
       subscribedChannels: sessionChannelsForEndpoint(session, endpointId)
