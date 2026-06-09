@@ -9,6 +9,11 @@ test("phase 2 call workflow renders and reaches active interaction state", async
   await expect(page.getByLabel("本端 ID")).toHaveValue("or-local");
 
   await page.getByRole("button", { name: "启动全部预览" }).click();
+  await page.getByRole("button", { name: "开始选中通道录制" }).click();
+  await page.waitForTimeout(600);
+  await page.locator(".top-actions button.danger").click();
+  await expect(page.locator(".recording-item")).toHaveCount(1);
+
   await expect(page.getByText("阶段 2 呼叫控制")).toBeVisible();
 
   await page.getByRole("button", { name: "示教室呼叫手术室" }).click();
