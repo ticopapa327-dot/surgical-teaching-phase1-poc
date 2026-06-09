@@ -32,6 +32,7 @@
 - 会话参与方异常断开时，服务端会清理会话并通知剩余参与方。
 - 信令服务支持会话内 `peer.signal` 透传，用于后续 WebRTC offer、answer 和 ICE 候选协商。
 - 前端可调用信令 `/health` 显示终端、会话和待处理呼叫数量。
+- 提供模拟 HIS 查询与患者绑定面板，新录像可写入患者元数据。
 
 ## 技术边界
 
@@ -95,6 +96,7 @@ npm run test:signaling
 - [阶段 2 测试计划](docs/phase2-test-plan.md)
 - [Phase 2 阶段状态与边界](docs/phase2-status.md)
 - [Phase 2 信令协议说明](docs/signaling-protocol.md)
+- [阶段 3 患者绑定测试计划](docs/phase3-test-plan.md)
 
 ## 已知限制
 
@@ -102,4 +104,4 @@ npm run test:signaling
 - 音频回声消除当前只能验证浏览器侧约束，实际双端效果必须现场复测。
 - 阶段 2 当前验证控制流和本地媒体订阅，不包含真实 SFU、远端网络抖动、NAT 穿越和 Android 平板端原生能力。
 - 信令服务器当前只做控制面验证，不做鉴权、持久化、TLS、审计和媒体转发。
-- HIS、FTP、云台控制和手机直播仍属于后续阶段或专项扩展验证项。
+- 真实 HIS 联网、FTP、云台控制和手机直播仍属于后续阶段或专项扩展验证项。

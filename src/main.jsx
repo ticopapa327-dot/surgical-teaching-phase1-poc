@@ -15,6 +15,25 @@ const ADDRESS_BOOK = [
   { id: "panel-a", name: "会议平板 A", address: "192.168.10.51", type: "Android" }
 ];
 
+const MOCK_PATIENTS = [
+  {
+    hisId: "HIS-001",
+    name: "患者 001",
+    sex: "女",
+    age: 45,
+    department: "普外科",
+    surgery: "腹腔镜胆囊切除术"
+  },
+  {
+    hisId: "HIS-002",
+    name: "患者 002",
+    sex: "男",
+    age: 58,
+    department: "泌尿外科",
+    surgery: "腹腔镜肾囊肿去顶术"
+  }
+];
+
 const DEFAULT_SIGNALING_URL = "ws://127.0.0.1:7077/signal";
 const DEFAULT_APP_CONFIG = {
   signalingUrl: DEFAULT_SIGNALING_URL,
@@ -235,6 +254,9 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   const [isPermissionReady, setPermissionReady] = useState(false);
   const [recordingSessionId, setRecordingSessionId] = useState("");
   const [previewVersion, setPreviewVersion] = useState(0);
+  const [patientQuery, setPatientQuery] = useState("HIS-001");
+  const [currentPatient, setCurrentPatient] = useState(null);
+  const [patientStatus, setPatientStatus] = useState("未绑定患者");
 
   const [signalingUrl, setSignalingUrl] = useState(initialConfig.signalingUrl);
   const [localEndpointId, setLocalEndpointId] = useState(initialConfig.localEndpoint?.id || DEFAULT_APP_CONFIG.localEndpoint.id);
@@ -429,6 +451,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       sourceMode: channelConfig[channel.id].sourceMode,
       sourceDeviceId: channelConfig[channel.id].deviceId,
       sourceLabel: getDeviceLabel(channelConfig[channel.id].deviceId),
+      patient: currentPatient,
       mimeType: supportedMimeType,
       startedAt
     });
@@ -499,6 +522,26 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   function getDeviceLabel(deviceId) {
     const device = videoDevices.find((item) => item.deviceId === deviceId);
     return device?.label || "";
+  }
+
+  function queryMockPatient() {
+    const key = patientQuery.trim().toUpperCase();
+    const patient = MOCK_PATIENTS.find((item) => item.hisId === key);
+    if (!patient) {
+      setCurrentPatient(null);
+      setPatientStatus("未查询到患者，当前录像不会绑定患者信息。");
+      setStatus("模拟 HIS 未查询到患者。");
+      return;
+    }
+    setCurrentPatient(patient);
+    setPatientStatus(`${patient.name} / ${patient.hisId} / ${patient.department}`);
+    setStatus(`已从模拟 HIS 获取 ${patient.name}，新录像将绑定该患者。`);
+  }
+
+  function clearPatientBinding() {
+    setCurrentPatient(null);
+    setPatientStatus("未绑定患者");
+    setStatus("已清除患者绑定。");
   }
 
   function selectedTarget() {
@@ -1060,6 +1103,35 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
             <button onClick={() => api.recordings.openRoot()}>打开录像目录</button>
           </section>
 
+          <section className="panel-block">
+            <h2>患者绑定</h2>
+            <label className="annotation-input">
+              HIS ID
+              <input value={patientQuery} onChange={(event) => setPatientQuery(event.target.value)} />
+            </label>
+            <div className="button-row">
+              <button onClick={queryMockPatient}>模拟 HIS 查询</button>
+              <button onClick={clearPatientBinding} disabled={!currentPatient}>
+                清除绑定
+              </button>
+            </div>
+            <p className="hint">{patientStatus}</p>
+            {currentPatient && (
+              <dl className="status-list compact">
+                <div>
+                  <dt>术式</dt>
+                  <dd>{currentPatient.surgery}</dd>
+                </div>
+                <div>
+                  <dt>基本信息</dt>
+                  <dd>
+                    {currentPatient.sex} / {currentPatient.age} 岁
+                  </dd>
+                </div>
+              </dl>
+            )}
+          </section>
+
           <section className="panel-block grow">
             <div className="section-title-row">
               <h2>录像索引</h2>
@@ -1078,6 +1150,11 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
                     <span>
                       {formatDuration(item.durationMs)} / {formatBytes(item.bytes)}
                     </span>
+                    {item.patient && (
+                      <span>
+                        患者：{item.patient.name} / {item.patient.hisId}
+                      </span>
+                    )}
                   </button>
                   <div className="recording-actions">
                     <button onClick={() => api.recordings.reveal(item.id)}>定位</button>
