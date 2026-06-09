@@ -305,6 +305,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   const signalingEndpointIdRef = useRef(localEndpointId);
   const signalingDirectoryRef = useRef([]);
   const activeSessionRef = useRef(null);
+  const signalingCloseMessageRef = useRef("");
 
   const supportedMimeType = useMemo(getSupportedMimeType, []);
 
@@ -720,6 +721,12 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       return;
     }
 
+    if (type === "endpoint.replaced") {
+      signalingCloseMessageRef.current = `本端终端 ID ${payload.endpointId || signalingEndpointIdRef.current} 已被其他连接接管，信令连接已关闭。`;
+      setStatus("本端终端 ID 已被其他连接接管，信令连接即将关闭。");
+      return;
+    }
+
     if (type === "error") {
       const messageText = payload.message || payload.code || "未知信令错误";
       if (payload.code === "participant_limit") setOverLimitNotice("信令服务器拒绝加入：已达到参与上限。");
@@ -741,6 +748,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     const endpointId = localEndpointId.trim() || "or-local";
     const endpointName = localEndpointName.trim() || endpointId;
     signalingEndpointIdRef.current = endpointId;
+    signalingCloseMessageRef.current = "";
     setSignalingState({ connected: false, label: "连接中" });
     setStatus("正在连接信令服务器...");
 
@@ -793,12 +801,15 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     };
     ws.onclose = () => {
       if (signalingSocket.current === ws) {
+        const closeMessage = signalingCloseMessageRef.current || "信令连接已断开，已清理信令会话状态。";
+        signalingCloseMessageRef.current = "";
         signalingSocket.current = null;
         setPendingCall(null);
+        activeSessionRef.current = null;
         setActiveSession((session) => (session?.source === "signaling" ? null : session));
         setOverLimitNotice("");
         setSignalingState({ connected: false, label: "未连接" });
-        setStatus("信令连接已断开，已清理信令会话状态。");
+        setStatus(closeMessage);
       }
     };
   }
