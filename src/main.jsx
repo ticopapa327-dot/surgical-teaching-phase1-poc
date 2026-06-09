@@ -15,6 +15,8 @@ const ADDRESS_BOOK = [
   { id: "panel-a", name: "会议平板 A", address: "192.168.10.51", type: "Android" }
 ];
 
+const DEFAULT_SIGNALING_URL = "ws://127.0.0.1:7077/signal";
+
 const MIME_CANDIDATES = [
   "video/webm;codecs=vp9,opus",
   "video/webm;codecs=vp8,opus",
@@ -174,6 +176,16 @@ function resolveMode(requestMode, confirmMode) {
   return requestMode === "view" || confirmMode === "view" ? "view" : "interactive";
 }
 
+function endpointLabel(endpoint) {
+  if (!endpoint) return "未知终端";
+  return `${endpoint.name || endpoint.endpointId}${endpoint.address ? ` (${endpoint.address})` : ""}`;
+}
+
+function sessionChannelsForEndpoint(session, endpointId) {
+  const channels = session.subscriptions?.[endpointId];
+  return Array.isArray(channels) && channels.length ? channels : ["ch1"];
+}
+
 function App() {
   const [appInfo, setAppInfo] = useState(null);
   const [videoDevices, setVideoDevices] = useState([]);
@@ -187,6 +199,14 @@ function App() {
   const [isPermissionReady, setPermissionReady] = useState(false);
   const [recordingSessionId, setRecordingSessionId] = useState("");
   const [previewVersion, setPreviewVersion] = useState(0);
+
+  const [signalingUrl, setSignalingUrl] = useState(DEFAULT_SIGNALING_URL);
+  const [localEndpointId, setLocalEndpointId] = useState("or-local");
+  const [localEndpointName, setLocalEndpointName] = useState("手术室端本机");
+  const [localEndpointRole, setLocalEndpointRole] = useState("operating-room");
+  const [signalingState, setSignalingState] = useState({ connected: false, label: "未连接" });
+  const [signalingDirectory, setSignalingDirectory] = useState([]);
+  const [signalingTargetId, setSignalingTargetId] = useState("");
 
   const [callTargetId, setCallTargetId] = useState(ADDRESS_BOOK[0].id);
   const [customAddress, setCustomAddress] = useState("");
@@ -207,6 +227,9 @@ function App() {
   const activeRecorders = useRef({});
   const pendingWrites = useRef({});
   const interactionAudioStream = useRef(null);
+  const signalingSocket = useRef(null);
+  const signalingEndpointIdRef = useRef(localEndpointId);
+  const signalingDirectoryRef = useRef([]);
 
   const supportedMimeType = useMemo(getSupportedMimeType, []);
 
@@ -216,8 +239,17 @@ function App() {
     return () => {
       Object.values(previewStreams.current).forEach(stopStream);
       stopStream(interactionAudioStream.current);
+      signalingSocket.current?.close();
     };
   }, []);
+
+  useEffect(() => {
+    signalingEndpointIdRef.current = localEndpointId.trim() || "or-local";
+  }, [localEndpointId]);
+
+  useEffect(() => {
+    signalingDirectoryRef.current = signalingDirectory;
+  }, [signalingDirectory]);
 
   useEffect(() => {
     if (!activeSession) return;
@@ -432,6 +464,180 @@ function App() {
     return ADDRESS_BOOK.find((item) => item.id === callTargetId) || ADDRESS_BOOK[0];
   }
 
+  function endpointLabelById(endpointId) {
+    const endpoint = signalingDirectoryRef.current.find((item) => item.endpointId === endpointId);
+    return endpoint ? endpointLabel(endpoint) : endpointId;
+  }
+
+  function setDirectoryFromSignaling(endpoints) {
+    const onlineEndpoints = Array.isArray(endpoints) ? endpoints : [];
+    setSignalingDirectory(onlineEndpoints);
+    setSignalingTargetId((current) => {
+      const selfId = signalingEndpointIdRef.current;
+      if (current && onlineEndpoints.some((item) => item.endpointId === current && item.endpointId !== selfId)) {
+        return current;
+      }
+      return onlineEndpoints.find((item) => item.endpointId !== selfId)?.endpointId || "";
+    });
+  }
+
+  function sendSignaling(type, payload = {}) {
+    const ws = signalingSocket.current;
+    if (!ws || ws.readyState !== 1) {
+      setStatus("信令服务器未连接。");
+      return false;
+    }
+    ws.send(
+      JSON.stringify({
+        type,
+        requestId: `ui-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        payload
+      })
+    );
+    return true;
+  }
+
+  function applySignalingSession(session, resetLayout = false) {
+    if (!session) return;
+    const endpointId = signalingEndpointIdRef.current;
+    setActiveSession({
+      id: session.sessionId,
+      source: "signaling",
+      startedAt: session.startedAt,
+      mode: session.mode,
+      participants: session.participants.map(endpointLabelById),
+      participantLimit: session.participantLimit,
+      subscribedChannels: sessionChannelsForEndpoint(session, endpointId)
+    });
+    if (resetLayout) setLayoutMode("single");
+    setPendingCall(null);
+    setOverLimitNotice("");
+  }
+
+  function handleSignalingMessage(message) {
+    const { type, payload = {} } = message;
+    if (type === "endpoint.registered") {
+      setSignalingState({ connected: true, label: `已注册 ${payload.endpoint?.name || signalingEndpointIdRef.current}` });
+      setStatus("信令服务器已连接，本端已注册。");
+      sendSignaling("endpoint.list");
+      return;
+    }
+
+    if (type === "directory.updated" || type === "directory.snapshot") {
+      setDirectoryFromSignaling(payload.endpoints);
+      return;
+    }
+
+    if (type === "call.requested") {
+      setStatus(`信令呼叫已发出，呼叫 ID：${payload.call?.callId || "-"}`);
+      return;
+    }
+
+    if (type === "call.incoming") {
+      const call = payload.call;
+      setPendingCall({
+        id: call.callId,
+        source: "signaling",
+        direction: "signaling",
+        from: endpointLabel(payload.from),
+        to: localEndpointName.trim() || signalingEndpointIdRef.current,
+        requestedMode: call.requestedMode,
+        signalingCallId: call.callId
+      });
+      setStatus(`${endpointLabel(payload.from)} 通过信令发起 ${modeLabel(call.requestedMode)} 呼叫。`);
+      return;
+    }
+
+    if (type === "call.rejected") {
+      setPendingCall(null);
+      setStatus("信令呼叫已被拒绝。");
+      return;
+    }
+
+    if (type === "session.started") {
+      applySignalingSession(payload.session, true);
+      setStatus(`信令会话已建立，最终模式为 ${modeLabel(payload.session?.mode)}。`);
+      return;
+    }
+
+    if (type === "session.updated" || type === "session.subscribed" || type === "session.joined") {
+      applySignalingSession(payload.session);
+      return;
+    }
+
+    if (type === "error") {
+      const messageText = payload.message || payload.code || "未知信令错误";
+      if (payload.code === "participant_limit") setOverLimitNotice("信令服务器拒绝加入：已达到参与上限。");
+      setStatus(`信令错误：${messageText}`);
+    }
+  }
+
+  function connectSignaling() {
+    if (!window.WebSocket) {
+      setStatus("当前环境不支持 WebSocket。");
+      return;
+    }
+    signalingSocket.current?.close();
+    const endpointId = localEndpointId.trim() || "or-local";
+    const endpointName = localEndpointName.trim() || endpointId;
+    signalingEndpointIdRef.current = endpointId;
+    setSignalingState({ connected: false, label: "连接中" });
+    setStatus("正在连接信令服务器...");
+
+    const ws = new WebSocket(signalingUrl.trim() || DEFAULT_SIGNALING_URL);
+    signalingSocket.current = ws;
+    ws.onopen = () => {
+      ws.send(
+        JSON.stringify({
+          type: "endpoint.register",
+          requestId: `register-${Date.now()}`,
+          payload: {
+            endpointId,
+            role: localEndpointRole,
+            name: endpointName,
+            address: "127.0.0.1",
+            capabilities: ["call-control", "subscribe-video", "interactive-audio"]
+          }
+        })
+      );
+    };
+    ws.onmessage = (event) => {
+      try {
+        handleSignalingMessage(JSON.parse(event.data));
+      } catch (error) {
+        setStatus(`信令消息解析失败：${error.message}`);
+      }
+    };
+    ws.onerror = () => {
+      setSignalingState({ connected: false, label: "连接错误" });
+      setStatus("信令服务器连接错误。");
+    };
+    ws.onclose = () => {
+      if (signalingSocket.current === ws) signalingSocket.current = null;
+      setSignalingState({ connected: false, label: "未连接" });
+    };
+  }
+
+  function disconnectSignaling() {
+    signalingSocket.current?.close();
+    signalingSocket.current = null;
+    setSignalingDirectory([]);
+    setSignalingTargetId("");
+    setSignalingState({ connected: false, label: "未连接" });
+    setStatus("信令连接已断开。");
+  }
+
+  function requestSignalingCall() {
+    const target = signalingDirectory.find((item) => item.endpointId === signalingTargetId);
+    if (!target) {
+      setStatus("请先选择在线信令目标。");
+      return;
+    }
+    if (sendSignaling("call.request", { toEndpointId: target.endpointId, mode: requestMode })) {
+      setStatus(`已通过信令向 ${endpointLabel(target)} 发起 ${modeLabel(requestMode)} 呼叫。`);
+    }
+  }
+
   function requestCall(direction) {
     const target = selectedTarget();
     const address = customAddress.trim() || target.address;
@@ -457,10 +663,23 @@ function App() {
 
   function acceptCall() {
     if (!pendingCall) return;
+    if (pendingCall.source === "signaling") {
+      if (
+        sendSignaling("call.accept", {
+          callId: pendingCall.signalingCallId,
+          mode: confirmMode,
+          participantLimit
+        })
+      ) {
+        setStatus("已通过信令发送接受确认，等待会话建立。");
+      }
+      return;
+    }
     const finalMode = resolveMode(pendingCall.requestedMode, confirmMode);
     const participants = ["手术室端", pendingCall.direction === "or-to-teaching" ? pendingCall.to : pendingCall.from];
     setActiveSession({
       id: Date.now(),
+      source: "local",
       startedAt: new Date().toISOString(),
       mode: finalMode,
       participants,
@@ -475,6 +694,12 @@ function App() {
 
   function rejectCall() {
     if (!pendingCall) return;
+    if (pendingCall.source === "signaling") {
+      sendSignaling("call.reject", { callId: pendingCall.signalingCallId });
+      setPendingCall(null);
+      setStatus("已通过信令拒绝呼叫。");
+      return;
+    }
     setStatus(`${pendingCall.to} 已拒绝呼叫。`);
     setPendingCall(null);
   }
@@ -489,21 +714,27 @@ function App() {
 
   async function toggleRemoteChannel(channelId, checked) {
     if (!activeSession) return;
+    let nextChannels;
     if (checked) {
       const channel = CHANNELS.find((item) => item.id === channelId);
       if (channel && !previewStreams.current[channelId]) {
         await startPreview(channel);
       }
+      nextChannels = Array.from(new Set([...activeSession.subscribedChannels, channelId]));
       setActiveSession((session) => ({
         ...session,
-        subscribedChannels: Array.from(new Set([...session.subscribedChannels, channelId]))
+        subscribedChannels: nextChannels
       }));
     } else {
       const remaining = activeSession.subscribedChannels.filter((id) => id !== channelId);
+      nextChannels = remaining.length > 0 ? remaining : ["ch1"];
       setActiveSession((session) => ({
         ...session,
-        subscribedChannels: remaining.length > 0 ? remaining : ["ch1"]
+        subscribedChannels: nextChannels
       }));
+    }
+    if (activeSession.source === "signaling") {
+      sendSignaling("session.subscribe", { sessionId: activeSession.id, channels: nextChannels });
     }
   }
 
@@ -573,6 +804,7 @@ function App() {
 
   const anyRecording = CHANNELS.some((channel) => activeRecorders.current[channel.id]);
   const remoteChannels = displayedRemoteChannels();
+  const signalingTargets = signalingDirectory.filter((endpoint) => endpoint.endpointId !== signalingEndpointIdRef.current);
 
   return (
     <div className="app-shell">
@@ -743,6 +975,72 @@ function App() {
 
       <section className="interaction-workbench">
         <div className="interaction-left">
+          <section className="panel-block">
+            <h2>信令控制面</h2>
+            <div className="form-grid signal-grid">
+              <label>
+                信令地址
+                <input value={signalingUrl} onChange={(event) => setSignalingUrl(event.target.value)} />
+              </label>
+              <label>
+                本端 ID
+                <input value={localEndpointId} onChange={(event) => setLocalEndpointId(event.target.value)} />
+              </label>
+              <label>
+                本端名称
+                <input value={localEndpointName} onChange={(event) => setLocalEndpointName(event.target.value)} />
+              </label>
+              <label>
+                本端角色
+                <select value={localEndpointRole} onChange={(event) => setLocalEndpointRole(event.target.value)}>
+                  <option value="operating-room">手术室端</option>
+                  <option value="teaching-room">示教室端</option>
+                  <option value="observer">观摩端</option>
+                </select>
+              </label>
+              <label>
+                信令目标
+                <select
+                  value={signalingTargetId}
+                  disabled={signalingTargets.length === 0}
+                  onChange={(event) => setSignalingTargetId(event.target.value)}
+                >
+                  <option value="">选择在线终端</option>
+                  {signalingTargets.map((endpoint) => (
+                    <option value={endpoint.endpointId} key={endpoint.endpointId}>
+                      {endpointLabel(endpoint)} / {endpoint.role}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <dl className="status-list compact">
+              <div>
+                <dt>连接状态</dt>
+                <dd>{signalingState.label}</dd>
+              </div>
+              <div>
+                <dt>在线目录</dt>
+                <dd>{signalingDirectory.length} 个终端</dd>
+              </div>
+            </dl>
+            <div className="button-row">
+              <button onClick={connectSignaling} disabled={signalingState.connected}>
+                连接信令
+              </button>
+              <button onClick={disconnectSignaling} disabled={!signalingState.connected}>
+                断开
+              </button>
+              <button
+                onClick={requestSignalingCall}
+                disabled={!signalingState.connected || !signalingTargetId || Boolean(activeSession || pendingCall)}
+              >
+                信令呼叫选中终端
+              </button>
+            </div>
+            <p className="hint">该面板只验证 C/S 控制面，音视频媒体仍由本地预览流模拟。</p>
+          </section>
+
           <section className="panel-block">
             <h2>阶段 2 呼叫控制</h2>
             <div className="form-grid">
