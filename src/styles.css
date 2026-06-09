@@ -412,6 +412,17 @@ input {
   font-size: 13px;
 }
 
+.popout-button {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  min-height: 30px;
+  padding: 0 9px;
+  border-color: rgba(255, 255, 255, 0.32);
+  background: rgba(255, 255, 255, 0.92);
+  font-size: 13px;
+}
+
 .annotation {
   position: absolute;
   left: 50%;

@@ -818,6 +818,56 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     syncSignalingAnnotation(annotationText, checked);
   }
 
+  async function openRemotePopout(channelId) {
+    if (!activeSession) return;
+    const channel = CHANNELS.find((item) => item.id === channelId);
+    if (!channel) return;
+    if (!previewStreams.current[channelId]) {
+      await startPreview(channel);
+    }
+    const stream = previewStreams.current[channelId];
+    const popup = window.open("", "_blank", "popup,width=960,height=620");
+    if (!popup) {
+      setStatus("扩展窗口打开失败，可能被浏览器拦截。");
+      return;
+    }
+
+    const doc = popup.document;
+    doc.title = `${channel.label} ${channel.role}`;
+    doc.body.style.margin = "0";
+    doc.body.style.background = "#101820";
+    doc.body.style.color = "#ffffff";
+    doc.body.style.fontFamily = "Microsoft YaHei, Segoe UI, Arial, sans-serif";
+
+    const wrapper = doc.createElement("main");
+    wrapper.style.display = "grid";
+    wrapper.style.gridTemplateRows = "auto 1fr";
+    wrapper.style.minHeight = "100vh";
+
+    const title = doc.createElement("h1");
+    title.textContent = `${channel.label} ${channel.role}`;
+    title.style.margin = "0";
+    title.style.padding = "12px 16px";
+    title.style.fontSize = "18px";
+    title.style.background = "#17202a";
+
+    const video = doc.createElement("video");
+    video.muted = true;
+    video.autoplay = true;
+    video.playsInline = true;
+    video.controls = true;
+    video.srcObject = stream;
+    video.style.width = "100%";
+    video.style.height = "100%";
+    video.style.objectFit = "contain";
+    video.style.background = "#000000";
+
+    wrapper.append(title, video);
+    doc.body.replaceChildren(wrapper);
+    video.play().catch(() => {});
+    setStatus(`${channel.label} 已打开扩展窗口，可拖动到其他显示器。`);
+  }
+
   function requestCall(direction) {
     const target = selectedTarget();
     const address = customAddress.trim() || target.address;
@@ -1457,6 +1507,9 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
                     <div className="remote-label">
                       {channel?.label} {channel?.role}
                     </div>
+                    <button className="popout-button" onClick={() => openRemotePopout(channelId)}>
+                      扩展窗口
+                    </button>
                     {annotationVisible && <div className="annotation">{annotationText}</div>}
                   </div>
                 );
