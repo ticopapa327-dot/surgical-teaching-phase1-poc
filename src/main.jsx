@@ -235,6 +235,7 @@ function signalingErrorLabel(payload = {}) {
     bad_message: "信令消息格式错误",
     not_registered: "请先完成终端注册",
     target_offline: "目标终端不在线",
+    self_call_forbidden: "不能呼叫本端终端",
     endpoint_busy: "本端或目标终端忙线",
     call_not_found: "待处理呼叫不存在或已失效",
     session_not_found: "会话不存在或当前终端无权访问",

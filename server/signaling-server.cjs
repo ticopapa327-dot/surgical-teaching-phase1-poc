@@ -438,6 +438,10 @@ function createSignalingServer(options = {}) {
         send(ws, "error", { code: "target_offline", message: "target endpoint is offline" }, requestId);
         return;
       }
+      if (toEndpoint.endpointId === fromEndpoint.endpointId) {
+        send(ws, "error", { code: "self_call_forbidden", message: "endpoint cannot call itself" }, requestId);
+        return;
+      }
       if (endpointIsBusy(fromEndpoint.endpointId) || endpointIsBusy(toEndpoint.endpointId)) {
         send(ws, "error", { code: "endpoint_busy", message: "caller or target endpoint is busy" }, requestId);
         return;

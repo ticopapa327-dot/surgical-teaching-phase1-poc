@@ -202,6 +202,7 @@ HTTP `/events` 返回最近控制面事件摘要：
 
 如果发起方是手术室端，`participantLimit` 会作为手术室端设置的会议人数上限进入后续会话。若接收方是手术室端，则以 `call.accept` 中的 `participantLimit` 为准。
 `participantLimit` 会被限制在 2 到 16 之间；如果传入值不是有效数字，服务端按 2 处理。
+发起方不能呼叫自己的 `endpointId`，服务端会返回 `self_call_forbidden`。
 如果发起方或目标方已有待处理呼叫，或已经处于某个会话中，服务端返回 `endpoint_busy`，不会创建新的待处理呼叫。
 待处理呼叫会包含 `expiresAt`。默认 60 秒内未接受、拒绝或取消时，服务端会向双方发送 `call.canceled`，其中 `reason` 为 `timeout`。默认超时时间可通过 `SIGNALING_CALL_TIMEOUT_MS` 环境变量覆盖。
 
@@ -424,6 +425,7 @@ HTTP `/events` 返回最近控制面事件摘要：
 | `bad_message` | 消息不是合法 JSON 或缺少 `type` |
 | `not_registered` | 连接尚未完成 `endpoint.register` |
 | `target_offline` | 呼叫目标终端不在线 |
+| `self_call_forbidden` | 终端尝试呼叫自己的 `endpointId` |
 | `endpoint_busy` | 发起方或目标方已有待处理呼叫，或已经处于会话中 |
 | `call_not_found` | `call.accept`、`call.reject` 或 `call.cancel` 指向的待处理呼叫不存在或无权操作 |
 | `session_not_found` | 目标会话不存在，或当前终端不是会话参与方 |

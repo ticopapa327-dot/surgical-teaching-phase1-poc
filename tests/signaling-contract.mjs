@@ -129,6 +129,10 @@ async function main() {
   const httpDirectory = await getJson(`${httpBase}/directory`);
   assert.equal(httpDirectory.length, 3);
 
+  send(orClient, "call.request", { toEndpointId: "or-1", mode: "interactive" });
+  const selfCallError = await waitFor(orClient, "error", (message) => message.payload.code === "self_call_forbidden");
+  assert.equal(selfCallError.payload.code, "self_call_forbidden");
+
   send(teachingClient, "call.request", { toEndpointId: "or-1", mode: "view" });
   const cancelableCall = await waitFor(teachingClient, "call.requested");
   await waitFor(orClient, "call.incoming", (message) => message.payload.call.callId === cancelableCall.payload.call.callId);
