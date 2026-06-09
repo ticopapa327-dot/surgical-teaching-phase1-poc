@@ -96,6 +96,14 @@ async function main() {
   const httpDirectory = await getJson(`${httpBase}/directory`);
   assert.equal(httpDirectory.length, 3);
 
+  send(teachingClient, "call.request", { toEndpointId: "or-1", mode: "view" });
+  const cancelableCall = await waitFor(teachingClient, "call.requested");
+  await waitFor(orClient, "call.incoming", (message) => message.payload.call.callId === cancelableCall.payload.call.callId);
+  send(teachingClient, "call.cancel", { callId: cancelableCall.payload.call.callId });
+  const canceledCall = await waitFor(orClient, "call.canceled");
+  assert.equal(canceledCall.payload.callId, cancelableCall.payload.call.callId);
+  assert.equal(canceledCall.payload.reason, "caller_canceled");
+
   send(teachingClient, "call.request", { toEndpointId: "or-1", mode: "interactive" });
   const requested = await waitFor(teachingClient, "call.requested");
   const incoming = await waitFor(orClient, "call.incoming");

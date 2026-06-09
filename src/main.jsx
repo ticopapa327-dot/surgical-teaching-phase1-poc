@@ -666,6 +666,12 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       return;
     }
 
+    if (type === "call.canceled") {
+      setPendingCall(null);
+      setStatus(`信令呼叫已取消：${payload.reason || "canceled"}。`);
+      return;
+    }
+
     if (type === "session.started") {
       applySignalingSession(payload.session, true);
       setStatus(`信令会话已建立，最终模式为 ${modeLabel(payload.session?.mode)}。`);

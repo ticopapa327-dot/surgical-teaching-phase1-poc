@@ -135,6 +135,20 @@ function createSignalingServer(options = {}) {
     }
   }
 
+  function cancelPendingCall(call, canceledByEndpointId, reason = "canceled", requestId = null) {
+    pendingCalls.delete(call.callId);
+    const payload = {
+      callId: call.callId,
+      canceledByEndpointId,
+      reason,
+      canceledAt: new Date().toISOString()
+    };
+    const callerSocket = sockets.get(call.fromEndpointId);
+    const targetSocket = sockets.get(call.toEndpointId);
+    if (callerSocket) send(callerSocket, "call.canceled", payload, call.fromEndpointId === canceledByEndpointId ? requestId : null);
+    if (targetSocket) send(targetSocket, "call.canceled", payload, call.toEndpointId === canceledByEndpointId ? requestId : null);
+  }
+
   function endSession(session, endedByEndpointId, reason = "requested", requestId = null) {
     sessions.delete(session.sessionId);
     const ended = {
@@ -270,6 +284,16 @@ function createSignalingServer(options = {}) {
       return;
     }
 
+    if (type === "call.cancel") {
+      const call = pendingCalls.get(payload.callId);
+      if (!call || call.fromEndpointId !== fromEndpoint.endpointId) {
+        send(ws, "error", { code: "call_not_found", message: "pending call not found" }, requestId);
+        return;
+      }
+      cancelPendingCall(call, fromEndpoint.endpointId, "caller_canceled", requestId);
+      return;
+    }
+
     if (type === "session.subscribe") {
       const session = sessions.get(payload.sessionId);
       if (!session || !session.participants.includes(fromEndpoint.endpointId)) {
@@ -390,13 +414,13 @@ function createSignalingServer(options = {}) {
     ws.on("close", () => {
       const endpointId = endpointForSocket(ws);
       if (!endpointId) return;
-      sockets.delete(endpointId);
-      endpoints.delete(endpointId);
       for (const [callId, call] of pendingCalls.entries()) {
         if (call.fromEndpointId === endpointId || call.toEndpointId === endpointId) {
-          pendingCalls.delete(callId);
+          cancelPendingCall(call, endpointId, "endpoint_disconnected");
         }
       }
+      sockets.delete(endpointId);
+      endpoints.delete(endpointId);
       for (const session of Array.from(sessions.values())) {
         if (session.participants.includes(endpointId)) {
           endSession(session, endpointId, "endpoint_disconnected");

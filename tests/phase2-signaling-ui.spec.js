@@ -250,6 +250,42 @@ test("phase 2 UI rejects incoming signaling call", async ({ page }) => {
   }
 });
 
+test("phase 2 UI clears canceled incoming signaling call", async ({ page }) => {
+  const server = createSignalingServer({ port: 0 });
+  const address = await server.start();
+  const url = `ws://127.0.0.1:${address.port}/signal`;
+  const teachingClient = await connect(url);
+
+  try {
+    send(teachingClient, "endpoint.register", {
+      endpointId: "teach-cancel",
+      role: "teaching-room",
+      name: "Cancel Teaching Room",
+      address: "192.168.10.37",
+      capabilities: ["subscribe-video"]
+    });
+    await waitFor(teachingClient, "endpoint.registered");
+
+    await page.goto("/");
+    await page.getByLabel("信令地址").fill(url);
+    await page.getByLabel("本端 ID").fill("or-ui");
+    await page.getByLabel("本端名称").fill("OR UI");
+    await page.getByRole("button", { name: "连接信令" }).click();
+    await expect(page.getByText("已注册 OR UI")).toBeVisible();
+
+    send(teachingClient, "call.request", { toEndpointId: "or-ui", mode: "interactive" });
+    const requested = await waitFor(teachingClient, "call.requested");
+    await expect(page.getByText("待确认呼叫")).toBeVisible();
+    send(teachingClient, "call.cancel", { callId: requested.payload.call.callId });
+    await waitFor(teachingClient, "call.canceled");
+    await expect(page.getByText("待确认呼叫")).toHaveCount(0);
+    await expect(page.locator(".footer")).toContainText("信令呼叫已取消");
+  } finally {
+    teachingClient.close();
+    await server.stop();
+  }
+});
+
 test("phase 2 UI reports invalid signaling URL", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("信令地址").fill("not-a-websocket-url");
