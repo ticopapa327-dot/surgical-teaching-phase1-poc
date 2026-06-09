@@ -155,6 +155,46 @@ test("phase 2 UI accepts incoming signaling call", async ({ page }) => {
   }
 });
 
+test("phase 2 UI can confirm an incoming interactive call as view only", async ({ page }) => {
+  const server = createSignalingServer({ port: 0 });
+  const address = await server.start();
+  const url = `ws://127.0.0.1:${address.port}/signal`;
+  const teachingClient = await connect(url);
+
+  try {
+    send(teachingClient, "endpoint.register", {
+      endpointId: "teach-confirm-view",
+      role: "teaching-room",
+      name: "Confirm View Teaching Room",
+      address: "192.168.10.70",
+      capabilities: ["subscribe-video", "interactive-audio"]
+    });
+    await waitFor(teachingClient, "endpoint.registered");
+
+    await page.goto("/");
+    await page.getByLabel("信令地址").fill(url);
+    await page.getByLabel("本端 ID").fill("or-ui");
+    await page.getByLabel("本端名称").fill("OR UI");
+    await page.getByRole("button", { name: "连接信令" }).click();
+    await expect(page.getByText("已注册 OR UI")).toBeVisible();
+
+    send(teachingClient, "call.request", { toEndpointId: "or-ui", mode: "interactive" });
+    await waitFor(teachingClient, "call.requested");
+    await expect(page.getByText("待确认呼叫")).toBeVisible();
+    await page.getByLabel("接受确认").selectOption("view");
+
+    const started = waitFor(teachingClient, "session.started");
+    await page.getByRole("button", { name: "接受呼叫" }).click();
+    const session = await started;
+    assert.equal(session.payload.session.mode, "view");
+    await expect(page.locator(".session-list dd").filter({ hasText: "仅收看" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "建立音频通话" })).toBeDisabled();
+  } finally {
+    teachingClient.close();
+    await server.stop();
+  }
+});
+
 test("phase 2 UI updates participant list after observer joins signaling session", async ({ page }) => {
   const server = createSignalingServer({ port: 0 });
   const address = await server.start();
