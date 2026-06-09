@@ -194,6 +194,15 @@ function resolveMode(requestMode, confirmMode) {
   return requestMode === "view" || confirmMode === "view" ? "view" : "interactive";
 }
 
+function isValidWebSocketUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "ws:" || url.protocol === "wss:";
+  } catch {
+    return false;
+  }
+}
+
 function endpointLabel(endpoint) {
   if (!endpoint) return "未知终端";
   return `${endpoint.name || endpoint.endpointId}${endpoint.address ? ` (${endpoint.address})` : ""}`;
@@ -621,7 +630,21 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     setSignalingState({ connected: false, label: "连接中" });
     setStatus("正在连接信令服务器...");
 
-    const ws = new WebSocket(signalingUrl.trim() || DEFAULT_SIGNALING_URL);
+    const nextUrl = signalingUrl.trim() || DEFAULT_SIGNALING_URL;
+    if (!isValidWebSocketUrl(nextUrl)) {
+      setSignalingState({ connected: false, label: "连接错误" });
+      setStatus("信令地址无效：必须使用 ws:// 或 wss:// 地址。");
+      return;
+    }
+
+    let ws;
+    try {
+      ws = new WebSocket(nextUrl);
+    } catch (error) {
+      setSignalingState({ connected: false, label: "连接错误" });
+      setStatus(`信令地址无效：${error.message}`);
+      return;
+    }
     signalingSocket.current = ws;
     ws.onopen = () => {
       ws.send(

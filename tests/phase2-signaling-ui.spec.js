@@ -232,3 +232,11 @@ test("phase 2 UI rejects incoming signaling call", async ({ page }) => {
     await server.stop();
   }
 });
+
+test("phase 2 UI reports invalid signaling URL", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("信令地址").fill("not-a-websocket-url");
+  await page.getByRole("button", { name: "连接信令" }).click();
+  await expect(page.getByText("连接错误")).toBeVisible();
+  await expect(page.locator(".footer")).toContainText("信令地址无效");
+});
