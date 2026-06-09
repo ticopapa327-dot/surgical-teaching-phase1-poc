@@ -98,6 +98,18 @@ function publicSession(session) {
   };
 }
 
+function publicCall(call) {
+  return {
+    callId: call.callId,
+    fromEndpointId: call.fromEndpointId,
+    toEndpointId: call.toEndpointId,
+    requestedMode: call.requestedMode,
+    participantLimit: call.participantLimit,
+    createdAt: call.createdAt,
+    expiresAt: call.expiresAt
+  };
+}
+
 function resolveMode(requestMode, acceptMode) {
   return requestMode === "view" || acceptMode === "view" ? "view" : "interactive";
 }
@@ -112,9 +124,16 @@ function normalizeParticipantLimit(value) {
   return Math.max(2, Math.min(16, Math.trunc(numericValue)));
 }
 
+function normalizeCallTimeoutMs(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue) || numericValue <= 0) return 60000;
+  return Math.max(10, Math.trunc(numericValue));
+}
+
 function createSignalingServer(options = {}) {
   const port = options.port ?? Number(process.env.SIGNALING_PORT || 7077);
   const host = options.host || process.env.SIGNALING_HOST || "127.0.0.1";
+  const callTimeoutMs = normalizeCallTimeoutMs(options.callTimeoutMs ?? process.env.SIGNALING_CALL_TIMEOUT_MS);
   const endpoints = new Map();
   const sockets = new Map();
   const pendingCalls = new Map();
@@ -193,8 +212,13 @@ function createSignalingServer(options = {}) {
     return Array.from(sessions.values()).some((session) => session.participants.includes(endpointId));
   }
 
-  function cancelPendingCall(call, canceledByEndpointId, reason = "canceled", requestId = null) {
+  function clearPendingCall(call) {
+    if (call.timeoutHandle) clearTimeout(call.timeoutHandle);
     pendingCalls.delete(call.callId);
+  }
+
+  function cancelPendingCall(call, canceledByEndpointId, reason = "canceled", requestId = null) {
+    clearPendingCall(call);
     const payload = {
       callId: call.callId,
       canceledByEndpointId,
@@ -313,12 +337,18 @@ function createSignalingServer(options = {}) {
         requestedMode: normalizeMode(payload.mode),
         participantLimit:
           fromEndpoint.role === "operating-room" ? normalizeParticipantLimit(payload.participantLimit) : null,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + callTimeoutMs).toISOString(),
+        timeoutHandle: null
       };
+      call.timeoutHandle = setTimeout(() => {
+        const activeCall = pendingCalls.get(call.callId);
+        if (activeCall) cancelPendingCall(activeCall, "server", "timeout");
+      }, callTimeoutMs);
       pendingCalls.set(call.callId, call);
-      send(ws, "call.requested", { call }, requestId);
+      send(ws, "call.requested", { call: publicCall(call) }, requestId);
       send(targetSocket, "call.incoming", {
-        call,
+        call: publicCall(call),
         from: publicEndpoint(fromEndpoint)
       });
       return;
@@ -330,7 +360,7 @@ function createSignalingServer(options = {}) {
         send(ws, "error", { code: "call_not_found", message: "pending call not found" }, requestId);
         return;
       }
-      pendingCalls.delete(call.callId);
+      clearPendingCall(call);
       const callerEndpoint = endpoints.get(call.fromEndpointId);
       const participantLimit =
         fromEndpoint.role === "operating-room"
@@ -370,7 +400,7 @@ function createSignalingServer(options = {}) {
         send(ws, "error", { code: "call_not_found", message: "pending call not found" }, requestId);
         return;
       }
-      pendingCalls.delete(call.callId);
+      clearPendingCall(call);
       const callerSocket = sockets.get(call.fromEndpointId);
       if (callerSocket) {
         send(callerSocket, "call.rejected", { callId: call.callId, byEndpointId: fromEndpoint.endpointId });
@@ -520,6 +550,10 @@ function createSignalingServer(options = {}) {
 
   function stop() {
     return new Promise((resolve) => {
+      for (const call of pendingCalls.values()) {
+        if (call.timeoutHandle) clearTimeout(call.timeoutHandle);
+      }
+      pendingCalls.clear();
       for (const ws of wss.clients) ws.close();
       wss.close(() => httpServer.close(resolve));
     });

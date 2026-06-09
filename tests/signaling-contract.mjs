@@ -372,6 +372,40 @@ async function main() {
   teachingClient.close();
   observerClient.close();
   await server.stop();
+
+  const timeoutServer = createSignalingServer({ port: 0, callTimeoutMs: 25 });
+  const timeoutAddress = await timeoutServer.start();
+  const timeoutUrl = `ws://127.0.0.1:${timeoutAddress.port}/signal`;
+  const timeoutHttpBase = `http://127.0.0.1:${timeoutAddress.port}`;
+  const timeoutCaller = await connect(timeoutUrl);
+  const timeoutTarget = await connect(timeoutUrl);
+
+  send(timeoutCaller, "endpoint.register", {
+    endpointId: "timeout-caller",
+    role: "teaching-room",
+    name: "Timeout Caller"
+  });
+  await waitFor(timeoutCaller, "endpoint.registered");
+  send(timeoutTarget, "endpoint.register", {
+    endpointId: "timeout-target",
+    role: "operating-room",
+    name: "Timeout Target"
+  });
+  await waitFor(timeoutTarget, "endpoint.registered");
+  const callerTimeout = waitFor(timeoutCaller, "call.canceled", (message) => message.payload.reason === "timeout");
+  const targetTimeout = waitFor(timeoutTarget, "call.canceled", (message) => message.payload.reason === "timeout");
+  send(timeoutCaller, "call.request", { toEndpointId: "timeout-target", mode: "interactive" });
+  const timeoutRequest = await waitFor(timeoutCaller, "call.requested");
+  assert.equal(Boolean(timeoutRequest.payload.call.expiresAt), true);
+  await waitFor(timeoutTarget, "call.incoming", (message) => message.payload.call.callId === timeoutRequest.payload.call.callId);
+  const [callerCanceled, targetCanceled] = await Promise.all([callerTimeout, targetTimeout]);
+  assert.equal(callerCanceled.payload.callId, timeoutRequest.payload.call.callId);
+  assert.equal(targetCanceled.payload.callId, timeoutRequest.payload.call.callId);
+  const timeoutHealth = await getJson(`${timeoutHttpBase}/health`);
+  assert.equal(timeoutHealth.pendingCalls, 0);
+  timeoutCaller.close();
+  timeoutTarget.close();
+  await timeoutServer.stop();
   console.log("signaling contract test passed");
 }
 
