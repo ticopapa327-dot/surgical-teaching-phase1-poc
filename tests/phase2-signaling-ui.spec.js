@@ -148,6 +148,7 @@ test("phase 2 UI accepts incoming signaling call", async ({ page }) => {
     const session = await started;
     assert.equal(session.payload.session.mode, "view");
     await expect(page.locator(".session-list dd").filter({ hasText: "仅收看" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "建立音频通话" })).toBeDisabled();
   } finally {
     teachingClient.close();
     await server.stop();
