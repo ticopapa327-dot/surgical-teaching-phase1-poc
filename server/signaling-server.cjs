@@ -28,6 +28,19 @@ function normalizeChannels(channels) {
   }));
 }
 
+function normalizeSubscriptionChannels(channels) {
+  const candidates = Array.isArray(channels) && channels.length ? channels : ["ch1"];
+  const normalized = [];
+  for (const channel of candidates) {
+    if (typeof channel !== "string") continue;
+    const channelId = channel.trim().slice(0, 32);
+    if (!channelId || normalized.includes(channelId)) continue;
+    normalized.push(channelId);
+    if (normalized.length >= 4) break;
+  }
+  return normalized.length ? normalized : ["ch1"];
+}
+
 function publicEndpoint(endpoint) {
   return {
     endpointId: endpoint.endpointId,
@@ -300,8 +313,7 @@ function createSignalingServer(options = {}) {
         send(ws, "error", { code: "session_not_found", message: "session not found" }, requestId);
         return;
       }
-      const channels = Array.isArray(payload.channels) && payload.channels.length ? payload.channels : ["ch1"];
-      session.subscriptions[fromEndpoint.endpointId] = [...new Set(channels)].slice(0, 4);
+      session.subscriptions[fromEndpoint.endpointId] = normalizeSubscriptionChannels(payload.channels);
       notifySession(session);
       send(ws, "session.subscribed", { session: publicSession(session) }, requestId);
       return;

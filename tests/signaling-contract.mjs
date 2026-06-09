@@ -162,6 +162,19 @@ async function main() {
   const subscribed = await waitFor(teachingClient, "session.subscribed");
   assert.deepEqual(subscribed.payload.session.subscriptions["teach-1"], ["ch1", "ch2", "ch3"]);
 
+  const longChannelId = "channel-id-that-is-longer-than-thirty-two-characters";
+  send(teachingClient, "session.subscribe", {
+    sessionId: session.sessionId,
+    channels: ["ch4", "", { id: "bad" }, "ch4", longChannelId, "ch2", "ch3", "ch1"]
+  });
+  const sanitizedSubscription = await waitFor(teachingClient, "session.subscribed");
+  assert.deepEqual(sanitizedSubscription.payload.session.subscriptions["teach-1"], [
+    "ch4",
+    longChannelId.slice(0, 32),
+    "ch2",
+    "ch3"
+  ]);
+
   send(teachingClient, "session.annotation", {
     sessionId: session.sessionId,
     text: "Forbidden annotation",
