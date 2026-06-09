@@ -1,0 +1,22 @@
+{
+  "name": "surgical-teaching-phase1-poc",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Phase 1 PoC for Windows C/S surgical teaching software: 4-channel USB preview, selective recording, audio capture and local playback index.",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron .\"",
+    "build": "vite build",
+    "start": "electron ."
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^4.6.0",
+    "concurrently": "^10.0.3",
+    "electron": "^39.2.7",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
+    "typescript": "^5.9.3",
+    "vite": "^7.2.7",
+    "wait-on": "^9.0.3"
+  }
+}
