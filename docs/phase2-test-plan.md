@@ -83,6 +83,7 @@
 | P2-67 | 连接后注册身份锁定 | 前端完成信令连接和注册后查看信令地址、本端 ID 和本端角色控件。 | 这些注册身份字段保持禁用，避免会话中修改导致本端身份漂移。 |  |
 | P2-68 | Owner 离会结束多人会话 | 三方会话中，手术室 owner 发送 `session.leave`。 | owner 收到 `session.left`，剩余参与方收到 reason 为 `owner_left` 的 `session.ended`，服务端移除该会话。 |  |
 | P2-69 | 扩展窗口目标显示器 | Electron API 返回多个显示器时，前端选择扩展显示器并点击远端画面扩展窗口。 | 弹窗打开对应通道画面，前端状态显示目标扩展显示器；浏览器模式无显示器清单时仍使用默认窗口位置。 |  |
+| P2-70 | 协议错误分支完整性 | 对离线目标、缺失呼叫、缺失会话、非参会目标和缺失 peer.signal 负载分别发送请求。 | 服务端分别返回 `target_offline`、`call_not_found`、`session_not_found`、`target_not_in_session` 和 `bad_signal`。 |  |
 
 ## 自动化冒烟测试
 

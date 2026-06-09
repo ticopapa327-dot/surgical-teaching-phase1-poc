@@ -133,6 +133,24 @@ async function main() {
   const selfCallError = await waitFor(orClient, "error", (message) => message.payload.code === "self_call_forbidden");
   assert.equal(selfCallError.payload.code, "self_call_forbidden");
 
+  send(orClient, "call.request", { toEndpointId: "missing-endpoint", mode: "interactive" });
+  const targetOffline = await waitFor(orClient, "error", (message) => message.payload.code === "target_offline");
+  assert.equal(targetOffline.payload.code, "target_offline");
+
+  send(orClient, "call.accept", { callId: "missing-call", mode: "interactive" });
+  const missingAccept = await waitFor(orClient, "error", (message) => message.payload.code === "call_not_found");
+  assert.equal(missingAccept.payload.code, "call_not_found");
+  send(orClient, "call.reject", { callId: "missing-call" });
+  const missingReject = await waitFor(orClient, "error", (message) => message.payload.code === "call_not_found");
+  assert.equal(missingReject.payload.code, "call_not_found");
+  send(orClient, "call.cancel", { callId: "missing-call" });
+  const missingCancel = await waitFor(orClient, "error", (message) => message.payload.code === "call_not_found");
+  assert.equal(missingCancel.payload.code, "call_not_found");
+
+  send(orClient, "session.join", { sessionId: "missing-session" });
+  const missingJoinSession = await waitFor(orClient, "error", (message) => message.payload.code === "session_not_found");
+  assert.equal(missingJoinSession.payload.code, "session_not_found");
+
   send(teachingClient, "call.request", { toEndpointId: "or-1", mode: "view" });
   const cancelableCall = await waitFor(teachingClient, "call.requested");
   await waitFor(orClient, "call.incoming", (message) => message.payload.call.callId === cancelableCall.payload.call.callId);
@@ -364,6 +382,36 @@ async function main() {
   assert.equal(relayedOffer.payload.signal.type, "offer");
   const signalSent = await waitFor(teachingClient, "peer.signal.sent");
   assert.equal(signalSent.payload.toEndpointId, "or-1");
+
+  send(teachingClient, "peer.signal", {
+    sessionId: session.sessionId,
+    toEndpointId: "observer-1",
+    signal: { type: "offer", sdp: "v=0" }
+  });
+  const targetNotInSession = await waitFor(
+    teachingClient,
+    "error",
+    (message) => message.payload.code === "target_not_in_session"
+  );
+  assert.equal(targetNotInSession.payload.code, "target_not_in_session");
+
+  send(teachingClient, "peer.signal", {
+    sessionId: session.sessionId,
+    toEndpointId: "or-1"
+  });
+  const badSignal = await waitFor(teachingClient, "error", (message) => message.payload.code === "bad_signal");
+  assert.equal(badSignal.payload.code, "bad_signal");
+
+  send(observerClient, "session.subscribe", {
+    sessionId: session.sessionId,
+    channels: ["ch1"]
+  });
+  const observerSubscribeRejected = await waitFor(
+    observerClient,
+    "error",
+    (message) => message.payload.code === "session_not_found"
+  );
+  assert.equal(observerSubscribeRejected.payload.code, "session_not_found");
 
   send(teachingClient, "session.subscribe", {
     sessionId: session.sessionId,
