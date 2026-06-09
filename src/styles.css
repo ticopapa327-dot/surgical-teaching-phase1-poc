@@ -450,6 +450,11 @@ input {
   overflow-wrap: anywhere;
 }
 
+.playback-panel .button-row span {
+  align-self: center;
+  color: #53616f;
+}
+
 .playback-panel video {
   width: 100%;
   max-height: 220px;

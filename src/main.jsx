@@ -257,6 +257,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   const [patientQuery, setPatientQuery] = useState("HIS-001");
   const [currentPatient, setCurrentPatient] = useState(null);
   const [patientStatus, setPatientStatus] = useState("未绑定患者");
+  const [aiJobs, setAiJobs] = useState([]);
 
   const [signalingUrl, setSignalingUrl] = useState(initialConfig.signalingUrl);
   const [localEndpointId, setLocalEndpointId] = useState(initialConfig.localEndpoint?.id || DEFAULT_APP_CONFIG.localEndpoint.id);
@@ -542,6 +543,20 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     setCurrentPatient(null);
     setPatientStatus("未绑定患者");
     setStatus("已清除患者绑定。");
+  }
+
+  function enqueueAiJob(recording) {
+    if (!recording) return;
+    const job = {
+      id: `ai-${Date.now()}`,
+      recordingId: recording.id,
+      channelLabel: recording.channelLabel,
+      patient: recording.patient || null,
+      status: "queued",
+      createdAt: new Date().toISOString()
+    };
+    setAiJobs((jobs) => [job, ...jobs]);
+    setStatus(`AI 处理任务已加入本地模拟队列：${recording.channelLabel}`);
   }
 
   function selectedTarget() {
@@ -1447,6 +1462,12 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
         <div>
           <h2>基础回放</h2>
           <p>{selectedPlayback ? selectedPlayback.fileName : "请选择一条录像记录。"}</p>
+          <div className="button-row">
+            <button onClick={() => enqueueAiJob(selectedPlayback)} disabled={!selectedPlayback}>
+              加入 AI 队列
+            </button>
+            <span>AI 队列：{aiJobs.length}</span>
+          </div>
         </div>
         <video src={selectedPlayback?.fileUrl || ""} controls />
       </section>

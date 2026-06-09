@@ -33,6 +33,7 @@
 - 信令服务支持会话内 `peer.signal` 透传，用于后续 WebRTC offer、answer 和 ICE 候选协商。
 - 前端可调用信令 `/health` 显示终端、会话和待处理呼叫数量。
 - 提供模拟 HIS 查询与患者绑定面板，新录像可写入患者元数据。
+- 录像可加入本地模拟 AI 处理队列，为后续识别服务预留任务接口。
 
 ## 技术边界
 
@@ -97,6 +98,7 @@ npm run test:signaling
 - [Phase 2 阶段状态与边界](docs/phase2-status.md)
 - [Phase 2 信令协议说明](docs/signaling-protocol.md)
 - [阶段 3 患者绑定测试计划](docs/phase3-test-plan.md)
+- [AI 处理接口预留说明](docs/ai-interface.md)
 
 ## 已知限制
 

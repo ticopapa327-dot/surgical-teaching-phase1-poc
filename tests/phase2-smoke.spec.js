@@ -17,6 +17,10 @@ test("phase 2 call workflow renders and reaches active interaction state", async
   await page.locator(".top-actions button.danger").click();
   await expect(page.locator(".recording-item")).toHaveCount(1);
   await expect(page.locator(".recording-item").filter({ hasText: "患者：患者 001 / HIS-001" })).toBeVisible();
+  await page.locator(".recording-main").first().click();
+  await page.getByRole("button", { name: "加入 AI 队列" }).click();
+  await expect(page.getByText("AI 队列：1")).toBeVisible();
+  await expect(page.locator(".footer")).toContainText("AI 处理任务已加入本地模拟队列");
 
   await expect(page.getByText("阶段 2 呼叫控制")).toBeVisible();
 
