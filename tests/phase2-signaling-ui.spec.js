@@ -212,6 +212,73 @@ test("phase 2 UI updates participant list after observer joins signaling session
   }
 });
 
+test("phase 2 UI leaves a signaling session without ending the remaining meeting", async ({ page }) => {
+  const server = createSignalingServer({ port: 0 });
+  const address = await server.start();
+  const url = `ws://127.0.0.1:${address.port}/signal`;
+  const orClient = await connect(url);
+  const observerClient = await connect(url);
+
+  try {
+    send(orClient, "endpoint.register", {
+      endpointId: "or-leave-host",
+      role: "operating-room",
+      name: "Leave Host OR",
+      address: "192.168.10.52",
+      capabilities: ["call-control", "publish-video", "interactive-audio"]
+    });
+    await waitFor(orClient, "endpoint.registered");
+
+    send(observerClient, "endpoint.register", {
+      endpointId: "observer-leave",
+      role: "observer",
+      name: "Leave Observer",
+      address: "192.168.10.53",
+      capabilities: ["subscribe-video"]
+    });
+    await waitFor(observerClient, "endpoint.registered");
+
+    await page.goto("/");
+    await page.getByLabel("信令地址").fill(url);
+    await page.getByLabel("本端 ID").fill("teach-ui");
+    await page.getByLabel("本端名称").fill("Teaching UI");
+    await page.getByLabel("本端角色").selectOption("teaching-room");
+    await page.getByRole("button", { name: "连接信令" }).click();
+    await expect(page.getByText("已注册 Teaching UI")).toBeVisible();
+
+    send(orClient, "call.request", { toEndpointId: "teach-ui", mode: "interactive", participantLimit: 3 });
+    await waitFor(orClient, "call.requested");
+    await expect(page.getByText("待确认呼叫")).toBeVisible();
+
+    const startedForOr = waitFor(orClient, "session.started");
+    await page.getByRole("button", { name: "接受呼叫" }).click();
+    const started = await startedForOr;
+    await expect(page.locator(".session-list dd").filter({ hasText: "2 / 3" })).toBeVisible();
+
+    send(observerClient, "session.join", { sessionId: started.payload.session.sessionId });
+    await waitFor(observerClient, "session.joined");
+    await expect(page.locator(".session-list dd").filter({ hasText: "3 / 3" })).toBeVisible();
+
+    const remainingUpdate = waitFor(
+      orClient,
+      "session.updated",
+      (message) =>
+        message.payload.session.sessionId === started.payload.session.sessionId &&
+        message.payload.session.participants.length === 2 &&
+        !message.payload.session.participants.includes("teach-ui")
+    );
+    await page.getByRole("button", { name: "离开会话" }).click();
+    const update = await remainingUpdate;
+    assert.deepEqual(update.payload.session.participants.sort(), ["observer-leave", "or-leave-host"]);
+    await expect(page.getByText("尚未建立互动连接")).toBeVisible();
+    await expect(page.locator(".footer")).toContainText("已离开信令会话");
+  } finally {
+    orClient.close();
+    observerClient.close();
+    await server.stop();
+  }
+});
+
 test("phase 2 UI rejects incoming signaling call", async ({ page }) => {
   const server = createSignalingServer({ port: 0 });
   const address = await server.start();

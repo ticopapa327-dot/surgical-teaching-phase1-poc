@@ -698,6 +698,11 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       return;
     }
 
+    if (type === "session.left") {
+      clearLocalSession("已离开信令会话。");
+      return;
+    }
+
     if (type === "session.ended") {
       const action = payload.reason === "endpoint_disconnected" ? "断开" : "结束";
       clearLocalSession(`信令会话已由 ${endpointLabelById(payload.endedByEndpointId)} ${action}。`);
@@ -979,6 +984,16 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       return;
     }
     clearLocalSession();
+  }
+
+  function leaveSession() {
+    if (activeSession?.source === "signaling") {
+      if (sendSignaling("session.leave", { sessionId: activeSession.id })) {
+        setStatus("已发送离开信令会话请求。");
+      }
+      return;
+    }
+    clearLocalSession("已离开互动连接。");
   }
 
   async function toggleRemoteChannel(channelId, checked) {
@@ -1415,6 +1430,9 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
               </button>
               <button className="danger" onClick={rejectCall} disabled={!pendingCall}>
                 {pendingCall?.direction === "signaling-outgoing" ? "取消呼叫" : "拒绝"}
+              </button>
+              <button onClick={leaveSession} disabled={!activeSession}>
+                离开会话
               </button>
               <button className="danger" onClick={closeSession} disabled={!activeSession}>
                 结束连接
