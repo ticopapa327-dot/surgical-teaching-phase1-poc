@@ -9,6 +9,11 @@ test("recording list supports deleting a completed recording", async ({ page }) 
   await page.locator(".top-actions button.danger").click();
 
   await expect(page.locator(".recording-item")).toHaveCount(1);
+  const downloadPromise = page.waitForEvent("download");
+  await page.locator(".recording-actions").getByRole("button", { name: "导出" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toContain(".webm");
+
   await page.locator(".recording-actions").getByRole("button", { name: "删除" }).click();
   await expect(page.locator(".recording-item")).toHaveCount(0);
   await expect(page.getByText("暂无录像。完成录制后会自动生成索引。")).toBeVisible();

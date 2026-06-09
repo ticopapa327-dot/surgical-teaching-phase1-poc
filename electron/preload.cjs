@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld("surgicalApi", {
     list: () => ipcRenderer.invoke("recording:list"),
     delete: (id) => ipcRenderer.invoke("recording:delete", id),
     reveal: (id) => ipcRenderer.invoke("recording:reveal", id),
+    export: (id) => ipcRenderer.invoke("recording:export", id),
     openRoot: () => ipcRenderer.invoke("recording:open-root")
   }
 });

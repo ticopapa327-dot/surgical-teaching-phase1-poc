@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, protocol, shell, session, net } = require("electron");
+const { app, BrowserWindow, ipcMain, protocol, shell, session, net, dialog } = require("electron");
 const fs = require("fs");
 const path = require("path");
 const { pathToFileURL } = require("url");
@@ -208,6 +208,20 @@ ipcMain.handle("recording:reveal", (_event, id) => {
   if (!item || !item.filePath) return { ok: false, reason: "recording_not_found" };
   shell.showItemInFolder(item.filePath);
   return { ok: true };
+});
+
+ipcMain.handle("recording:export", async (_event, id) => {
+  const item = readIndex().find((entry) => entry.id === id);
+  if (!item || !item.filePath || !fs.existsSync(item.filePath)) {
+    return { ok: false, reason: "recording_not_found" };
+  }
+  const result = await dialog.showSaveDialog({
+    title: "导出录像",
+    defaultPath: item.fileName || path.basename(item.filePath)
+  });
+  if (result.canceled || !result.filePath) return { ok: false, reason: "canceled" };
+  fs.copyFileSync(item.filePath, result.filePath);
+  return { ok: true, filePath: result.filePath };
 });
 
 ipcMain.handle("recording:open-root", () => {

@@ -98,6 +98,15 @@ const api = window.surgicalApi || {
       return { ok: true };
     },
     reveal: async () => ({ ok: true }),
+    export: async (id) => {
+      const item = browserRecordingStore.index.find((record) => record.id === id);
+      if (!item?.fileUrl) return { ok: false, reason: "recording_not_found" };
+      const link = document.createElement("a");
+      link.href = item.fileUrl;
+      link.download = item.fileName || "recording.webm";
+      link.click();
+      return { ok: true };
+    },
     openRoot: async () => ({ ok: true })
   }
 };
@@ -1173,6 +1182,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
                   </button>
                   <div className="recording-actions">
                     <button onClick={() => api.recordings.reveal(item.id)}>定位</button>
+                    <button onClick={() => api.recordings.export(item.id)}>导出</button>
                     <button
                       className="danger"
                       onClick={async () => {
