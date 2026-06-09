@@ -674,6 +674,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
         requestedMode: call.requestedMode,
         signalingCallId: call.callId
       });
+      setOverLimitNotice("");
       setStatus(`信令呼叫已发出，呼叫 ID：${payload.call?.callId || "-"}`);
       return;
     }
@@ -689,18 +690,21 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
         requestedMode: call.requestedMode,
         signalingCallId: call.callId
       });
+      setOverLimitNotice("");
       setStatus(`${endpointLabel(payload.from)} 通过信令发起 ${modeLabel(call.requestedMode)} 呼叫。`);
       return;
     }
 
     if (type === "call.rejected") {
       setPendingCall(null);
+      setOverLimitNotice("");
       setStatus("信令呼叫已被拒绝。");
       return;
     }
 
     if (type === "call.canceled") {
       setPendingCall(null);
+      setOverLimitNotice("");
       setStatus(`信令呼叫已取消：${canceledReasonLabel(payload.reason)}。`);
       return;
     }
