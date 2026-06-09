@@ -218,6 +218,17 @@ function modeLabel(mode) {
   return mode === "interactive" ? "交互模式" : "仅收看";
 }
 
+function canceledReasonLabel(reason) {
+  const labels = {
+    timeout: "超时",
+    caller_canceled: "发起方取消",
+    endpoint_disconnected: "终端断开",
+    endpoint_reregistered: "终端重新注册",
+    canceled: "已取消"
+  };
+  return labels[reason] || reason || "已取消";
+}
+
 function resolveMode(requestMode, confirmMode) {
   return requestMode === "view" || confirmMode === "view" ? "view" : "interactive";
 }
@@ -690,7 +701,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
 
     if (type === "call.canceled") {
       setPendingCall(null);
-      setStatus(`信令呼叫已取消：${payload.reason || "canceled"}。`);
+      setStatus(`信令呼叫已取消：${canceledReasonLabel(payload.reason)}。`);
       return;
     }
 
