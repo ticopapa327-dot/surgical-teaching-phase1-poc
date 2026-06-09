@@ -1465,7 +1465,11 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
             <div className="form-grid signal-grid">
               <label>
                 信令地址
-                <input value={signalingUrl} onChange={(event) => setSignalingUrl(event.target.value)} />
+                <input
+                  value={signalingUrl}
+                  onChange={(event) => setSignalingUrl(event.target.value)}
+                  disabled={signalingState.connected}
+                />
               </label>
               <label>
                 信令令牌
@@ -1473,19 +1477,32 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
                   type="password"
                   value={signalingToken}
                   onChange={(event) => setSignalingToken(event.target.value)}
+                  disabled={signalingState.connected}
                 />
               </label>
               <label>
                 本端 ID
-                <input value={localEndpointId} onChange={(event) => setLocalEndpointId(event.target.value)} />
+                <input
+                  value={localEndpointId}
+                  onChange={(event) => setLocalEndpointId(event.target.value)}
+                  disabled={signalingState.connected}
+                />
               </label>
               <label>
                 本端名称
-                <input value={localEndpointName} onChange={(event) => setLocalEndpointName(event.target.value)} />
+                <input
+                  value={localEndpointName}
+                  onChange={(event) => setLocalEndpointName(event.target.value)}
+                  disabled={signalingState.connected}
+                />
               </label>
               <label>
                 本端角色
-                <select value={localEndpointRole} onChange={(event) => setLocalEndpointRole(event.target.value)}>
+                <select
+                  value={localEndpointRole}
+                  onChange={(event) => setLocalEndpointRole(event.target.value)}
+                  disabled={signalingState.connected}
+                >
                   <option value="operating-room">手术室端</option>
                   <option value="teaching-room">示教室端</option>
                   <option value="observer">观摩端</option>
