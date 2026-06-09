@@ -942,10 +942,12 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     ws.onclose = () => {
       if (signalingSocket.current === ws) {
         const closeMessage = signalingCloseMessageRef.current || "信令连接已断开，已清理信令会话状态。";
+        const sessionWasSignaling = activeSessionRef.current?.source === "signaling";
         signalingCloseMessageRef.current = "";
         signalingSocket.current = null;
         setPendingCall(null);
         activeSessionRef.current = null;
+        if (sessionWasSignaling) stopInteractionAudio();
         setActiveSession((session) => (session?.source === "signaling" ? null : session));
         setOverLimitNotice("");
         setSignalingSessions([]);
@@ -956,11 +958,13 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   }
 
   function disconnectSignaling() {
+    const sessionWasSignaling = activeSessionRef.current?.source === "signaling";
     signalingSocket.current?.close();
     signalingSocket.current = null;
     signalingCloseMessageRef.current = "";
     setPendingCall(null);
     activeSessionRef.current = null;
+    if (sessionWasSignaling) stopInteractionAudio();
     setActiveSession((session) => (session?.source === "signaling" ? null : session));
     setOverLimitNotice("");
     setSignalingDirectory([]);

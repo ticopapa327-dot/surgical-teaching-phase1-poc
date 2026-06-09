@@ -938,8 +938,12 @@ test("phase 2 UI clears signaling session when the user disconnects signaling", 
     });
     await expect(page.locator(".session-list dd").filter({ hasText: "交互模式" })).toBeVisible();
 
+    await page.getByRole("button", { name: "建立音频通话" }).click();
+    await expect(page.locator(".status-list dd").filter({ hasText: "已建立，本地音频轨道" })).toBeVisible();
+
     await page.getByRole("button", { name: "断开" }).click();
     await expect(page.getByText("尚未建立互动连接")).toBeVisible();
+    await expect(page.locator(".status-list dd").filter({ hasText: "未建立" })).toBeVisible();
     await expect(page.locator(".status-list.compact dd").filter({ hasText: "未连接" })).toBeVisible();
     await expect(page.locator(".footer")).toContainText("已清理信令会话状态");
   } finally {
@@ -983,9 +987,13 @@ test("phase 2 UI clears signaling session when server disconnects", async ({ pag
     });
     await expect(page.locator(".session-list dd").filter({ hasText: "交互模式" })).toBeVisible();
 
+    await page.getByRole("button", { name: "建立音频通话" }).click();
+    await expect(page.locator(".status-list dd").filter({ hasText: "已建立，本地音频轨道" })).toBeVisible();
+
     await server.stop();
     stopped = true;
     await expect(page.getByText("尚未建立互动连接")).toBeVisible();
+    await expect(page.locator(".status-list dd").filter({ hasText: "未建立" })).toBeVisible();
     await expect(page.locator(".footer")).toContainText("信令连接已断开");
   } finally {
     teachingClient.close();
