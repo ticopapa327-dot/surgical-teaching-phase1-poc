@@ -71,6 +71,14 @@ npm run server:signaling
 
 默认监听 `ws://127.0.0.1:7077/signal`，健康检查地址为 `http://127.0.0.1:7077/health`，在线会话摘要地址为 `http://127.0.0.1:7077/sessions`，控制面事件地址为 `http://127.0.0.1:7077/events`。
 
+信令服务支持以下环境变量：
+
+- `SIGNALING_HOST`：监听地址，默认 `127.0.0.1`。
+- `SIGNALING_PORT`：监听端口，默认 `7077`。
+- `SIGNALING_AUTH_TOKEN`：可选共享令牌；设置后 WebSocket 注册和 HTTP 目录/事件接口需要令牌。
+- `SIGNALING_CALL_TIMEOUT_MS`：待处理呼叫超时时间，默认 `60000`。
+- `SIGNALING_EVENT_LOG_LIMIT`：内存事件日志保留条数，默认 `200`，范围 `20` 到 `1000`。
+
 ## 配置
 
 前端启动时会读取 [public/config.json](public/config.json) 作为运行时默认配置。当前支持：
