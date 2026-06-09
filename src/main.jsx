@@ -203,6 +203,15 @@ function isValidWebSocketUrl(value) {
   }
 }
 
+function healthUrlFromSignalingUrl(value) {
+  const url = new URL(value);
+  url.protocol = url.protocol === "wss:" ? "https:" : "http:";
+  url.pathname = "/health";
+  url.search = "";
+  url.hash = "";
+  return url.toString();
+}
+
 function endpointLabel(endpoint) {
   if (!endpoint) return "未知终端";
   return `${endpoint.name || endpoint.endpointId}${endpoint.address ? ` (${endpoint.address})` : ""}`;
@@ -238,6 +247,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   const [signalingState, setSignalingState] = useState({ connected: false, label: "未连接" });
   const [signalingDirectory, setSignalingDirectory] = useState([]);
   const [signalingTargetId, setSignalingTargetId] = useState("");
+  const [signalingHealth, setSignalingHealth] = useState("-");
 
   const [callTargetId, setCallTargetId] = useState(ADDRESS_BOOK[0].id);
   const [customAddress, setCustomAddress] = useState("");
@@ -703,6 +713,25 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     }
   }
 
+  async function checkSignalingHealth() {
+    const nextUrl = signalingUrl.trim() || DEFAULT_SIGNALING_URL;
+    if (!isValidWebSocketUrl(nextUrl)) {
+      setSignalingHealth("地址无效");
+      setStatus("信令地址无效：必须使用 ws:// 或 wss:// 地址。");
+      return;
+    }
+    try {
+      const response = await fetch(healthUrlFromSignalingUrl(nextUrl), { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const health = await response.json();
+      setSignalingHealth(`${health.endpoints} 终端 / ${health.sessions} 会话 / ${health.pendingCalls} 呼叫`);
+      setStatus("信令健康检查正常。");
+    } catch (error) {
+      setSignalingHealth("检查失败");
+      setStatus(`信令健康检查失败：${error.message}`);
+    }
+  }
+
   function syncSignalingAnnotation(text, visible) {
     if (activeSession?.source !== "signaling") return;
     sendSignaling("session.annotation", {
@@ -1121,6 +1150,10 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
                 <dd>{signalingDirectory.length} 个终端</dd>
               </div>
               <div>
+                <dt>健康检查</dt>
+                <dd>{signalingHealth}</dd>
+              </div>
+              <div>
                 <dt>目标通道</dt>
                 <dd>{selectedTargetChannels}</dd>
               </div>
@@ -1132,6 +1165,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
               <button onClick={disconnectSignaling} disabled={!signalingState.connected}>
                 断开
               </button>
+              <button onClick={checkSignalingHealth}>检查健康</button>
               <button
                 onClick={requestSignalingCall}
                 disabled={!signalingState.connected || !signalingTargetId || Boolean(activeSession || pendingCall)}

@@ -58,6 +58,8 @@ test("phase 2 UI connects to signaling server and enters accepted session", asyn
     await page.getByRole("button", { name: "连接信令" }).click();
 
     await expect(page.getByText("已注册 OR UI")).toBeVisible();
+    await page.getByRole("button", { name: "检查健康" }).click();
+    await expect(page.locator(".status-list.compact dd").filter({ hasText: "2 终端 / 0 会话 / 0 呼叫" })).toBeVisible();
     await expect(page.getByLabel("信令目标")).toBeEnabled();
     await page.getByLabel("信令目标").selectOption("teach-remote");
     await expect(page.locator(".status-list.compact dd").filter({ hasText: "remote-ch1 Teaching View" })).toBeVisible();

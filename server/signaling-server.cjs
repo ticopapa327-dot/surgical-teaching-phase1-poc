@@ -65,10 +65,21 @@ function createSignalingServer(options = {}) {
   const sockets = new Map();
   const pendingCalls = new Map();
   const sessions = new Map();
+  const jsonHeaders = {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type"
+  };
 
   const httpServer = http.createServer((req, res) => {
+    if (req.method === "OPTIONS") {
+      res.writeHead(204, jsonHeaders);
+      res.end();
+      return;
+    }
     if (req.url === "/health") {
-      res.writeHead(200, { "Content-Type": "application/json" });
+      res.writeHead(200, jsonHeaders);
       res.end(
         JSON.stringify({
           ok: true,
@@ -80,11 +91,11 @@ function createSignalingServer(options = {}) {
       return;
     }
     if (req.url === "/directory") {
-      res.writeHead(200, { "Content-Type": "application/json" });
+      res.writeHead(200, jsonHeaders);
       res.end(JSON.stringify(Array.from(endpoints.values()).map(publicEndpoint)));
       return;
     }
-    res.writeHead(404, { "Content-Type": "application/json" });
+    res.writeHead(404, jsonHeaders);
     res.end(JSON.stringify({ error: "not_found" }));
   });
 

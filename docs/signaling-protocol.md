@@ -18,6 +18,8 @@
 
 `/health` 返回 `ok`、`endpoints`、`sessions` 和 `pendingCalls`，用于基础运行状态检查。
 
+HTTP 调试接口返回 CORS 头，允许前端工作台从 Vite 或 Electron 页面跨端口读取。
+
 ## 三、消息信封
 
 客户端与服务端均使用 JSON 消息：
