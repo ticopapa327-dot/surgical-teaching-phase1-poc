@@ -194,3 +194,41 @@ test("phase 2 UI updates participant list after observer joins signaling session
     await server.stop();
   }
 });
+
+test("phase 2 UI rejects incoming signaling call", async ({ page }) => {
+  const server = createSignalingServer({ port: 0 });
+  const address = await server.start();
+  const url = `ws://127.0.0.1:${address.port}/signal`;
+  const teachingClient = await connect(url);
+
+  try {
+    send(teachingClient, "endpoint.register", {
+      endpointId: "teach-reject",
+      role: "teaching-room",
+      name: "Reject Teaching Room",
+      address: "192.168.10.36",
+      capabilities: ["subscribe-video", "interactive-audio"]
+    });
+    await waitFor(teachingClient, "endpoint.registered");
+
+    await page.goto("/");
+    await page.getByLabel("信令地址").fill(url);
+    await page.getByLabel("本端 ID").fill("or-ui");
+    await page.getByLabel("本端名称").fill("OR UI");
+    await page.getByRole("button", { name: "连接信令" }).click();
+    await expect(page.getByText("已注册 OR UI")).toBeVisible();
+
+    send(teachingClient, "call.request", { toEndpointId: "or-ui", mode: "interactive" });
+    await waitFor(teachingClient, "call.requested");
+    await expect(page.getByText("待确认呼叫")).toBeVisible();
+
+    const rejected = waitFor(teachingClient, "call.rejected");
+    await page.getByRole("button", { name: "拒绝" }).click();
+    const rejection = await rejected;
+    assert.equal(rejection.payload.byEndpointId, "or-ui");
+    await expect(page.getByText("尚未建立互动连接")).toBeVisible();
+  } finally {
+    teachingClient.close();
+    await server.stop();
+  }
+});
