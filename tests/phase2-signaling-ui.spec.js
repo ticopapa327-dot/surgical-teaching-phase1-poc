@@ -423,6 +423,55 @@ test("phase 2 UI can cancel outgoing signaling call", async ({ page }) => {
   }
 });
 
+test("phase 2 UI reports a busy signaling target", async ({ page }) => {
+  const server = createSignalingServer({ port: 0 });
+  const address = await server.start();
+  const url = `ws://127.0.0.1:${address.port}/signal`;
+  const teachingClient = await connect(url);
+  const otherClient = await connect(url);
+
+  try {
+    send(teachingClient, "endpoint.register", {
+      endpointId: "teach-busy",
+      role: "teaching-room",
+      name: "Busy Teaching Room",
+      address: "192.168.10.39",
+      capabilities: ["subscribe-video", "interactive-audio"]
+    });
+    await waitFor(teachingClient, "endpoint.registered");
+
+    send(otherClient, "endpoint.register", {
+      endpointId: "other-caller",
+      role: "observer",
+      name: "Other Caller",
+      address: "192.168.10.49",
+      capabilities: ["subscribe-video"]
+    });
+    await waitFor(otherClient, "endpoint.registered");
+
+    const busyIncoming = waitFor(teachingClient, "call.incoming");
+    send(otherClient, "call.request", { toEndpointId: "teach-busy", mode: "view" });
+    await waitFor(otherClient, "call.requested");
+    await busyIncoming;
+
+    await page.goto("/");
+    await page.getByLabel("信令地址").fill(url);
+    await page.getByLabel("本端 ID").fill("or-ui");
+    await page.getByLabel("本端名称").fill("OR UI");
+    await page.getByRole("button", { name: "连接信令" }).click();
+    await expect(page.getByText("已注册 OR UI")).toBeVisible();
+    await page.getByLabel("信令目标").selectOption("teach-busy");
+    await page.getByRole("button", { name: "信令呼叫选中终端" }).click();
+
+    await expect(page.locator(".footer")).toContainText("本端或目标终端忙线");
+    await expect(page.getByText("尚未建立互动连接")).toBeVisible();
+  } finally {
+    teachingClient.close();
+    otherClient.close();
+    await server.stop();
+  }
+});
+
 test("phase 2 UI clears canceled incoming signaling call", async ({ page }) => {
   const server = createSignalingServer({ port: 0 });
   const address = await server.start();
