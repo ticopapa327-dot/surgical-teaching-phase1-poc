@@ -19,6 +19,15 @@ function send(ws, type, payload = {}, requestId = null) {
   ws.send(JSON.stringify({ type, requestId, payload }));
 }
 
+function normalizeChannels(channels) {
+  if (!Array.isArray(channels)) return [];
+  return channels.slice(0, 16).map((channel, index) => ({
+    id: String(channel.id || `ch${index + 1}`).slice(0, 32),
+    label: String(channel.label || `Channel ${index + 1}`).slice(0, 80),
+    role: String(channel.role || "").slice(0, 80)
+  }));
+}
+
 function publicEndpoint(endpoint) {
   return {
     endpointId: endpoint.endpointId,
@@ -26,6 +35,7 @@ function publicEndpoint(endpoint) {
     name: endpoint.name,
     address: endpoint.address,
     capabilities: endpoint.capabilities,
+    channels: endpoint.channels,
     online: true,
     registeredAt: endpoint.registeredAt
   };
@@ -135,6 +145,7 @@ function createSignalingServer(options = {}) {
         name: payload.name || endpointId,
         address: payload.address || "",
         capabilities: payload.capabilities || [],
+        channels: normalizeChannels(payload.channels),
         registeredAt: new Date().toISOString()
       };
       endpoints.set(endpointId, endpoint);

@@ -50,7 +50,11 @@
     "role": "operating-room",
     "name": "Operating Room 1",
     "address": "192.168.10.21",
-    "capabilities": ["call-control", "subscribe-video"]
+    "capabilities": ["call-control", "publish-video", "subscribe-video"],
+    "channels": [
+      { "id": "ch1", "label": "Panorama", "role": "overview" },
+      { "id": "ch2", "label": "Surgical Field", "role": "field" }
+    ]
   }
 }
 ```
@@ -70,6 +74,7 @@
 | `name` | 终端名称 |
 | `address` | 终端地址 |
 | `capabilities` | 能力列表 |
+| `channels` | 该终端公布的可发布或可订阅视频通道元数据 |
 | `online` | 在线状态 |
 | `registeredAt` | 注册时间 |
 

@@ -611,7 +611,12 @@ function App() {
             role: localEndpointRole,
             name: endpointName,
             address: "127.0.0.1",
-            capabilities: ["call-control", "subscribe-video", "interactive-audio"]
+            capabilities: ["call-control", "publish-video", "subscribe-video", "interactive-audio"],
+            channels: CHANNELS.map((channel) => ({
+              id: channel.id,
+              label: channel.label,
+              role: channel.role
+            }))
           }
         })
       );
@@ -849,6 +854,9 @@ function App() {
   const anyRecording = CHANNELS.some((channel) => activeRecorders.current[channel.id]);
   const remoteChannels = displayedRemoteChannels();
   const signalingTargets = signalingDirectory.filter((endpoint) => endpoint.endpointId !== signalingEndpointIdRef.current);
+  const selectedSignalingTarget = signalingTargets.find((endpoint) => endpoint.endpointId === signalingTargetId);
+  const selectedTargetChannels =
+    selectedSignalingTarget?.channels?.map((channel) => `${channel.id} ${channel.label}`).join("、") || "-";
 
   return (
     <div className="app-shell">
@@ -1066,6 +1074,10 @@ function App() {
               <div>
                 <dt>在线目录</dt>
                 <dd>{signalingDirectory.length} 个终端</dd>
+              </div>
+              <div>
+                <dt>目标通道</dt>
+                <dd>{selectedTargetChannels}</dd>
               </div>
             </dl>
             <div className="button-row">

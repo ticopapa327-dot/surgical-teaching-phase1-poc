@@ -46,7 +46,13 @@ async function main() {
     role: "operating-room",
     name: "Operating Room 1",
     address: "192.168.10.21",
-    capabilities: ["publish-video", "record", "accept-call"]
+    capabilities: ["publish-video", "record", "accept-call"],
+    channels: [
+      { id: "ch1", label: "Panorama", role: "overview" },
+      { id: "ch2", label: "Surgical Field", role: "field" },
+      { id: "ch3", label: "Laparoscope", role: "device" },
+      { id: "ch4", label: "Backup", role: "backup" }
+    ]
   });
   await waitFor(orClient, "endpoint.registered");
 
@@ -71,6 +77,9 @@ async function main() {
   send(teachingClient, "endpoint.list");
   const directory = await waitFor(teachingClient, "directory.snapshot");
   assert.equal(directory.payload.endpoints.length, 3);
+  const orEndpoint = directory.payload.endpoints.find((endpoint) => endpoint.endpointId === "or-1");
+  assert.equal(orEndpoint.channels.length, 4);
+  assert.equal(orEndpoint.channels[1].label, "Surgical Field");
 
   send(teachingClient, "call.request", { toEndpointId: "or-1", mode: "interactive" });
   const requested = await waitFor(teachingClient, "call.requested");

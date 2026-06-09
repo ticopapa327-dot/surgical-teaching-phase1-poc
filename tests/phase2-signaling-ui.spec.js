@@ -43,7 +43,11 @@ test("phase 2 UI connects to signaling server and enters accepted session", asyn
       role: "teaching-room",
       name: "Teaching Remote",
       address: "192.168.10.33",
-      capabilities: ["subscribe-video", "interactive-audio"]
+      capabilities: ["subscribe-video", "interactive-audio"],
+      channels: [
+        { id: "remote-ch1", label: "Teaching View", role: "overview" },
+        { id: "remote-ch2", label: "Panel Return", role: "return" }
+      ]
     });
     await waitFor(teachingClient, "endpoint.registered");
 
@@ -56,6 +60,7 @@ test("phase 2 UI connects to signaling server and enters accepted session", asyn
     await expect(page.getByText("已注册 OR UI")).toBeVisible();
     await expect(page.getByLabel("信令目标")).toBeEnabled();
     await page.getByLabel("信令目标").selectOption("teach-remote");
+    await expect(page.locator(".status-list.compact dd").filter({ hasText: "remote-ch1 Teaching View" })).toBeVisible();
 
     const incomingCall = waitFor(teachingClient, "call.incoming");
     await page.getByRole("button", { name: "信令呼叫选中终端" }).click();
