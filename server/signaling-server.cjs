@@ -594,6 +594,10 @@ function createSignalingServer(options = {}) {
         send(ws, "error", { code: "session_not_found", message: "session not found" }, requestId);
         return;
       }
+      if (session.participants.length > 2 && session.ownerEndpointId !== fromEndpoint.endpointId) {
+        send(ws, "error", { code: "session_end_forbidden", message: "only session owner can end multi-party session" }, requestId);
+        return;
+      }
       endSession(session, fromEndpoint.endpointId, "requested", requestId);
       return;
     }

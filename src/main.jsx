@@ -240,6 +240,7 @@ function signalingErrorLabel(payload = {}) {
     call_not_found: "待处理呼叫不存在或已失效",
     session_not_found: "会话不存在或当前终端无权访问",
     annotation_forbidden: "只有手术室端可以更新标注",
+    session_end_forbidden: "只有会话控制方可以结束多人会话",
     target_not_in_session: "目标终端不在当前会话中",
     bad_signal: "协商消息无效",
     participant_limit: "已达到参与上限",
@@ -690,6 +691,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       source: "signaling",
       startedAt: session.startedAt,
       mode: session.mode,
+      ownerEndpointId: session.ownerEndpointId,
       participantIds: session.participants,
       participants: session.participants.map(endpointLabelById),
       participantLimit: session.participantLimit,
@@ -1245,6 +1247,11 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   const joinableSignalingSessions = signalingSessions.filter(
     (session) => !session.participants?.includes(signalingEndpointIdRef.current)
   );
+  const canEndActiveSession =
+    Boolean(activeSession) &&
+    (activeSession.source !== "signaling" ||
+      activeSession.participants.length <= 2 ||
+      activeSession.ownerEndpointId === signalingEndpointIdRef.current);
   const selectedSignalingTarget = signalingTargets.find((endpoint) => endpoint.endpointId === signalingTargetId);
   const selectedTargetChannels =
     selectedSignalingTarget?.channels?.map((channel) => `${channel.id} ${channel.label}`).join("、") || "-";
@@ -1634,7 +1641,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
               <button onClick={leaveSession} disabled={!activeSession}>
                 离开会话
               </button>
-              <button className="danger" onClick={closeSession} disabled={!activeSession}>
+              <button className="danger" onClick={closeSession} disabled={!canEndActiveSession}>
                 结束连接
               </button>
             </div>

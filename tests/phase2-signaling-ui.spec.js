@@ -300,6 +300,7 @@ test("phase 2 UI leaves a signaling session without ending the remaining meeting
     send(observerClient, "session.join", { sessionId: started.payload.session.sessionId });
     await waitFor(observerClient, "session.joined");
     await expect(page.locator(".session-list dd").filter({ hasText: "3 / 3" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "结束连接" })).toBeDisabled();
 
     const remainingUpdate = waitFor(
       orClient,

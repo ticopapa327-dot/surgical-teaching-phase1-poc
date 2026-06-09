@@ -310,7 +310,7 @@ HTTP `/events` 返回最近控制面事件摘要：
 }
 ```
 
-服务端删除该会话，并向原会话参与方广播 `session.ended`。
+服务端删除该会话，并向原会话参与方广播 `session.ended`。多人会话中只有 `ownerEndpointId` 对应的会话控制方可以结束整场会议；其他参与方应使用 `session.leave` 离开。两人会话中任一方结束连接都会结束会话。
 
 `session.ended` 包含：
 
@@ -430,6 +430,7 @@ HTTP `/events` 返回最近控制面事件摘要：
 | `call_not_found` | `call.accept`、`call.reject` 或 `call.cancel` 指向的待处理呼叫不存在或无权操作 |
 | `session_not_found` | 目标会话不存在，或当前终端不是会话参与方 |
 | `annotation_forbidden` | 非手术室端尝试更新会话标注 |
+| `session_end_forbidden` | 非会话控制方尝试结束多人会话 |
 | `target_not_in_session` | `peer.signal` 的目标终端不在当前会话中 |
 | `bad_signal` | `peer.signal` 缺少有效 signal 负载 |
 | `participant_limit` | 会话参与人数已达到上限 |

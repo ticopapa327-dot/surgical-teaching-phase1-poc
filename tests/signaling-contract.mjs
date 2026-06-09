@@ -442,6 +442,14 @@ async function main() {
   send(observerClient, "session.join", { sessionId: orOwnedLimitSession.payload.session.sessionId });
   const observerJoined = await waitFor(observerClient, "session.joined");
   assert.equal(observerJoined.payload.session.participants.length, 3);
+  send(observerClient, "session.end", { sessionId: orOwnedLimitSession.payload.session.sessionId });
+  const observerEndForbidden = await waitFor(
+    observerClient,
+    "error",
+    (message) => message.payload.code === "session_end_forbidden"
+  );
+  assert.equal(observerEndForbidden.payload.code, "session_end_forbidden");
+  assert.equal(server.state.sessions.has(orOwnedLimitSession.payload.session.sessionId), true);
 
   const busyJoinOrClient = await connect(url);
   const busyJoinTeachingClient = await connect(url);
