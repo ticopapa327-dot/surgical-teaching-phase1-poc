@@ -62,6 +62,9 @@ const api = window.surgicalApi || {
     appVersion: "0.1.0",
     recordingsDir: "浏览器内存模式，不写入本地文件"
   }),
+  displays: {
+    list: async () => []
+  },
   recordings: {
     create: async (payload) => {
       const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -338,6 +341,8 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   const [pendingCall, setPendingCall] = useState(null);
   const [activeSession, setActiveSession] = useState(null);
   const [layoutMode, setLayoutMode] = useState("single");
+  const [displayTargets, setDisplayTargets] = useState([]);
+  const [selectedDisplayId, setSelectedDisplayId] = useState("");
   const [annotationText, setAnnotationText] = useState("请关注术野关键区域");
   const [annotationVisible, setAnnotationVisible] = useState(false);
   const [audioCall, setAudioCall] = useState({ state: "idle", label: "未建立" });
@@ -360,6 +365,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   useEffect(() => {
     api.getAppInfo().then(setAppInfo);
     refreshRecordings();
+    refreshDisplayTargets({ silent: true });
     return () => {
       Object.values(previewStreams.current).forEach(stopStream);
       stopStream(interactionAudioStream.current);
@@ -401,6 +407,38 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   async function refreshRecordings() {
     const items = await api.recordings.list();
     setRecordings(items);
+  }
+
+  function displayLabel(display) {
+    if (!display) return "默认窗口位置";
+    const workArea = display.workArea || display.bounds || {};
+    const size =
+      Number.isFinite(workArea.width) && Number.isFinite(workArea.height)
+        ? ` / ${workArea.width}×${workArea.height}`
+        : "";
+    return `${display.primary ? "主显示器" : "扩展显示器"} ${display.label || display.id}${size}`;
+  }
+
+  async function refreshDisplayTargets(options = {}) {
+    if (!api.displays?.list) return;
+    try {
+      const displays = await api.displays.list();
+      const normalized = Array.isArray(displays) ? displays : [];
+      setDisplayTargets(normalized);
+      setSelectedDisplayId((current) =>
+        current && normalized.some((display) => String(display.id) === current) ? current : ""
+      );
+      if (!options.silent) {
+        setStatus(
+          normalized.length
+            ? `已发现 ${normalized.length} 个 Windows 显示器。`
+            : "当前运行环境未提供显示器清单，扩展窗口使用默认位置。"
+        );
+      }
+    } catch (error) {
+      setDisplayTargets([]);
+      if (!options.silent) setStatus(`显示器清单读取失败：${error.message}`);
+    }
   }
 
   async function requestDevicePermissionAndRefresh() {
@@ -1007,7 +1045,15 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       await startPreview(channel);
     }
     const stream = previewStreams.current[channelId];
-    const popup = window.open("", "_blank", "popup,width=960,height=620");
+    const targetDisplay = displayTargets.find((display) => String(display.id) === selectedDisplayId);
+    const targetArea = targetDisplay?.workArea || targetDisplay?.bounds;
+    const width = targetArea?.width ? Math.max(640, Math.min(1280, Math.trunc(targetArea.width))) : 960;
+    const height = targetArea?.height ? Math.max(420, Math.min(800, Math.trunc(targetArea.height))) : 620;
+    const position =
+      targetArea && Number.isFinite(targetArea.x) && Number.isFinite(targetArea.y)
+        ? `,left=${Math.trunc(targetArea.x)},top=${Math.trunc(targetArea.y)}`
+        : "";
+    const popup = window.open("", "_blank", `popup,width=${width},height=${height}${position}`);
     if (!popup) {
       setStatus("扩展窗口打开失败，可能被浏览器拦截。");
       return;
@@ -1046,7 +1092,11 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     wrapper.append(title, video);
     doc.body.replaceChildren(wrapper);
     video.play().catch(() => {});
-    setStatus(`${channel.label} 已打开扩展窗口，可拖动到其他显示器。`);
+    setStatus(
+      targetDisplay
+        ? `${channel.label} 已打开扩展窗口，目标：${displayLabel(targetDisplay)}。`
+        : `${channel.label} 已打开扩展窗口，可拖动到其他显示器。`
+    );
   }
 
   function requestCall(direction) {
@@ -1741,6 +1791,20 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
               <button onClick={() => setLayoutMode("quad")} className={layoutMode === "quad" ? "active" : ""}>
                 四画面
               </button>
+            </div>
+            <label className="annotation-input">
+              扩展显示器
+              <select value={selectedDisplayId} onChange={(event) => setSelectedDisplayId(event.target.value)}>
+                <option value="">默认窗口位置</option>
+                {displayTargets.map((display) => (
+                  <option value={String(display.id)} key={display.id}>
+                    {displayLabel(display)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="button-row">
+              <button onClick={() => refreshDisplayTargets()}>刷新显示器</button>
             </div>
             <label className="annotation-input">
               标注内容

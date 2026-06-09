@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, protocol, shell, session, net, dialog } = require("electron");
+const { app, BrowserWindow, ipcMain, protocol, shell, session, net, dialog, screen } = require("electron");
 const fs = require("fs");
 const path = require("path");
 const { pathToFileURL } = require("url");
@@ -62,6 +62,17 @@ function attachFileUrls(items) {
   }));
 }
 
+function publicDisplay(display) {
+  return {
+    id: display.id,
+    label: display.label || `Display ${display.id}`,
+    primary: display.id === screen.getPrimaryDisplay().id,
+    bounds: display.bounds,
+    workArea: display.workArea,
+    scaleFactor: display.scaleFactor
+  };
+}
+
 async function createWindow() {
   const win = new BrowserWindow({
     width: 1440,
@@ -120,6 +131,10 @@ ipcMain.handle("app:get-info", () => {
     appVersion: app.getVersion(),
     ...paths
   };
+});
+
+ipcMain.handle("display:list", () => {
+  return screen.getAllDisplays().map(publicDisplay);
 });
 
 ipcMain.handle("recording:create", (_event, payload) => {

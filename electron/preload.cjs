@@ -2,6 +2,9 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("surgicalApi", {
   getAppInfo: () => ipcRenderer.invoke("app:get-info"),
+  displays: {
+    list: () => ipcRenderer.invoke("display:list")
+  },
   recordings: {
     create: (payload) => ipcRenderer.invoke("recording:create", payload),
     writeChunk: (payload) => ipcRenderer.invoke("recording:write-chunk", payload),

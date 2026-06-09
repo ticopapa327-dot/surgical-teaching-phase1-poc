@@ -52,3 +52,58 @@ test("phase 2 call workflow renders and reaches active interaction state", async
   await page.getByRole("button", { name: "模拟新增参会者" }).click();
   await expect(page.locator(".notice").filter({ hasText: "已达到手术室端设置的" })).toBeVisible();
 });
+
+test("phase 2 remote popout can target an Electron display", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.surgicalApi = {
+      getAppInfo: async () => ({
+        appName: "browser-display-test",
+        appVersion: "0.1.0",
+        recordingsDir: ""
+      }),
+      displays: {
+        list: async () => [
+          {
+            id: 1,
+            label: "Primary",
+            primary: true,
+            bounds: { x: 0, y: 0, width: 1920, height: 1080 },
+            workArea: { x: 0, y: 0, width: 1920, height: 1040 },
+            scaleFactor: 1
+          },
+          {
+            id: 2,
+            label: "Teaching Display",
+            primary: false,
+            bounds: { x: 1920, y: 0, width: 1280, height: 720 },
+            workArea: { x: 1920, y: 0, width: 1280, height: 720 },
+            scaleFactor: 1
+          }
+        ]
+      },
+      recordings: {
+        create: async () => ({ id: "stub-recording", fileName: "stub.webm", filePath: "" }),
+        writeChunk: async () => ({ ok: true, bytes: 0 }),
+        close: async () => ({ ok: true, item: null }),
+        list: async () => [],
+        delete: async () => ({ ok: true }),
+        reveal: async () => ({ ok: true }),
+        export: async () => ({ ok: true }),
+        openRoot: async () => ({ ok: true })
+      }
+    };
+  });
+
+  await page.goto("/");
+  await page.getByLabel("扩展显示器").selectOption("2");
+
+  await page.getByRole("button", { name: "示教室呼叫手术室" }).click();
+  await page.getByRole("button", { name: "接受呼叫" }).click();
+
+  const popupPromise = page.waitForEvent("popup");
+  await page.getByRole("button", { name: "扩展窗口" }).click();
+  const popup = await popupPromise;
+  await expect(popup.getByRole("heading", { name: "通道 1 全景" })).toBeVisible();
+  await expect(page.locator(".footer")).toContainText("目标：扩展显示器 Teaching Display");
+  await popup.close();
+});
