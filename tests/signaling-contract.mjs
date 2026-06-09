@@ -160,6 +160,24 @@ async function main() {
   const endedHealth = await getJson(`${httpBase}/health`);
   assert.equal(endedHealth.sessions, 0);
 
+  send(orClient, "call.request", {
+    toEndpointId: "teach-1",
+    mode: "interactive",
+    participantLimit: 4
+  });
+  await waitFor(orClient, "call.requested");
+  const incomingFromOr = await waitFor(teachingClient, "call.incoming");
+  assert.equal(incomingFromOr.payload.call.participantLimit, 4);
+  send(teachingClient, "call.accept", {
+    callId: incomingFromOr.payload.call.callId,
+    mode: "interactive",
+    participantLimit: 2
+  });
+  const orOwnedLimitSession = await waitFor(orClient, "session.started");
+  assert.equal(orOwnedLimitSession.payload.session.participantLimit, 4);
+  send(orClient, "session.end", { sessionId: orOwnedLimitSession.payload.session.sessionId });
+  await waitFor(teachingClient, "session.ended");
+
   send(teachingClient, "call.request", { toEndpointId: "or-1", mode: "interactive" });
   await waitFor(teachingClient, "call.requested");
   const incomingAfterEnd = await waitFor(orClient, "call.incoming");

@@ -775,7 +775,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       setStatus("请先选择在线信令目标。");
       return;
     }
-    if (sendSignaling("call.request", { toEndpointId: target.endpointId, mode: requestMode })) {
+    if (sendSignaling("call.request", { toEndpointId: target.endpointId, mode: requestMode, participantLimit })) {
       setStatus(`已通过信令向 ${endpointLabel(target)} 发起 ${modeLabel(requestMode)} 呼叫。`);
     }
   }

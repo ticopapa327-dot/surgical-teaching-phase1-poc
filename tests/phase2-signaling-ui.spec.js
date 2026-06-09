@@ -63,6 +63,7 @@ test("phase 2 UI connects to signaling server and enters accepted session", asyn
     await expect(page.getByLabel("信令目标")).toBeEnabled();
     await page.getByLabel("信令目标").selectOption("teach-remote");
     await expect(page.locator(".status-list.compact dd").filter({ hasText: "remote-ch1 Teaching View" })).toBeVisible();
+    await page.getByLabel("手术室参与上限").fill("4");
 
     const incomingCall = waitFor(teachingClient, "call.incoming");
     await page.getByRole("button", { name: "信令呼叫选中终端" }).click();
@@ -78,6 +79,7 @@ test("phase 2 UI connects to signaling server and enters accepted session", asyn
 
     await expect(page.locator(".session-list dd").filter({ hasText: "交互模式" })).toBeVisible();
     await expect(page.locator(".session-list dd").filter({ hasText: "Teaching Remote" })).toBeVisible();
+    await expect(page.locator(".session-list dd").filter({ hasText: "2 / 4" })).toBeVisible();
     await expect(page.getByText("信令会话已建立")).toBeVisible();
 
     const subscriptionUpdate = waitFor(
@@ -185,6 +187,7 @@ test("phase 2 UI updates participant list after observer joins signaling session
     await page.getByRole("button", { name: "连接信令" }).click();
     await expect(page.getByText("已注册 OR UI")).toBeVisible();
     await page.getByLabel("信令目标").selectOption("teach-host");
+    await page.getByLabel("手术室参与上限").fill("3");
 
     const incomingCall = waitFor(teachingClient, "call.incoming");
     await page.getByRole("button", { name: "信令呼叫选中终端" }).click();

@@ -58,6 +58,10 @@ function resolveMode(requestMode, acceptMode) {
   return requestMode === "view" || acceptMode === "view" ? "view" : "interactive";
 }
 
+function normalizeParticipantLimit(value) {
+  return Math.max(2, Math.min(16, Number(value || 2)));
+}
+
 function createSignalingServer(options = {}) {
   const port = options.port ?? Number(process.env.SIGNALING_PORT || 7077);
   const host = options.host || process.env.SIGNALING_HOST || "127.0.0.1";
@@ -198,6 +202,8 @@ function createSignalingServer(options = {}) {
         fromEndpointId: fromEndpoint.endpointId,
         toEndpointId: toEndpoint.endpointId,
         requestedMode: payload.mode || "interactive",
+        participantLimit:
+          fromEndpoint.role === "operating-room" ? normalizeParticipantLimit(payload.participantLimit) : null,
         createdAt: new Date().toISOString()
       };
       pendingCalls.set(call.callId, call);
@@ -216,7 +222,13 @@ function createSignalingServer(options = {}) {
         return;
       }
       pendingCalls.delete(call.callId);
-      const participantLimit = Math.max(2, Math.min(16, Number(payload.participantLimit || 2)));
+      const callerEndpoint = endpoints.get(call.fromEndpointId);
+      const participantLimit =
+        fromEndpoint.role === "operating-room"
+          ? normalizeParticipantLimit(payload.participantLimit || call.participantLimit)
+          : normalizeParticipantLimit(
+              callerEndpoint?.role === "operating-room" ? call.participantLimit : payload.participantLimit
+            );
       const session = {
         sessionId: createId("session"),
         mode: resolveMode(call.requestedMode, payload.mode || "interactive"),
