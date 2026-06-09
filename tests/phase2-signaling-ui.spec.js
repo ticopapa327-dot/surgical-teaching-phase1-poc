@@ -138,3 +138,59 @@ test("phase 2 UI accepts incoming signaling call", async ({ page }) => {
     await server.stop();
   }
 });
+
+test("phase 2 UI updates participant list after observer joins signaling session", async ({ page }) => {
+  const server = createSignalingServer({ port: 0 });
+  const address = await server.start();
+  const url = `ws://127.0.0.1:${address.port}/signal`;
+  const teachingClient = await connect(url);
+  const observerClient = await connect(url);
+
+  try {
+    send(teachingClient, "endpoint.register", {
+      endpointId: "teach-host",
+      role: "teaching-room",
+      name: "Teaching Host",
+      address: "192.168.10.35",
+      capabilities: ["subscribe-video", "interactive-audio"]
+    });
+    await waitFor(teachingClient, "endpoint.registered");
+
+    send(observerClient, "endpoint.register", {
+      endpointId: "observer-ui",
+      role: "observer",
+      name: "Observer Remote",
+      address: "192.168.10.45",
+      capabilities: ["subscribe-video"]
+    });
+    await waitFor(observerClient, "endpoint.registered");
+
+    await page.goto("/");
+    await page.getByLabel("信令地址").fill(url);
+    await page.getByLabel("本端 ID").fill("or-ui");
+    await page.getByLabel("本端名称").fill("OR UI");
+    await page.getByRole("button", { name: "连接信令" }).click();
+    await expect(page.getByText("已注册 OR UI")).toBeVisible();
+    await page.getByLabel("信令目标").selectOption("teach-host");
+
+    const incomingCall = waitFor(teachingClient, "call.incoming");
+    await page.getByRole("button", { name: "信令呼叫选中终端" }).click();
+    const incoming = await incomingCall;
+    send(teachingClient, "call.accept", {
+      callId: incoming.payload.call.callId,
+      mode: "interactive",
+      participantLimit: 3
+    });
+    const started = await waitFor(teachingClient, "session.started");
+    await expect(page.locator(".session-list dd").filter({ hasText: "2 / 3" })).toBeVisible();
+
+    send(observerClient, "session.join", { sessionId: started.payload.session.sessionId });
+    await waitFor(observerClient, "session.joined");
+    await expect(page.locator(".session-list dd").filter({ hasText: "3 / 3" })).toBeVisible();
+    await expect(page.locator(".session-list dd").filter({ hasText: "Observer Remote" })).toBeVisible();
+  } finally {
+    teachingClient.close();
+    observerClient.close();
+    await server.stop();
+  }
+});
