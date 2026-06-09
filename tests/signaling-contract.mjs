@@ -104,6 +104,26 @@ async function main() {
   assert.equal(canceledCall.payload.callId, cancelableCall.payload.call.callId);
   assert.equal(canceledCall.payload.reason, "caller_canceled");
 
+  const disconnectingCaller = await connect(url);
+  send(disconnectingCaller, "endpoint.register", {
+    endpointId: "teach-disconnect",
+    role: "teaching-room",
+    name: "Disconnecting Teaching Room",
+    address: "192.168.10.38",
+    capabilities: ["subscribe-video"]
+  });
+  await waitFor(disconnectingCaller, "endpoint.registered");
+  send(disconnectingCaller, "call.request", { toEndpointId: "or-1", mode: "view" });
+  const disconnectingCall = await waitFor(disconnectingCaller, "call.requested");
+  await waitFor(orClient, "call.incoming", (message) => message.payload.call.callId === disconnectingCall.payload.call.callId);
+  disconnectingCaller.close();
+  const disconnectedCall = await waitFor(
+    orClient,
+    "call.canceled",
+    (message) => message.payload.callId === disconnectingCall.payload.call.callId
+  );
+  assert.equal(disconnectedCall.payload.reason, "endpoint_disconnected");
+
   send(teachingClient, "call.request", { toEndpointId: "or-1", mode: "interactive" });
   const requested = await waitFor(teachingClient, "call.requested");
   const incoming = await waitFor(orClient, "call.incoming");

@@ -48,6 +48,7 @@
 | P2-32 | 标注权限 | 示教室端尝试发送 session.annotation。 | 服务端返回 annotation_forbidden，手术室端发送标注仍可广播。 |  |
 | P2-33 | 仅收看音频限制 | 信令会话最终模式为仅收看。 | 前端建立音频通话按钮保持禁用。 |  |
 | P2-34 | 信令呼叫取消 | 示教室端发起来电后发送 call.cancel。 | 手术室端前端清理待确认呼叫，并显示呼叫已取消。 |  |
+| P2-35 | 待处理呼叫断线取消 | 示教室端发起来电后断开 WebSocket。 | 手术室端收到 reason 为 endpoint_disconnected 的 call.canceled。 |  |
 
 ## 自动化冒烟测试
 
