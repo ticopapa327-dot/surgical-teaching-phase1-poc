@@ -96,6 +96,7 @@ npm run test:signaling
 
 - [贡献说明](CONTRIBUTING.md)
 - [安全说明](SECURITY.md)
+- [软件架构说明](docs/architecture.md)
 - [阶段 1 测试计划](docs/phase1-test-plan.md)
 - [阶段 2 测试计划](docs/phase2-test-plan.md)
 - [Phase 2 阶段状态与边界](docs/phase2-status.md)
