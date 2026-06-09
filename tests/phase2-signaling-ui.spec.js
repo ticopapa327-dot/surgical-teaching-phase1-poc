@@ -83,6 +83,12 @@ test("phase 2 UI connects to signaling server and enters accepted session", asyn
     const annotation = await annotationUpdate;
     assert.equal(annotation.payload.session.annotation.text, "Needle entry");
     assert.equal(annotation.payload.session.annotation.updatedByEndpointId, "or-ui");
+
+    const endedByUi = waitFor(teachingClient, "session.ended");
+    await page.getByRole("button", { name: "结束连接" }).click();
+    const ended = await endedByUi;
+    assert.equal(ended.payload.endedByEndpointId, "or-ui");
+    await expect(page.getByText("尚未建立互动连接")).toBeVisible();
   } finally {
     teachingClient.close();
     await server.stop();

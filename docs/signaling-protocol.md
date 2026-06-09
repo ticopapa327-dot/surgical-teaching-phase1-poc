@@ -172,7 +172,30 @@
 | `updatedByEndpointId` | 最近一次更新标注的终端 ID |
 | `updatedAt` | 最近一次更新时间 |
 
-### 3. 加入会话
+### 3. 结束会话
+
+会话参与方发送 `session.end`：
+
+```json
+{
+  "type": "session.end",
+  "payload": {
+    "sessionId": "session-..."
+  }
+}
+```
+
+服务端删除该会话，并向原会话参与方广播 `session.ended`。
+
+`session.ended` 包含：
+
+| 字段 | 说明 |
+|---|---|
+| `sessionId` | 被结束的会话 ID |
+| `endedByEndpointId` | 发起结束的终端 ID |
+| `endedAt` | 结束时间 |
+
+### 4. 加入会话
 
 在线终端发送 `session.join`：
 
@@ -203,7 +226,7 @@
 
 1. 终端鉴权、权限模型和审计日志。
 2. TLS、证书管理和跨网段安全接入。
-3. 会话持久化、断线重连和服务端高可用。
+3. 会话持久化、断线重连、心跳保活和服务端高可用。
 4. 音视频媒体协商、SFU 转发、SRT/RTSP 接入和手机直播分发。
 5. 标注权限控制、版本控制和录像回放绑定。
 6. HIS 患者信息绑定、录像文件索引和 AI 处理任务分发。

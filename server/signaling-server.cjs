@@ -243,6 +243,27 @@ function createSignalingServer(options = {}) {
       return;
     }
 
+    if (type === "session.end") {
+      const session = sessions.get(payload.sessionId);
+      if (!session || !session.participants.includes(fromEndpoint.endpointId)) {
+        send(ws, "error", { code: "session_not_found", message: "session not found" }, requestId);
+        return;
+      }
+      sessions.delete(session.sessionId);
+      const ended = {
+        sessionId: session.sessionId,
+        endedByEndpointId: fromEndpoint.endpointId,
+        endedAt: new Date().toISOString()
+      };
+      for (const endpointId of session.participants) {
+        const targetSocket = sockets.get(endpointId);
+        if (targetSocket) {
+          send(targetSocket, "session.ended", ended, endpointId === fromEndpoint.endpointId ? requestId : null);
+        }
+      }
+      return;
+    }
+
     if (type === "session.join") {
       const session = sessions.get(payload.sessionId);
       if (!session) {

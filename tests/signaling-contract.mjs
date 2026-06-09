@@ -112,6 +112,12 @@ async function main() {
   const limitError = await waitFor(observerClient, "error", (message) => message.payload.code === "participant_limit");
   assert.equal(limitError.payload.code, "participant_limit");
 
+  send(teachingClient, "session.end", { sessionId: session.sessionId });
+  const ended = await waitFor(orClient, "session.ended");
+  assert.equal(ended.payload.sessionId, session.sessionId);
+  assert.equal(ended.payload.endedByEndpointId, "teach-1");
+  assert.equal(server.state.sessions.size, 0);
+
   orClient.close();
   teachingClient.close();
   observerClient.close();

@@ -574,6 +574,11 @@ function App() {
       return;
     }
 
+    if (type === "session.ended") {
+      clearLocalSession(`信令会话已由 ${endpointLabelById(payload.endedByEndpointId)} 结束。`);
+      return;
+    }
+
     if (type === "error") {
       const messageText = payload.message || payload.code || "未知信令错误";
       if (payload.code === "participant_limit") setOverLimitNotice("信令服务器拒绝加入：已达到参与上限。");
@@ -732,12 +737,22 @@ function App() {
     setPendingCall(null);
   }
 
-  function closeSession() {
+  function clearLocalSession(message = "互动连接已结束。") {
     stopInteractionAudio();
     setActiveSession(null);
     setAnnotationVisible(false);
     setOverLimitNotice("");
-    setStatus("互动连接已结束。");
+    setStatus(message);
+  }
+
+  function closeSession() {
+    if (activeSession?.source === "signaling") {
+      if (sendSignaling("session.end", { sessionId: activeSession.id })) {
+        setStatus("已发送信令会话结束请求。");
+      }
+      return;
+    }
+    clearLocalSession();
   }
 
   async function toggleRemoteChannel(channelId, checked) {
