@@ -1,0 +1,185 @@
+# Phase 2 信令协议说明
+
+## 一、适用范围
+
+本文档描述当前 PoC 已实现的 WebSocket 信令控制面协议，用于验证手术室端、示教室端和观摩端之间的注册、通讯录、呼叫、接受、拒绝、会话订阅和参与上限控制。
+
+当前信令服务只处理控制消息，不传输音视频媒体，不做录像上传，不处理 HIS、FTP、云台控制、Android 原生能力和手机直播分发。
+
+## 二、服务入口
+
+| 类型 | 地址 | 说明 |
+|---|---|---|
+| WebSocket | `ws://127.0.0.1:7077/signal` | 信令消息通道 |
+| HTTP | `http://127.0.0.1:7077/health` | 健康检查 |
+| HTTP | `http://127.0.0.1:7077/directory` | 在线终端目录快照 |
+
+服务端口可通过 `SIGNALING_PORT` 环境变量覆盖。
+
+## 三、消息信封
+
+客户端与服务端均使用 JSON 消息：
+
+```json
+{
+  "type": "message.type",
+  "requestId": "optional-request-id",
+  "payload": {}
+}
+```
+
+字段说明：
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `type` | 是 | 消息类型 |
+| `requestId` | 否 | 请求追踪 ID，服务端响应会尽量原样带回 |
+| `payload` | 否 | 消息载荷 |
+
+## 四、终端注册与通讯录
+
+### 1. 注册终端
+
+客户端连接后必须先发送 `endpoint.register`。
+
+```json
+{
+  "type": "endpoint.register",
+  "payload": {
+    "endpointId": "or-1",
+    "role": "operating-room",
+    "name": "Operating Room 1",
+    "address": "192.168.10.21",
+    "capabilities": ["call-control", "subscribe-video"]
+  }
+}
+```
+
+服务端返回 `endpoint.registered`，并向所有在线终端广播 `directory.updated`。
+
+### 2. 获取目录
+
+客户端发送 `endpoint.list` 后，服务端返回 `directory.snapshot`。
+
+目录项包含：
+
+| 字段 | 说明 |
+|---|---|
+| `endpointId` | 终端 ID |
+| `role` | 终端角色 |
+| `name` | 终端名称 |
+| `address` | 终端地址 |
+| `capabilities` | 能力列表 |
+| `online` | 在线状态 |
+| `registeredAt` | 注册时间 |
+
+## 五、呼叫流程
+
+### 1. 发起呼叫
+
+发起方发送 `call.request`：
+
+```json
+{
+  "type": "call.request",
+  "payload": {
+    "toEndpointId": "or-1",
+    "mode": "interactive"
+  }
+}
+```
+
+`mode` 支持：
+
+| 值 | 说明 |
+|---|---|
+| `interactive` | 交互模式 |
+| `view` | 仅收看 |
+
+服务端向发起方返回 `call.requested`，并向接收方发送 `call.incoming`。
+
+### 2. 接受呼叫
+
+接收方发送 `call.accept`：
+
+```json
+{
+  "type": "call.accept",
+  "payload": {
+    "callId": "call-...",
+    "mode": "interactive",
+    "participantLimit": 2
+  }
+}
+```
+
+最终模式规则：
+
+| 发起方请求 | 接收方确认 | 最终模式 |
+|---|---|---|
+| `interactive` | `interactive` | `interactive` |
+| `interactive` | `view` | `view` |
+| `view` | `interactive` | `view` |
+| `view` | `view` | `view` |
+
+服务端向双方发送 `session.started`。默认订阅通道为 `ch1`。
+
+### 3. 拒绝呼叫
+
+接收方发送 `call.reject` 后，服务端向双方发送 `call.rejected`。
+
+## 六、会话订阅与参与上限
+
+### 1. 订阅通道
+
+会话参与方发送 `session.subscribe`：
+
+```json
+{
+  "type": "session.subscribe",
+  "payload": {
+    "sessionId": "session-...",
+    "channels": ["ch1", "ch2", "ch3"]
+  }
+}
+```
+
+当前服务端最多保留 4 个订阅通道，并向会话参与方广播 `session.updated`。
+
+### 2. 加入会话
+
+在线终端发送 `session.join`：
+
+```json
+{
+  "type": "session.join",
+  "payload": {
+    "sessionId": "session-..."
+  }
+}
+```
+
+如果会话人数已达到 `participantLimit`，服务端返回：
+
+```json
+{
+  "type": "error",
+  "payload": {
+    "code": "participant_limit",
+    "message": "participant limit reached"
+  }
+}
+```
+
+## 七、当前边界
+
+当前协议未实现以下生产能力：
+
+1. 终端鉴权、权限模型和审计日志。
+2. TLS、证书管理和跨网段安全接入。
+3. 会话持久化、断线重连和服务端高可用。
+4. 音视频媒体协商、SFU 转发、SRT/RTSP 接入和手机直播分发。
+5. 标注数据的服务端同步、版本控制和回放绑定。
+6. HIS 患者信息绑定、录像文件索引和 AI 处理任务分发。
+
+后续进入真实媒体服务阶段时，信令协议应扩展媒体发布、媒体订阅、ICE/SDP 或 SFU 房间控制字段，但控制面仍不应直接承载媒体数据。
