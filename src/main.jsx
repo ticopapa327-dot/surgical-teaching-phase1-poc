@@ -771,8 +771,14 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       setStatus("信令服务器连接错误。");
     };
     ws.onclose = () => {
-      if (signalingSocket.current === ws) signalingSocket.current = null;
-      setSignalingState({ connected: false, label: "未连接" });
+      if (signalingSocket.current === ws) {
+        signalingSocket.current = null;
+        setPendingCall(null);
+        setActiveSession((session) => (session?.source === "signaling" ? null : session));
+        setOverLimitNotice("");
+        setSignalingState({ connected: false, label: "未连接" });
+        setStatus("信令连接已断开，已清理信令会话状态。");
+      }
     };
   }
 
