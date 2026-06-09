@@ -950,7 +950,9 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
         if (sessionWasSignaling) stopInteractionAudio();
         setActiveSession((session) => (session?.source === "signaling" ? null : session));
         setOverLimitNotice("");
+        setSignalingDirectory([]);
         setSignalingSessions([]);
+        setSignalingTargetId("");
         setSignalingState({ connected: false, label: "未连接" });
         setStatus(closeMessage);
       }

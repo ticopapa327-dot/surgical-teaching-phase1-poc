@@ -994,6 +994,8 @@ test("phase 2 UI clears signaling session when server disconnects", async ({ pag
     stopped = true;
     await expect(page.getByText("尚未建立互动连接")).toBeVisible();
     await expect(page.locator(".status-list dd").filter({ hasText: "未建立" })).toBeVisible();
+    await expect(page.locator(".status-list.compact dd").filter({ hasText: "0 个终端" })).toBeVisible();
+    await expect(page.getByLabel("信令目标")).toBeDisabled();
     await expect(page.locator(".footer")).toContainText("信令连接已断开");
   } finally {
     teachingClient.close();
