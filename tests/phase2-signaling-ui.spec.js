@@ -381,6 +381,11 @@ test("phase 2 UI discovers joinable sessions from the signaling directory", asyn
     });
     const started = await startedForOr;
 
+    const observerDirectoryUpdate = waitFor(
+      orClient,
+      "directory.updated",
+      (message) => message.payload.endpoints.some((endpoint) => endpoint.endpointId === "observer-directory")
+    );
     await page.goto("/");
     await page.getByLabel("信令地址").fill(url);
     await page.getByLabel("本端 ID").fill("observer-directory");
@@ -389,6 +394,12 @@ test("phase 2 UI discovers joinable sessions from the signaling directory", asyn
     await page.getByRole("button", { name: "连接信令" }).click();
     await expect(page.getByText("已注册 Observer Directory UI")).toBeVisible();
     await expect(page.locator(".status-list.compact dd").filter({ hasText: "1 个会话" })).toBeVisible();
+    const directoryUpdate = await observerDirectoryUpdate;
+    const observerEndpoint = directoryUpdate.payload.endpoints.find(
+      (endpoint) => endpoint.endpointId === "observer-directory"
+    );
+    assert.deepEqual(observerEndpoint.capabilities, ["subscribe-video"]);
+    assert.deepEqual(observerEndpoint.channels, []);
 
     await page.getByLabel("会话目录").selectOption(started.payload.session.sessionId);
     await expect(page.getByLabel("加入会话 ID")).toHaveValue(started.payload.session.sessionId);

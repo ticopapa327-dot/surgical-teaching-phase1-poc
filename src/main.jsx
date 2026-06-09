@@ -279,6 +279,16 @@ function endpointLabel(endpoint) {
   return `${endpoint.name || endpoint.endpointId}${endpoint.address ? ` (${endpoint.address})` : ""}`;
 }
 
+function capabilitiesForRole(role) {
+  if (role === "operating-room") {
+    return ["call-control", "publish-video", "subscribe-video", "interactive-audio", "annotation"];
+  }
+  if (role === "teaching-room") {
+    return ["call-control", "subscribe-video", "interactive-audio"];
+  }
+  return ["subscribe-video"];
+}
+
 function sessionChannelsForEndpoint(session, endpointId) {
   const channels = session.subscriptions?.[endpointId];
   return Array.isArray(channels) && channels.length ? channels : ["ch1"];
@@ -864,12 +874,15 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
             role: localEndpointRole,
             name: endpointName,
             address: "127.0.0.1",
-            capabilities: ["call-control", "publish-video", "subscribe-video", "interactive-audio"],
-            channels: CHANNELS.map((channel) => ({
-              id: channel.id,
-              label: channel.label,
-              role: channel.role
-            }))
+            capabilities: capabilitiesForRole(localEndpointRole),
+            channels:
+              localEndpointRole === "operating-room"
+                ? CHANNELS.map((channel) => ({
+                    id: channel.id,
+                    label: channel.label,
+                    role: channel.role
+                  }))
+                : []
           }
         })
       );
