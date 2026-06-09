@@ -575,7 +575,8 @@ function App() {
     }
 
     if (type === "session.ended") {
-      clearLocalSession(`信令会话已由 ${endpointLabelById(payload.endedByEndpointId)} 结束。`);
+      const action = payload.reason === "endpoint_disconnected" ? "断开" : "结束";
+      clearLocalSession(`信令会话已由 ${endpointLabelById(payload.endedByEndpointId)} ${action}。`);
       return;
     }
 

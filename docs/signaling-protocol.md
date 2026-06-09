@@ -193,7 +193,10 @@
 |---|---|
 | `sessionId` | 被结束的会话 ID |
 | `endedByEndpointId` | 发起结束的终端 ID |
+| `reason` | 结束原因，当前支持 `requested` 和 `endpoint_disconnected` |
 | `endedAt` | 结束时间 |
+
+如果会话参与方的 WebSocket 连接异常关闭，服务端会删除该会话，并向剩余在线参与方广播 `reason` 为 `endpoint_disconnected` 的 `session.ended`。
 
 ### 4. 加入会话
 
@@ -226,7 +229,7 @@
 
 1. 终端鉴权、权限模型和审计日志。
 2. TLS、证书管理和跨网段安全接入。
-3. 会话持久化、断线重连、心跳保活和服务端高可用。
+3. 会话持久化、断线重连、心跳保活、自动重入会话和服务端高可用。
 4. 音视频媒体协商、SFU 转发、SRT/RTSP 接入和手机直播分发。
 5. 标注权限控制、版本控制和录像回放绑定。
 6. HIS 患者信息绑定、录像文件索引和 AI 处理任务分发。

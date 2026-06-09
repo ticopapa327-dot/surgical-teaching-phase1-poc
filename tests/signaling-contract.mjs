@@ -116,9 +116,28 @@ async function main() {
   const ended = await waitFor(orClient, "session.ended");
   assert.equal(ended.payload.sessionId, session.sessionId);
   assert.equal(ended.payload.endedByEndpointId, "teach-1");
+  assert.equal(ended.payload.reason, "requested");
   assert.equal(server.state.sessions.size, 0);
 
+  send(teachingClient, "call.request", { toEndpointId: "or-1", mode: "interactive" });
+  await waitFor(teachingClient, "call.requested");
+  const incomingAfterEnd = await waitFor(orClient, "call.incoming");
+  send(orClient, "call.accept", {
+    callId: incomingAfterEnd.payload.call.callId,
+    mode: "interactive",
+    participantLimit: 2
+  });
+  const restarted = await waitFor(teachingClient, "session.started");
   orClient.close();
+  const disconnected = await waitFor(
+    teachingClient,
+    "session.ended",
+    (message) => message.payload.reason === "endpoint_disconnected"
+  );
+  assert.equal(disconnected.payload.sessionId, restarted.payload.session.sessionId);
+  assert.equal(disconnected.payload.endedByEndpointId, "or-1");
+  assert.equal(server.state.sessions.size, 0);
+
   teachingClient.close();
   observerClient.close();
   await server.stop();

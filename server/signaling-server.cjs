@@ -103,6 +103,22 @@ function createSignalingServer(options = {}) {
     }
   }
 
+  function endSession(session, endedByEndpointId, reason = "requested", requestId = null) {
+    sessions.delete(session.sessionId);
+    const ended = {
+      sessionId: session.sessionId,
+      endedByEndpointId,
+      reason,
+      endedAt: new Date().toISOString()
+    };
+    for (const endpointId of session.participants) {
+      const targetSocket = sockets.get(endpointId);
+      if (targetSocket) {
+        send(targetSocket, "session.ended", ended, endpointId === endedByEndpointId ? requestId : null);
+      }
+    }
+  }
+
   function handleMessage(ws, raw) {
     const msg = safeJsonParse(raw);
     if (!msg || !msg.type) {
@@ -249,18 +265,7 @@ function createSignalingServer(options = {}) {
         send(ws, "error", { code: "session_not_found", message: "session not found" }, requestId);
         return;
       }
-      sessions.delete(session.sessionId);
-      const ended = {
-        sessionId: session.sessionId,
-        endedByEndpointId: fromEndpoint.endpointId,
-        endedAt: new Date().toISOString()
-      };
-      for (const endpointId of session.participants) {
-        const targetSocket = sockets.get(endpointId);
-        if (targetSocket) {
-          send(targetSocket, "session.ended", ended, endpointId === fromEndpoint.endpointId ? requestId : null);
-        }
-      }
+      endSession(session, fromEndpoint.endpointId, "requested", requestId);
       return;
     }
 
@@ -303,6 +308,11 @@ function createSignalingServer(options = {}) {
       for (const [callId, call] of pendingCalls.entries()) {
         if (call.fromEndpointId === endpointId || call.toEndpointId === endpointId) {
           pendingCalls.delete(callId);
+        }
+      }
+      for (const session of Array.from(sessions.values())) {
+        if (session.participants.includes(endpointId)) {
+          endSession(session, endpointId, "endpoint_disconnected");
         }
       }
       sendDirectory();
