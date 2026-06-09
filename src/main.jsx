@@ -16,6 +16,14 @@ const ADDRESS_BOOK = [
 ];
 
 const DEFAULT_SIGNALING_URL = "ws://127.0.0.1:7077/signal";
+const DEFAULT_APP_CONFIG = {
+  signalingUrl: DEFAULT_SIGNALING_URL,
+  localEndpoint: {
+    id: "or-local",
+    name: "手术室端本机",
+    role: "operating-room"
+  }
+};
 
 const MIME_CANDIDATES = [
   "video/webm;codecs=vp9,opus",
@@ -78,6 +86,16 @@ const api = window.surgicalApi || {
 function getSupportedMimeType() {
   if (!window.MediaRecorder) return "";
   return MIME_CANDIDATES.find((type) => window.MediaRecorder.isTypeSupported(type)) || "";
+}
+
+async function loadRuntimeConfig() {
+  try {
+    const response = await fetch("/config.json", { cache: "no-store" });
+    if (!response.ok) return DEFAULT_APP_CONFIG;
+    return { ...DEFAULT_APP_CONFIG, ...(await response.json()) };
+  } catch {
+    return DEFAULT_APP_CONFIG;
+  }
 }
 
 function createDefaultChannelConfig() {
@@ -186,7 +204,7 @@ function sessionChannelsForEndpoint(session, endpointId) {
   return Array.isArray(channels) && channels.length ? channels : ["ch1"];
 }
 
-function App() {
+function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   const [appInfo, setAppInfo] = useState(null);
   const [videoDevices, setVideoDevices] = useState([]);
   const [audioDevices, setAudioDevices] = useState([]);
@@ -200,10 +218,14 @@ function App() {
   const [recordingSessionId, setRecordingSessionId] = useState("");
   const [previewVersion, setPreviewVersion] = useState(0);
 
-  const [signalingUrl, setSignalingUrl] = useState(DEFAULT_SIGNALING_URL);
-  const [localEndpointId, setLocalEndpointId] = useState("or-local");
-  const [localEndpointName, setLocalEndpointName] = useState("手术室端本机");
-  const [localEndpointRole, setLocalEndpointRole] = useState("operating-room");
+  const [signalingUrl, setSignalingUrl] = useState(initialConfig.signalingUrl);
+  const [localEndpointId, setLocalEndpointId] = useState(initialConfig.localEndpoint?.id || DEFAULT_APP_CONFIG.localEndpoint.id);
+  const [localEndpointName, setLocalEndpointName] = useState(
+    initialConfig.localEndpoint?.name || DEFAULT_APP_CONFIG.localEndpoint.name
+  );
+  const [localEndpointRole, setLocalEndpointRole] = useState(
+    initialConfig.localEndpoint?.role || DEFAULT_APP_CONFIG.localEndpoint.role
+  );
   const [signalingState, setSignalingState] = useState({ connected: false, label: "未连接" });
   const [signalingDirectory, setSignalingDirectory] = useState([]);
   const [signalingTargetId, setSignalingTargetId] = useState("");
@@ -1302,4 +1324,9 @@ function App() {
   );
 }
 
-createRoot(document.getElementById("root")).render(<App />);
+async function bootstrap() {
+  const runtimeConfig = await loadRuntimeConfig();
+  createRoot(document.getElementById("root")).render(<App initialConfig={runtimeConfig} />);
+}
+
+bootstrap();

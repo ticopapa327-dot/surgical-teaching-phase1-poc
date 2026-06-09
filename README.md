@@ -59,6 +59,15 @@ npm run server:signaling
 
 默认监听 `ws://127.0.0.1:7077/signal`，健康检查地址为 `http://127.0.0.1:7077/health`。
 
+## 配置
+
+前端启动时会读取 [public/config.json](public/config.json) 作为运行时默认配置。当前支持：
+
+- `signalingUrl`：默认信令服务器地址。
+- `localEndpoint.id`：本端终端 ID。
+- `localEndpoint.name`：本端显示名称。
+- `localEndpoint.role`：本端角色，支持 `operating-room`、`teaching-room`、`observer`。
+
 ## 验证
 
 ```powershell

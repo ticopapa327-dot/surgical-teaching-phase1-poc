@@ -5,6 +5,8 @@ test("phase 2 call workflow renders and reaches active interaction state", async
 
   await expect(page.getByRole("heading", { name: "手术示教 Phase 2 PoC" })).toBeVisible();
   await expect(page.locator(".channel-card")).toHaveCount(4);
+  await expect(page.getByLabel("信令地址")).toHaveValue("ws://127.0.0.1:7077/signal");
+  await expect(page.getByLabel("本端 ID")).toHaveValue("or-local");
 
   await page.getByRole("button", { name: "启动全部预览" }).click();
   await expect(page.getByText("阶段 2 呼叫控制")).toBeVisible();
