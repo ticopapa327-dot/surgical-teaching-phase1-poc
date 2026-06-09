@@ -363,7 +363,7 @@ HTTP `/events` 返回最近控制面事件摘要：
 }
 ```
 
-服务端向离会方返回 `session.left`，并向剩余参与方广播 `session.updated`。如果离会后会话不足 2 人，服务端会结束该会话并广播 `reason` 为 `participant_left` 的 `session.ended`。
+服务端向离会方返回 `session.left`，并向剩余参与方广播 `session.updated`。如果离会方是 `ownerEndpointId` 对应的会话控制方，服务端会结束该会话并广播 `reason` 为 `owner_left` 的 `session.ended`；如果离会后会话不足 2 人，服务端会结束该会话并广播 `reason` 为 `participant_left` 的 `session.ended`。
 
 ## 七、WebRTC 协商透传
 

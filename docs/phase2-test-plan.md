@@ -81,6 +81,7 @@
 | P2-65 | 服务端仅收看模式合成 | 发起方以 `view` 模式呼叫，接收方以 `interactive` 模式接受。 | 最终 `session.started.mode` 仍为 `view`。 |  |
 | P2-66 | 多人会话结束权限 | 三方会话中，非 owner 参与方尝试发送 `session.end`，前端非 owner 也查看结束按钮状态。 | 服务端返回 `session_end_forbidden`；前端“结束连接”禁用，仍可通过“离开会话”退出。 |  |
 | P2-67 | 连接后注册身份锁定 | 前端完成信令连接和注册后查看信令地址、本端 ID 和本端角色控件。 | 这些注册身份字段保持禁用，避免会话中修改导致本端身份漂移。 |  |
+| P2-68 | Owner 离会结束多人会话 | 三方会话中，手术室 owner 发送 `session.leave`。 | owner 收到 `session.left`，剩余参与方收到 reason 为 `owner_left` 的 `session.ended`，服务端移除该会话。 |  |
 
 ## 自动化冒烟测试
 

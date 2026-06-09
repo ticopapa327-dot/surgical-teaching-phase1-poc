@@ -637,6 +637,10 @@ function createSignalingServer(options = {}) {
       delete session.subscriptions[fromEndpoint.endpointId];
       recordEvent("session.left", { sessionId: session.sessionId, endpointId: fromEndpoint.endpointId });
       send(ws, "session.left", { sessionId: session.sessionId }, requestId);
+      if (fromEndpoint.endpointId === session.ownerEndpointId) {
+        endSession(session, fromEndpoint.endpointId, "owner_left");
+        return;
+      }
       if (session.participants.length < 2) {
         endSession(session, fromEndpoint.endpointId, "participant_left");
         return;

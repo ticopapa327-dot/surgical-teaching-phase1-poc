@@ -498,6 +498,48 @@ async function main() {
   send(orClient, "session.end", { sessionId: orOwnedLimitSession.payload.session.sessionId });
   await waitFor(teachingClient, "session.ended");
 
+  const ownerLeaveOrClient = await connect(url);
+  const ownerLeaveTeachingClient = await connect(url);
+  send(ownerLeaveOrClient, "endpoint.register", {
+    endpointId: "owner-leave-or",
+    role: "operating-room",
+    name: "Owner Leave OR"
+  });
+  await waitFor(ownerLeaveOrClient, "endpoint.registered");
+  send(ownerLeaveTeachingClient, "endpoint.register", {
+    endpointId: "owner-leave-teach",
+    role: "teaching-room",
+    name: "Owner Leave Teaching"
+  });
+  await waitFor(ownerLeaveTeachingClient, "endpoint.registered");
+  const ownerLeaveIncoming = waitFor(ownerLeaveTeachingClient, "call.incoming");
+  send(ownerLeaveOrClient, "call.request", {
+    toEndpointId: "owner-leave-teach",
+    mode: "interactive",
+    participantLimit: 3
+  });
+  const ownerLeaveCall = await ownerLeaveIncoming;
+  const ownerLeaveStartedForOr = waitFor(ownerLeaveOrClient, "session.started");
+  send(ownerLeaveTeachingClient, "call.accept", {
+    callId: ownerLeaveCall.payload.call.callId,
+    mode: "interactive",
+    participantLimit: 2
+  });
+  const ownerLeaveSession = await ownerLeaveStartedForOr;
+  send(observerClient, "session.join", { sessionId: ownerLeaveSession.payload.session.sessionId });
+  await waitFor(observerClient, "session.joined");
+  send(ownerLeaveOrClient, "session.leave", { sessionId: ownerLeaveSession.payload.session.sessionId });
+  await waitFor(ownerLeaveOrClient, "session.left");
+  const ownerLeftEnded = await waitFor(
+    ownerLeaveTeachingClient,
+    "session.ended",
+    (message) => message.payload.reason === "owner_left"
+  );
+  assert.equal(ownerLeftEnded.payload.sessionId, ownerLeaveSession.payload.session.sessionId);
+  assert.equal(server.state.sessions.has(ownerLeaveSession.payload.session.sessionId), false);
+  ownerLeaveOrClient.close();
+  ownerLeaveTeachingClient.close();
+
   send(teachingClient, "call.request", { toEndpointId: "or-1", mode: "interactive" });
   await waitFor(teachingClient, "call.requested");
   const incomingAfterEnd = await waitFor(orClient, "call.incoming");
