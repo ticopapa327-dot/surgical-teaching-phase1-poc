@@ -91,6 +91,7 @@ npm run test:signaling
 
 - [阶段 1 测试计划](docs/phase1-test-plan.md)
 - [阶段 2 测试计划](docs/phase2-test-plan.md)
+- [Phase 2 阶段状态与边界](docs/phase2-status.md)
 - [Phase 2 信令协议说明](docs/signaling-protocol.md)
 
 ## 已知限制
