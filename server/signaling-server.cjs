@@ -69,7 +69,14 @@ function createSignalingServer(options = {}) {
   const httpServer = http.createServer((req, res) => {
     if (req.url === "/health") {
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, endpoints: endpoints.size, sessions: sessions.size }));
+      res.end(
+        JSON.stringify({
+          ok: true,
+          endpoints: endpoints.size,
+          sessions: sessions.size,
+          pendingCalls: pendingCalls.size
+        })
+      );
       return;
     }
     if (req.url === "/directory") {

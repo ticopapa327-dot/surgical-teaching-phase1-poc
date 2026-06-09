@@ -16,6 +16,8 @@
 
 服务端口可通过 `SIGNALING_PORT` 环境变量覆盖。
 
+`/health` 返回 `ok`、`endpoints`、`sessions` 和 `pendingCalls`，用于基础运行状态检查。
+
 ## 三、消息信封
 
 客户端与服务端均使用 JSON 消息：

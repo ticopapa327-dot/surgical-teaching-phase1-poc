@@ -32,10 +32,23 @@ function waitFor(ws, type, predicate = () => true) {
   });
 }
 
+async function getJson(url) {
+  const response = await fetch(url);
+  assert.equal(response.ok, true);
+  return response.json();
+}
+
 async function main() {
   const server = createSignalingServer({ port: 0 });
   const address = await server.start();
   const url = `ws://127.0.0.1:${address.port}/signal`;
+  const httpBase = `http://127.0.0.1:${address.port}`;
+
+  const emptyHealth = await getJson(`${httpBase}/health`);
+  assert.equal(emptyHealth.ok, true);
+  assert.equal(emptyHealth.endpoints, 0);
+  assert.equal(emptyHealth.sessions, 0);
+  assert.equal(emptyHealth.pendingCalls, 0);
 
   const orClient = await connect(url);
   const teachingClient = await connect(url);
@@ -80,6 +93,8 @@ async function main() {
   const orEndpoint = directory.payload.endpoints.find((endpoint) => endpoint.endpointId === "or-1");
   assert.equal(orEndpoint.channels.length, 4);
   assert.equal(orEndpoint.channels[1].label, "Surgical Field");
+  const httpDirectory = await getJson(`${httpBase}/directory`);
+  assert.equal(httpDirectory.length, 3);
 
   send(teachingClient, "call.request", { toEndpointId: "or-1", mode: "interactive" });
   const requested = await waitFor(teachingClient, "call.requested");
@@ -96,6 +111,10 @@ async function main() {
   const session = sessionStarted.payload.session;
   assert.equal(session.mode, "interactive");
   assert.deepEqual(session.subscriptions["teach-1"], ["ch1"]);
+  const activeHealth = await getJson(`${httpBase}/health`);
+  assert.equal(activeHealth.endpoints, 3);
+  assert.equal(activeHealth.sessions, 1);
+  assert.equal(activeHealth.pendingCalls, 0);
 
   send(teachingClient, "peer.signal", {
     sessionId: session.sessionId,
@@ -138,6 +157,8 @@ async function main() {
   assert.equal(ended.payload.endedByEndpointId, "teach-1");
   assert.equal(ended.payload.reason, "requested");
   assert.equal(server.state.sessions.size, 0);
+  const endedHealth = await getJson(`${httpBase}/health`);
+  assert.equal(endedHealth.sessions, 0);
 
   send(teachingClient, "call.request", { toEndpointId: "or-1", mode: "interactive" });
   await waitFor(teachingClient, "call.requested");
@@ -157,6 +178,8 @@ async function main() {
   assert.equal(disconnected.payload.sessionId, restarted.payload.session.sessionId);
   assert.equal(disconnected.payload.endedByEndpointId, "or-1");
   assert.equal(server.state.sessions.size, 0);
+  const disconnectedHealth = await getJson(`${httpBase}/health`);
+  assert.equal(disconnectedHealth.sessions, 0);
 
   teachingClient.close();
   observerClient.close();
