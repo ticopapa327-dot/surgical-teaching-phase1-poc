@@ -98,6 +98,18 @@ function publicSession(session) {
   };
 }
 
+function publicSessionSummary(session) {
+  return {
+    sessionId: session.sessionId,
+    mode: session.mode,
+    ownerEndpointId: session.ownerEndpointId,
+    participantLimit: session.participantLimit,
+    participantCount: session.participants.length,
+    participants: session.participants,
+    startedAt: session.startedAt
+  };
+}
+
 function publicCall(call) {
   return {
     callId: call.callId,
@@ -168,6 +180,11 @@ function createSignalingServer(options = {}) {
       res.end(JSON.stringify(Array.from(endpoints.values()).map(publicEndpoint)));
       return;
     }
+    if (req.url === "/sessions") {
+      res.writeHead(200, jsonHeaders);
+      res.end(JSON.stringify(Array.from(sessions.values()).map(publicSessionSummary)));
+      return;
+    }
     res.writeHead(404, jsonHeaders);
     res.end(JSON.stringify({ error: "not_found" }));
   });
@@ -181,6 +198,12 @@ function createSignalingServer(options = {}) {
   function sendDirectory() {
     broadcast("directory.updated", {
       endpoints: Array.from(endpoints.values()).map(publicEndpoint)
+    });
+  }
+
+  function sendSessions() {
+    broadcast("sessions.updated", {
+      sessions: Array.from(sessions.values()).map(publicSessionSummary)
     });
   }
 
@@ -245,6 +268,7 @@ function createSignalingServer(options = {}) {
         send(targetSocket, "session.ended", ended, endpointId === endedByEndpointId ? requestId : null);
       }
     }
+    sendSessions();
   }
 
   function removeEndpoint(endpointId, reason = "endpoint_disconnected") {
@@ -319,6 +343,16 @@ function createSignalingServer(options = {}) {
     const fromEndpoint = requireRegistration(ws, requestId);
     if (!fromEndpoint) return;
 
+    if (type === "session.list") {
+      send(
+        ws,
+        "session.snapshot",
+        { sessions: Array.from(sessions.values()).map(publicSessionSummary) },
+        requestId
+      );
+      return;
+    }
+
     if (type === "call.request") {
       const toEndpoint = endpoints.get(payload.toEndpointId);
       const targetSocket = sockets.get(payload.toEndpointId);
@@ -391,6 +425,7 @@ function createSignalingServer(options = {}) {
       send(ws, "session.started", { session: publicValue }, requestId);
       const callerSocket = sockets.get(call.fromEndpointId);
       if (callerSocket) send(callerSocket, "session.started", { session: publicValue });
+      sendSessions();
       return;
     }
 
@@ -501,6 +536,7 @@ function createSignalingServer(options = {}) {
         return;
       }
       notifySession(session);
+      sendSessions();
       return;
     }
 
@@ -527,6 +563,7 @@ function createSignalingServer(options = {}) {
       session.subscriptions[fromEndpoint.endpointId] = ["ch1"];
       notifySession(session);
       send(ws, "session.joined", { session: publicSession(session) }, requestId);
+      sendSessions();
       return;
     }
 

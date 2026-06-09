@@ -344,6 +344,72 @@ test("phase 2 UI joins an existing signaling session by session id", async ({ pa
   }
 });
 
+test("phase 2 UI discovers joinable sessions from the signaling directory", async ({ page }) => {
+  const server = createSignalingServer({ port: 0 });
+  const address = await server.start();
+  const url = `ws://127.0.0.1:${address.port}/signal`;
+  const orClient = await connect(url);
+  const teachingClient = await connect(url);
+
+  try {
+    send(orClient, "endpoint.register", {
+      endpointId: "or-directory-host",
+      role: "operating-room",
+      name: "Directory Host OR",
+      address: "192.168.10.68",
+      capabilities: ["call-control", "publish-video", "interactive-audio"]
+    });
+    await waitFor(orClient, "endpoint.registered");
+
+    send(teachingClient, "endpoint.register", {
+      endpointId: "teach-directory-host",
+      role: "teaching-room",
+      name: "Directory Teaching Host",
+      address: "192.168.10.69",
+      capabilities: ["subscribe-video", "interactive-audio"]
+    });
+    await waitFor(teachingClient, "endpoint.registered");
+
+    const incoming = waitFor(teachingClient, "call.incoming");
+    send(orClient, "call.request", { toEndpointId: "teach-directory-host", mode: "interactive", participantLimit: 3 });
+    const incomingCall = await incoming;
+    const startedForOr = waitFor(orClient, "session.started");
+    send(teachingClient, "call.accept", {
+      callId: incomingCall.payload.call.callId,
+      mode: "interactive",
+      participantLimit: 2
+    });
+    const started = await startedForOr;
+
+    await page.goto("/");
+    await page.getByLabel("信令地址").fill(url);
+    await page.getByLabel("本端 ID").fill("observer-directory");
+    await page.getByLabel("本端名称").fill("Observer Directory UI");
+    await page.getByLabel("本端角色").selectOption("observer");
+    await page.getByRole("button", { name: "连接信令" }).click();
+    await expect(page.getByText("已注册 Observer Directory UI")).toBeVisible();
+    await expect(page.locator(".status-list.compact dd").filter({ hasText: "1 个会话" })).toBeVisible();
+
+    await page.getByLabel("会话目录").selectOption(started.payload.session.sessionId);
+    await expect(page.getByLabel("加入会话 ID")).toHaveValue(started.payload.session.sessionId);
+
+    const joinedUpdate = waitFor(
+      orClient,
+      "session.updated",
+      (message) => message.payload.session.participants.includes("observer-directory")
+    );
+    await page.getByRole("button", { name: "加入信令会话" }).click();
+    const update = await joinedUpdate;
+    assert.equal(update.payload.session.sessionId, started.payload.session.sessionId);
+    await expect(page.locator(".session-list dd").filter({ hasText: "3 / 3" })).toBeVisible();
+    await expect(page.locator(".session-list dd").filter({ hasText: "Directory Host OR" })).toBeVisible();
+  } finally {
+    orClient.close();
+    teachingClient.close();
+    await server.stop();
+  }
+});
+
 test("phase 2 UI reports participant limit when joining a full signaling session", async ({ page }) => {
   const server = createSignalingServer({ port: 0 });
   const address = await server.start();

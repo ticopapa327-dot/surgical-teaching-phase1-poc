@@ -49,6 +49,8 @@ async function main() {
   assert.equal(emptyHealth.endpoints, 0);
   assert.equal(emptyHealth.sessions, 0);
   assert.equal(emptyHealth.pendingCalls, 0);
+  const emptySessions = await getJson(`${httpBase}/sessions`);
+  assert.deepEqual(emptySessions, []);
 
   const orClient = await connect(url);
   const teachingClient = await connect(url);
@@ -171,6 +173,18 @@ async function main() {
   assert.equal(activeHealth.endpoints, 3);
   assert.equal(activeHealth.sessions, 1);
   assert.equal(activeHealth.pendingCalls, 0);
+  const httpSessions = await getJson(`${httpBase}/sessions`);
+  assert.equal(httpSessions.length, 1);
+  assert.equal(httpSessions[0].sessionId, session.sessionId);
+  assert.equal(httpSessions[0].participantCount, 2);
+  assert.equal(httpSessions[0].participantLimit, 2);
+  assert.deepEqual(httpSessions[0].participants, ["teach-1", "or-1"]);
+  assert.equal("annotation" in httpSessions[0], false);
+  assert.equal("subscriptions" in httpSessions[0], false);
+  send(observerClient, "session.list");
+  const sessionSnapshot = await waitFor(observerClient, "session.snapshot");
+  assert.equal(sessionSnapshot.payload.sessions.length, 1);
+  assert.equal(sessionSnapshot.payload.sessions[0].sessionId, session.sessionId);
 
   const malformedClient = await connect(url);
   send(malformedClient, "endpoint.register", {

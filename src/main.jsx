@@ -259,13 +259,17 @@ function isValidWebSocketUrl(value) {
   }
 }
 
-function healthUrlFromSignalingUrl(value) {
+function httpUrlFromSignalingUrl(value, pathname) {
   const url = new URL(value);
   url.protocol = url.protocol === "wss:" ? "https:" : "http:";
-  url.pathname = "/health";
+  url.pathname = pathname;
   url.search = "";
   url.hash = "";
   return url.toString();
+}
+
+function healthUrlFromSignalingUrl(value) {
+  return httpUrlFromSignalingUrl(value, "/health");
 }
 
 function endpointLabel(endpoint) {
@@ -306,6 +310,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   );
   const [signalingState, setSignalingState] = useState({ connected: false, label: "未连接" });
   const [signalingDirectory, setSignalingDirectory] = useState([]);
+  const [signalingSessions, setSignalingSessions] = useState([]);
   const [signalingTargetId, setSignalingTargetId] = useState("");
   const [signalingHealth, setSignalingHealth] = useState("-");
   const [joinSessionId, setJoinSessionId] = useState("");
@@ -619,6 +624,15 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     return endpoint ? endpointLabel(endpoint) : endpointId;
   }
 
+  function sessionDirectoryLabel(session) {
+    const participants = Array.isArray(session.participants) ? session.participants : [];
+    const participantText = participants.map(endpointLabelById).join("、") || "-";
+    const participantCount = Number.isFinite(Number(session.participantCount))
+      ? session.participantCount
+      : participants.length;
+    return `${session.sessionId} / ${modeLabel(session.mode)} / ${participantCount} / ${session.participantLimit} / ${participantText}`;
+  }
+
   function setDirectoryFromSignaling(endpoints) {
     const onlineEndpoints = Array.isArray(endpoints) ? endpoints : [];
     setSignalingDirectory(onlineEndpoints);
@@ -629,6 +643,10 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       }
       return onlineEndpoints.find((item) => item.endpointId !== selfId)?.endpointId || "";
     });
+  }
+
+  function setSessionsFromSignaling(sessions) {
+    setSignalingSessions(Array.isArray(sessions) ? sessions : []);
   }
 
   function sendSignaling(type, payload = {}) {
@@ -680,11 +698,17 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       setSignalingState({ connected: true, label: `已注册 ${payload.endpoint?.name || signalingEndpointIdRef.current}` });
       setStatus("信令服务器已连接，本端已注册。");
       sendSignaling("endpoint.list");
+      sendSignaling("session.list");
       return;
     }
 
     if (type === "directory.updated" || type === "directory.snapshot") {
       setDirectoryFromSignaling(payload.endpoints);
+      return;
+    }
+
+    if (type === "session.snapshot" || type === "sessions.updated") {
+      setSessionsFromSignaling(payload.sessions);
       return;
     }
 
@@ -858,6 +882,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
         activeSessionRef.current = null;
         setActiveSession((session) => (session?.source === "signaling" ? null : session));
         setOverLimitNotice("");
+        setSignalingSessions([]);
         setSignalingState({ connected: false, label: "未连接" });
         setStatus(closeMessage);
       }
@@ -873,6 +898,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     setActiveSession((session) => (session?.source === "signaling" ? null : session));
     setOverLimitNotice("");
     setSignalingDirectory([]);
+    setSignalingSessions([]);
     setSignalingTargetId("");
     setSignalingState({ connected: false, label: "未连接" });
     setStatus("信令连接已断开，已清理信令会话状态。");
@@ -916,6 +942,12 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     }
     if (sendSignaling("session.join", { sessionId })) {
       setStatus(`已请求加入信令会话：${sessionId}。`);
+    }
+  }
+
+  function refreshSignalingSessions() {
+    if (sendSignaling("session.list")) {
+      setStatus("已请求刷新信令会话目录。");
     }
   }
 
@@ -1183,6 +1215,9 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   const anyRecording = CHANNELS.some((channel) => activeRecorders.current[channel.id]);
   const remoteChannels = displayedRemoteChannels();
   const signalingTargets = signalingDirectory.filter((endpoint) => endpoint.endpointId !== signalingEndpointIdRef.current);
+  const joinableSignalingSessions = signalingSessions.filter(
+    (session) => !session.participants?.includes(signalingEndpointIdRef.current)
+  );
   const selectedSignalingTarget = signalingTargets.find((endpoint) => endpoint.endpointId === signalingTargetId);
   const selectedTargetChannels =
     selectedSignalingTarget?.channels?.map((channel) => `${channel.id} ${channel.label}`).join("、") || "-";
@@ -1433,6 +1468,25 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
                 加入会话 ID
                 <input value={joinSessionId} onChange={(event) => setJoinSessionId(event.target.value)} />
               </label>
+              <label>
+                会话目录
+                <select
+                  value={
+                    joinableSignalingSessions.some((session) => session.sessionId === joinSessionId.trim())
+                      ? joinSessionId.trim()
+                      : ""
+                  }
+                  disabled={joinableSignalingSessions.length === 0}
+                  onChange={(event) => setJoinSessionId(event.target.value)}
+                >
+                  <option value="">选择可加入会话</option>
+                  {joinableSignalingSessions.map((session) => (
+                    <option value={session.sessionId} key={session.sessionId}>
+                      {sessionDirectoryLabel(session)}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
             <dl className="status-list compact">
               <div>
@@ -1442,6 +1496,10 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
               <div>
                 <dt>在线目录</dt>
                 <dd>{signalingDirectory.length} 个终端</dd>
+              </div>
+              <div>
+                <dt>会话目录</dt>
+                <dd>{signalingSessions.length} 个会话</dd>
               </div>
               <div>
                 <dt>健康检查</dt>
@@ -1460,6 +1518,9 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
                 断开
               </button>
               <button onClick={checkSignalingHealth}>检查健康</button>
+              <button onClick={refreshSignalingSessions} disabled={!signalingState.connected}>
+                刷新会话
+              </button>
               <button
                 onClick={requestSignalingCall}
                 disabled={!signalingState.connected || !signalingTargetId || Boolean(activeSession || pendingCall)}
