@@ -508,6 +508,18 @@ async function main() {
   await waitFor(authClient, "endpoint.registered");
   const authenticatedHealth = await getJson(`${authHttpBase}/health`);
   assert.equal(authenticatedHealth.endpoints, 1);
+  const unauthorizedDirectory = await fetch(`${authHttpBase}/directory`);
+  assert.equal(unauthorizedDirectory.status, 401);
+  const authorizedDirectoryResponse = await fetch(`${authHttpBase}/directory`, {
+    headers: { Authorization: "Bearer shared-secret" }
+  });
+  assert.equal(authorizedDirectoryResponse.ok, true);
+  const authorizedDirectory = await authorizedDirectoryResponse.json();
+  assert.equal(authorizedDirectory.length, 1);
+  const authorizedSessionsResponse = await fetch(`${authHttpBase}/sessions?authToken=shared-secret`);
+  assert.equal(authorizedSessionsResponse.ok, true);
+  const authorizedSessions = await authorizedSessionsResponse.json();
+  assert.deepEqual(authorizedSessions, []);
   authClient.close();
   await authServer.stop();
 

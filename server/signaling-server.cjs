@@ -155,16 +155,30 @@ function createSignalingServer(options = {}) {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type"
+    "Access-Control-Allow-Headers": "Content-Type, Authorization"
   };
 
+  function requestHasAuth(req, requestUrl) {
+    if (!authToken) return true;
+    const authorization = req.headers.authorization || "";
+    const bearerToken = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
+    const queryToken = requestUrl.searchParams.get("authToken") || "";
+    return bearerToken === authToken || queryToken === authToken;
+  }
+
+  function writeUnauthorized(res) {
+    res.writeHead(401, jsonHeaders);
+    res.end(JSON.stringify({ error: "unauthorized" }));
+  }
+
   const httpServer = http.createServer((req, res) => {
+    const requestUrl = new URL(req.url, `http://${req.headers.host || "127.0.0.1"}`);
     if (req.method === "OPTIONS") {
       res.writeHead(204, jsonHeaders);
       res.end();
       return;
     }
-    if (req.url === "/health") {
+    if (requestUrl.pathname === "/health") {
       res.writeHead(200, jsonHeaders);
       res.end(
         JSON.stringify({
@@ -176,12 +190,20 @@ function createSignalingServer(options = {}) {
       );
       return;
     }
-    if (req.url === "/directory") {
+    if (requestUrl.pathname === "/directory") {
+      if (!requestHasAuth(req, requestUrl)) {
+        writeUnauthorized(res);
+        return;
+      }
       res.writeHead(200, jsonHeaders);
       res.end(JSON.stringify(Array.from(endpoints.values()).map(publicEndpoint)));
       return;
     }
-    if (req.url === "/sessions") {
+    if (requestUrl.pathname === "/sessions") {
+      if (!requestHasAuth(req, requestUrl)) {
+        writeUnauthorized(res);
+        return;
+      }
       res.writeHead(200, jsonHeaders);
       res.end(JSON.stringify(Array.from(sessions.values()).map(publicSessionSummary)));
       return;

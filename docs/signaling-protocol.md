@@ -16,7 +16,7 @@
 | HTTP | `http://127.0.0.1:7077/sessions` | 在线会话摘要快照 |
 
 服务端口可通过 `SIGNALING_PORT` 环境变量覆盖。
-如设置 `SIGNALING_AUTH_TOKEN`，客户端注册时必须在 `endpoint.register.payload.authToken` 中提交相同令牌。该令牌只作为 PoC 共享入口门禁，不替代 TLS、用户身份、权限模型或审计。
+如设置 `SIGNALING_AUTH_TOKEN`，客户端注册时必须在 `endpoint.register.payload.authToken` 中提交相同令牌。HTTP `/directory` 和 `/sessions` 也必须通过 `Authorization: Bearer <token>` 或 `?authToken=<token>` 提交令牌；`/health` 保持公开，只返回计数。该令牌只作为 PoC 共享入口门禁，不替代 TLS、用户身份、权限模型或审计。
 
 `/health` 返回 `ok`、`endpoints`、`sessions` 和 `pendingCalls`，用于基础运行状态检查。
 `/sessions` 返回当前在线信令会话摘要，只包含会话 ID、模式、参与上限、参与端 ID、参与人数和开始时间，不包含标注内容、通道订阅详情、患者信息或媒体房间数据。
