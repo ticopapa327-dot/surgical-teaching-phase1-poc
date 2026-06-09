@@ -23,7 +23,8 @@ input {
 }
 
 button,
-select {
+select,
+input {
   border: 1px solid #c8d1dc;
   border-radius: 6px;
   background: #fff;
@@ -36,9 +37,11 @@ button {
   cursor: pointer;
 }
 
-button:hover:not(:disabled) {
+button:hover:not(:disabled),
+button.active {
   border-color: #1f6f8b;
   color: #145d77;
+  background: #eef8fb;
 }
 
 button:disabled {
@@ -51,7 +54,8 @@ button.danger {
   color: #9b1c1c;
 }
 
-select {
+select,
+input {
   min-height: 36px;
   padding: 0 10px;
   width: 100%;
@@ -60,7 +64,7 @@ select {
 .app-shell {
   min-height: 100vh;
   display: grid;
-  grid-template-rows: auto 1fr auto auto;
+  grid-template-rows: auto auto auto auto auto;
 }
 
 .topbar {
@@ -79,15 +83,20 @@ select {
   letter-spacing: 0;
 }
 
-.topbar p {
+.topbar p,
+.remote-head p {
   margin: 5px 0 0;
   color: #53616f;
 }
 
-.top-actions {
+.top-actions,
+.button-row {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.top-actions {
   justify-content: flex-end;
 }
 
@@ -109,7 +118,8 @@ select {
 .channel-card,
 .side-panel,
 .playback-panel,
-.panel-block {
+.panel-block,
+.remote-stage {
   border: 1px solid #d9e1ea;
   border-radius: 8px;
   background: #ffffff;
@@ -130,7 +140,8 @@ select {
 
 .channel-head h2,
 .panel-block h2,
-.playback-panel h2 {
+.playback-panel h2,
+.remote-stage h2 {
   margin: 0;
   font-size: 16px;
 }
@@ -155,7 +166,8 @@ select {
   background: #111820;
 }
 
-.preview-frame video {
+.preview-frame video,
+.remote-video-tile video {
   width: 100%;
   height: 100%;
   display: block;
@@ -206,34 +218,44 @@ select {
   flex-direction: column;
 }
 
-.hint {
+.hint,
+.notice {
   color: #657281;
   margin: 10px 0 0;
   font-size: 13px;
 }
 
-.status-list {
+.notice {
+  color: #9b1c1c;
+}
+
+.status-list,
+.session-list {
   margin: 0 0 10px;
 }
 
-.status-list div {
+.status-list div,
+.session-list div {
   display: grid;
-  grid-template-columns: 82px minmax(0, 1fr);
+  grid-template-columns: 86px minmax(0, 1fr);
   gap: 8px;
   padding: 6px 0;
   border-bottom: 1px solid #eef2f6;
 }
 
-.status-list dt {
+.status-list dt,
+.session-list dt {
   color: #657281;
 }
 
-.status-list dd {
+.status-list dd,
+.session-list dd {
   margin: 0;
   overflow-wrap: anywhere;
 }
 
-.section-title-row {
+.section-title-row,
+.remote-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -289,6 +311,129 @@ select {
 
 .recording-actions button {
   flex: 1;
+}
+
+.interaction-workbench {
+  display: grid;
+  grid-template-columns: 520px minmax(0, 1fr);
+  gap: 16px;
+  padding: 0 16px 16px;
+}
+
+.interaction-left {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.form-grid label,
+.annotation-input {
+  display: grid;
+  gap: 5px;
+  color: #53616f;
+}
+
+.call-banner {
+  display: grid;
+  gap: 4px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid #d6b656;
+  border-radius: 6px;
+  background: #fff5d6;
+}
+
+.channel-pulls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+  margin-bottom: 12px;
+}
+
+.annotation-input {
+  margin: 12px 0 8px;
+}
+
+.remote-stage {
+  padding: 12px;
+  min-height: 560px;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.remote-head span {
+  min-width: 76px;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: #eef8fb;
+  color: #145d77;
+  text-align: center;
+}
+
+.remote-grid {
+  display: grid;
+  gap: 10px;
+  min-height: 0;
+}
+
+.remote-grid.layout-single {
+  grid-template-columns: 1fr;
+}
+
+.remote-grid.layout-dual,
+.remote-grid.layout-quad {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.remote-video-tile {
+  position: relative;
+  min-height: 0;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 6px;
+  background: #111820;
+}
+
+.remote-label {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.58);
+  color: #ffffff;
+  font-size: 13px;
+}
+
+.annotation {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  max-width: 78%;
+  transform: translate(-50%, -50%);
+  padding: 9px 12px;
+  border: 2px solid #ffd84d;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff2a8;
+  font-weight: 700;
+  text-align: center;
+}
+
+.empty-remote {
+  display: grid;
+  place-items: center;
+  min-height: 420px;
+  border: 1px dashed #c8d1dc;
+  border-radius: 6px;
+  color: #657281;
 }
 
 .playback-panel {

@@ -11,3 +11,5 @@ Thumbs.db
 recordings/
 *.webm
 *.mp4
+test-results/
+playwright-report/

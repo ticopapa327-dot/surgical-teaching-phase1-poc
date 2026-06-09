@@ -9,6 +9,12 @@ const CHANNELS = [
   { id: "ch4", label: "通道 4", role: "备用" }
 ];
 
+const ADDRESS_BOOK = [
+  { id: "teach-a", name: "示教室 A", address: "192.168.10.31", type: "Windows PC" },
+  { id: "teach-b", name: "示教室 B", address: "192.168.10.32", type: "Windows PC" },
+  { id: "panel-a", name: "会议平板 A", address: "192.168.10.51", type: "Android" }
+];
+
 const MIME_CANDIDATES = [
   "video/webm;codecs=vp9,opus",
   "video/webm;codecs=vp8,opus",
@@ -94,7 +100,7 @@ function createMockVideoStream(channel) {
   let frame = 0;
 
   const draw = () => {
-    const t = new Date();
+    const now = new Date();
     const hue = (frame * 2 + channel.id.charCodeAt(2) * 30) % 360;
     ctx.fillStyle = `hsl(${hue}, 38%, 17%)`;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -112,13 +118,13 @@ function createMockVideoStream(channel) {
       ctx.lineTo(canvas.width, y);
       ctx.stroke();
     }
-    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    ctx.fillStyle = "rgba(255,255,255,0.94)";
     ctx.font = "700 58px Microsoft YaHei, sans-serif";
     ctx.fillText(`${channel.label} ${channel.role}`, 56, 112);
     ctx.font = "32px Consolas, monospace";
-    ctx.fillText(t.toLocaleString(), 56, 176);
+    ctx.fillText(now.toLocaleString(), 56, 176);
     ctx.font = "28px Microsoft YaHei, sans-serif";
-    ctx.fillText("模拟视频源：无 USB 采集卡时用于阶段 1 功能验证", 56, 234);
+    ctx.fillText("模拟视频源：用于无 USB 采集卡时验证预览、录制和互动拉流", 56, 234);
     ctx.fillStyle = "rgba(255,255,255,0.22)";
     ctx.fillRect(56, 310, 680, 260);
     ctx.fillStyle = "rgba(255,255,255,0.88)";
@@ -160,6 +166,14 @@ function formatDuration(ms) {
   return `${min}:${String(sec).padStart(2, "0")}`;
 }
 
+function modeLabel(mode) {
+  return mode === "interactive" ? "交互模式" : "仅收看";
+}
+
+function resolveMode(requestMode, confirmMode) {
+  return requestMode === "view" || confirmMode === "view" ? "view" : "interactive";
+}
+
 function App() {
   const [appInfo, setAppInfo] = useState(null);
   const [videoDevices, setVideoDevices] = useState([]);
@@ -172,11 +186,27 @@ function App() {
   const [selectedPlayback, setSelectedPlayback] = useState(null);
   const [isPermissionReady, setPermissionReady] = useState(false);
   const [recordingSessionId, setRecordingSessionId] = useState("");
+  const [previewVersion, setPreviewVersion] = useState(0);
+
+  const [callTargetId, setCallTargetId] = useState(ADDRESS_BOOK[0].id);
+  const [customAddress, setCustomAddress] = useState("");
+  const [requestMode, setRequestMode] = useState("interactive");
+  const [confirmMode, setConfirmMode] = useState("interactive");
+  const [participantLimit, setParticipantLimit] = useState(2);
+  const [pendingCall, setPendingCall] = useState(null);
+  const [activeSession, setActiveSession] = useState(null);
+  const [layoutMode, setLayoutMode] = useState("single");
+  const [annotationText, setAnnotationText] = useState("请关注术野关键区域");
+  const [annotationVisible, setAnnotationVisible] = useState(false);
+  const [audioCall, setAudioCall] = useState({ state: "idle", label: "未建立" });
+  const [overLimitNotice, setOverLimitNotice] = useState("");
 
   const videoRefs = useRef({});
+  const remoteVideoRefs = useRef({});
   const previewStreams = useRef({});
   const activeRecorders = useRef({});
   const pendingWrites = useRef({});
+  const interactionAudioStream = useRef(null);
 
   const supportedMimeType = useMemo(getSupportedMimeType, []);
 
@@ -185,8 +215,21 @@ function App() {
     refreshRecordings();
     return () => {
       Object.values(previewStreams.current).forEach(stopStream);
+      stopStream(interactionAudioStream.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (!activeSession) return;
+    for (const channelId of activeSession.subscribedChannels) {
+      const video = remoteVideoRefs.current[channelId];
+      const stream = previewStreams.current[channelId];
+      if (video && video.srcObject !== stream) {
+        video.srcObject = stream || null;
+        if (stream) video.play().catch(() => {});
+      }
+    }
+  }, [activeSession, previewVersion, layoutMode]);
 
   async function refreshRecordings() {
     const items = await api.recordings.list();
@@ -251,6 +294,7 @@ function App() {
       video.srcObject = stream;
       await video.play();
     }
+    setPreviewVersion((value) => value + 1);
     setStatus(`${channel.label} 预览已启动。`);
   }
 
@@ -267,6 +311,7 @@ function App() {
     previewStreams.current[channel.id] = null;
     const video = videoRefs.current[channel.id];
     if (video) video.srcObject = null;
+    setPreviewVersion((value) => value + 1);
     setStatus(`${channel.label} 预览已停止。`);
   }
 
@@ -383,14 +428,158 @@ function App() {
     return device?.label || "";
   }
 
+  function selectedTarget() {
+    return ADDRESS_BOOK.find((item) => item.id === callTargetId) || ADDRESS_BOOK[0];
+  }
+
+  function requestCall(direction) {
+    const target = selectedTarget();
+    const address = customAddress.trim() || target.address;
+    const call =
+      direction === "or-to-teaching"
+        ? {
+            id: Date.now(),
+            direction,
+            from: "手术室端",
+            to: `${target.name} (${address})`,
+            requestedMode: requestMode
+          }
+        : {
+            id: Date.now(),
+            direction,
+            from: `${target.name} (${address})`,
+            to: "手术室端",
+            requestedMode: requestMode
+          };
+    setPendingCall(call);
+    setStatus(`${call.from} 已向 ${call.to} 发起 ${modeLabel(call.requestedMode)} 呼叫。`);
+  }
+
+  function acceptCall() {
+    if (!pendingCall) return;
+    const finalMode = resolveMode(pendingCall.requestedMode, confirmMode);
+    const participants = ["手术室端", pendingCall.direction === "or-to-teaching" ? pendingCall.to : pendingCall.from];
+    setActiveSession({
+      id: Date.now(),
+      startedAt: new Date().toISOString(),
+      mode: finalMode,
+      participants,
+      participantLimit,
+      subscribedChannels: ["ch1"]
+    });
+    setLayoutMode("single");
+    setPendingCall(null);
+    setOverLimitNotice("");
+    setStatus(`互动连接已建立，最终模式为 ${modeLabel(finalMode)}，默认拉取通道 1。`);
+  }
+
+  function rejectCall() {
+    if (!pendingCall) return;
+    setStatus(`${pendingCall.to} 已拒绝呼叫。`);
+    setPendingCall(null);
+  }
+
+  function closeSession() {
+    stopInteractionAudio();
+    setActiveSession(null);
+    setAnnotationVisible(false);
+    setOverLimitNotice("");
+    setStatus("互动连接已结束。");
+  }
+
+  async function toggleRemoteChannel(channelId, checked) {
+    if (!activeSession) return;
+    if (checked) {
+      const channel = CHANNELS.find((item) => item.id === channelId);
+      if (channel && !previewStreams.current[channelId]) {
+        await startPreview(channel);
+      }
+      setActiveSession((session) => ({
+        ...session,
+        subscribedChannels: Array.from(new Set([...session.subscribedChannels, channelId]))
+      }));
+    } else {
+      const remaining = activeSession.subscribedChannels.filter((id) => id !== channelId);
+      setActiveSession((session) => ({
+        ...session,
+        subscribedChannels: remaining.length > 0 ? remaining : ["ch1"]
+      }));
+    }
+  }
+
+  async function startInteractionAudio() {
+    if (!activeSession || activeSession.mode !== "interactive") {
+      setStatus("当前不是交互模式，不能建立双向音频。");
+      return;
+    }
+    stopInteractionAudio();
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: false,
+        audio: {
+          deviceId: audioDeviceId ? { exact: audioDeviceId } : undefined,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
+      interactionAudioStream.current = stream;
+      setAudioCall({
+        state: "connected",
+        label: `已建立，本地音频轨道 ${stream.getAudioTracks().length} 路`
+      });
+      setStatus("交互音频已建立，已启用回声消除、噪声抑制和自动增益约束。");
+    } catch (error) {
+      setAudioCall({ state: "error", label: error.message });
+      setStatus(`交互音频建立失败：${error.message}`);
+    }
+  }
+
+  function stopInteractionAudio() {
+    stopStream(interactionAudioStream.current);
+    interactionAudioStream.current = null;
+    setAudioCall({ state: "idle", label: "未建立" });
+  }
+
+  function simulateParticipantJoin() {
+    if (!activeSession) return;
+    if (activeSession.participants.length >= activeSession.participantLimit) {
+      const message = `已达到手术室端设置的 ${activeSession.participantLimit} 人上限，新用户被拒绝。`;
+      setOverLimitNotice(message);
+      setStatus(message);
+      return;
+    }
+    const nextName = `观摩端 ${activeSession.participants.length}`;
+    setActiveSession((session) => ({
+      ...session,
+      participants: [...session.participants, nextName]
+    }));
+    setStatus(`${nextName} 已加入会议。`);
+  }
+
+  function updateParticipantLimit(value) {
+    const next = Math.max(2, Math.min(16, Number(value) || 2));
+    setParticipantLimit(next);
+    setActiveSession((session) => (session ? { ...session, participantLimit: next } : session));
+  }
+
+  function displayedRemoteChannels() {
+    if (!activeSession) return [];
+    const subscribed = activeSession.subscribedChannels;
+    if (layoutMode === "single") return subscribed.slice(0, 1);
+    if (layoutMode === "dual") return subscribed.slice(0, 2);
+    return subscribed.slice(0, 4);
+  }
+
   const anyRecording = CHANNELS.some((channel) => activeRecorders.current[channel.id]);
+  const remoteChannels = displayedRemoteChannels();
 
   return (
     <div className="app-shell">
       <header className="topbar">
         <div>
-          <h1>手术示教 Phase 1 PoC</h1>
-          <p>4 路 USB 视频预览、选择性录制、音频采集、文件索引与回放验证</p>
+          <h1>手术示教 Phase 2 PoC</h1>
+          <p>4 路采集录制稳定性已通过，当前验证呼叫、互动、按需拉流、布局和会议上限。</p>
         </div>
         <div className="top-actions">
           <button onClick={requestDevicePermissionAndRefresh}>授权并刷新设备</button>
@@ -487,7 +676,7 @@ function App() {
                 </option>
               ))}
             </select>
-            <p className="hint">音频采集默认启用回声消除、噪声抑制和自动增益。实际效果必须现场验证。</p>
+            <p className="hint">阶段 2 的音频通话使用本地音频采集验证回声消除约束，真实远端通话需接入媒体服务后复测。</p>
           </section>
 
           <section className="panel-block">
@@ -500,6 +689,10 @@ function App() {
               <div>
                 <dt>录制格式</dt>
                 <dd>{supportedMimeType || "不支持"}</dd>
+              </div>
+              <div>
+                <dt>交互音频</dt>
+                <dd>{audioCall.label}</dd>
               </div>
               <div>
                 <dt>存储目录</dt>
@@ -547,6 +740,198 @@ function App() {
           </section>
         </aside>
       </main>
+
+      <section className="interaction-workbench">
+        <div className="interaction-left">
+          <section className="panel-block">
+            <h2>阶段 2 呼叫控制</h2>
+            <div className="form-grid">
+              <label>
+                通讯录
+                <select value={callTargetId} onChange={(event) => setCallTargetId(event.target.value)}>
+                  {ADDRESS_BOOK.map((item) => (
+                    <option value={item.id} key={item.id}>
+                      {item.name} / {item.address} / {item.type}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                IP 地址覆盖
+                <input
+                  value={customAddress}
+                  onChange={(event) => setCustomAddress(event.target.value)}
+                  placeholder="留空则使用通讯录地址"
+                />
+              </label>
+              <label>
+                发起模式
+                <select value={requestMode} onChange={(event) => setRequestMode(event.target.value)}>
+                  <option value="interactive">交互模式</option>
+                  <option value="view">仅收看</option>
+                </select>
+              </label>
+              <label>
+                接受确认
+                <select value={confirmMode} onChange={(event) => setConfirmMode(event.target.value)}>
+                  <option value="interactive">确认交互</option>
+                  <option value="view">确认仅收看</option>
+                </select>
+              </label>
+              <label>
+                手术室参与上限
+                <input
+                  type="number"
+                  min="2"
+                  max="16"
+                  value={participantLimit}
+                  onChange={(event) => updateParticipantLimit(event.target.value)}
+                />
+              </label>
+            </div>
+            <div className="button-row">
+              <button onClick={() => requestCall("teaching-to-or")} disabled={Boolean(activeSession || pendingCall)}>
+                示教室呼叫手术室
+              </button>
+              <button onClick={() => requestCall("or-to-teaching")} disabled={Boolean(activeSession || pendingCall)}>
+                手术室呼叫示教室
+              </button>
+              <button onClick={acceptCall} disabled={!pendingCall}>
+                接受呼叫
+              </button>
+              <button className="danger" onClick={rejectCall} disabled={!pendingCall}>
+                拒绝
+              </button>
+              <button className="danger" onClick={closeSession} disabled={!activeSession}>
+                结束连接
+              </button>
+            </div>
+            {pendingCall && (
+              <div className="call-banner">
+                <strong>待确认呼叫</strong>
+                <span>
+                  {pendingCall.from} → {pendingCall.to}，请求 {modeLabel(pendingCall.requestedMode)}
+                </span>
+              </div>
+            )}
+          </section>
+
+          <section className="panel-block">
+            <h2>会话状态</h2>
+            {activeSession ? (
+              <dl className="session-list">
+                <div>
+                  <dt>最终模式</dt>
+                  <dd>{modeLabel(activeSession.mode)}</dd>
+                </div>
+                <div>
+                  <dt>默认画面</dt>
+                  <dd>通道 1</dd>
+                </div>
+                <div>
+                  <dt>参与数量</dt>
+                  <dd>
+                    {activeSession.participants.length} / {activeSession.participantLimit}
+                  </dd>
+                </div>
+                <div>
+                  <dt>参与方</dt>
+                  <dd>{activeSession.participants.join("、")}</dd>
+                </div>
+              </dl>
+            ) : (
+              <p className="hint">尚未建立互动连接。先发起呼叫，再由接收方确认模式。</p>
+            )}
+            <div className="button-row">
+              <button onClick={simulateParticipantJoin} disabled={!activeSession}>
+                模拟新增参会者
+              </button>
+              <button onClick={startInteractionAudio} disabled={!activeSession || activeSession.mode !== "interactive"}>
+                建立音频通话
+              </button>
+              <button onClick={stopInteractionAudio} disabled={audioCall.state !== "connected"}>
+                停止音频
+              </button>
+            </div>
+            {overLimitNotice && <p className="notice">{overLimitNotice}</p>}
+          </section>
+
+          <section className="panel-block">
+            <h2>按需拉取与布局</h2>
+            <div className="channel-pulls">
+              {CHANNELS.map((channel) => (
+                <label className="checkline" key={channel.id}>
+                  <input
+                    type="checkbox"
+                    disabled={!activeSession}
+                    checked={activeSession?.subscribedChannels.includes(channel.id) || false}
+                    onChange={(event) => toggleRemoteChannel(channel.id, event.target.checked)}
+                  />
+                  {channel.label} {channel.role}
+                </label>
+              ))}
+            </div>
+            <div className="button-row">
+              <button onClick={() => setLayoutMode("single")} className={layoutMode === "single" ? "active" : ""}>
+                单画面
+              </button>
+              <button onClick={() => setLayoutMode("dual")} className={layoutMode === "dual" ? "active" : ""}>
+                双画面
+              </button>
+              <button onClick={() => setLayoutMode("quad")} className={layoutMode === "quad" ? "active" : ""}>
+                四画面
+              </button>
+            </div>
+            <label className="annotation-input">
+              标注内容
+              <input value={annotationText} onChange={(event) => setAnnotationText(event.target.value)} />
+            </label>
+            <label className="checkline">
+              <input
+                type="checkbox"
+                checked={annotationVisible}
+                onChange={(event) => setAnnotationVisible(event.target.checked)}
+                disabled={!activeSession}
+              />
+              手术室端标注远端可见
+            </label>
+          </section>
+        </div>
+
+        <section className="remote-stage">
+          <div className="remote-head">
+            <div>
+              <h2>远端显示区</h2>
+              <p>{activeSession ? "已建立连接，按需显示订阅通道。" : "未连接，等待呼叫确认。"}</p>
+            </div>
+            <span>{layoutMode === "single" ? "单画面" : layoutMode === "dual" ? "双画面" : "四画面"}</span>
+          </div>
+          <div className={`remote-grid layout-${layoutMode}`}>
+            {activeSession ? (
+              remoteChannels.map((channelId) => {
+                const channel = CHANNELS.find((item) => item.id === channelId);
+                return (
+                  <div className="remote-video-tile" key={channelId}>
+                    <video
+                      ref={(node) => {
+                        remoteVideoRefs.current[channelId] = node;
+                      }}
+                      muted
+                      playsInline
+                    />
+                    <div className="remote-label">
+                      {channel?.label} {channel?.role}
+                    </div>
+                    {annotationVisible && <div className="annotation">{annotationText}</div>}
+                  </div>
+                );
+              })
+            ) : (
+              <div className="empty-remote">连接建立后默认显示通道 1，并可按需拉取其他通道。</div>
+            )}
+          </div>
+        </section>
+      </section>
 
       <section className="playback-panel">
         <div>
