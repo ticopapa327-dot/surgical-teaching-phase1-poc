@@ -142,15 +142,23 @@ function normalizeCallTimeoutMs(value) {
   return Math.max(10, Math.trunc(numericValue));
 }
 
+function normalizeEventLogLimit(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue) || numericValue <= 0) return 200;
+  return Math.max(20, Math.min(1000, Math.trunc(numericValue)));
+}
+
 function createSignalingServer(options = {}) {
   const port = options.port ?? Number(process.env.SIGNALING_PORT || 7077);
   const host = options.host || process.env.SIGNALING_HOST || "127.0.0.1";
   const callTimeoutMs = normalizeCallTimeoutMs(options.callTimeoutMs ?? process.env.SIGNALING_CALL_TIMEOUT_MS);
   const authToken = normalizeText(options.authToken ?? process.env.SIGNALING_AUTH_TOKEN, "", 256);
+  const eventLogLimit = normalizeEventLogLimit(options.eventLogLimit ?? process.env.SIGNALING_EVENT_LOG_LIMIT);
   const endpoints = new Map();
   const sockets = new Map();
   const pendingCalls = new Map();
   const sessions = new Map();
+  const eventLog = [];
   const jsonHeaders = {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
@@ -169,6 +177,20 @@ function createSignalingServer(options = {}) {
   function writeUnauthorized(res) {
     res.writeHead(401, jsonHeaders);
     res.end(JSON.stringify({ error: "unauthorized" }));
+  }
+
+  function recordEvent(type, details = {}) {
+    const event = {
+      eventId: createId("event"),
+      type,
+      at: new Date().toISOString(),
+      ...details
+    };
+    eventLog.push(event);
+    if (eventLog.length > eventLogLimit) {
+      eventLog.splice(0, eventLog.length - eventLogLimit);
+    }
+    return event;
   }
 
   const httpServer = http.createServer((req, res) => {
@@ -206,6 +228,15 @@ function createSignalingServer(options = {}) {
       }
       res.writeHead(200, jsonHeaders);
       res.end(JSON.stringify(Array.from(sessions.values()).map(publicSessionSummary)));
+      return;
+    }
+    if (requestUrl.pathname === "/events") {
+      if (!requestHasAuth(req, requestUrl)) {
+        writeUnauthorized(res);
+        return;
+      }
+      res.writeHead(200, jsonHeaders);
+      res.end(JSON.stringify(eventLog));
       return;
     }
     res.writeHead(404, jsonHeaders);
@@ -271,6 +302,13 @@ function createSignalingServer(options = {}) {
       reason,
       canceledAt: new Date().toISOString()
     };
+    recordEvent("call.canceled", {
+      callId: call.callId,
+      fromEndpointId: call.fromEndpointId,
+      toEndpointId: call.toEndpointId,
+      canceledByEndpointId,
+      reason
+    });
     const callerSocket = sockets.get(call.fromEndpointId);
     const targetSocket = sockets.get(call.toEndpointId);
     if (callerSocket) send(callerSocket, "call.canceled", payload, call.fromEndpointId === canceledByEndpointId ? requestId : null);
@@ -285,6 +323,11 @@ function createSignalingServer(options = {}) {
       reason,
       endedAt: new Date().toISOString()
     };
+    recordEvent("session.ended", {
+      sessionId: session.sessionId,
+      endedByEndpointId,
+      reason
+    });
     for (const endpointId of session.participants) {
       const targetSocket = sockets.get(endpointId);
       if (targetSocket) {
@@ -302,6 +345,7 @@ function createSignalingServer(options = {}) {
     }
     sockets.delete(endpointId);
     endpoints.delete(endpointId);
+    recordEvent("endpoint.removed", { endpointId, reason });
     for (const session of Array.from(sessions.values())) {
       if (session.participants.includes(endpointId)) {
         endSession(session, endpointId, reason);
@@ -320,6 +364,10 @@ function createSignalingServer(options = {}) {
 
     if (type === "endpoint.register") {
       if (authToken && normalizeText(payload.authToken, "", 256) !== authToken) {
+        recordEvent("endpoint.register.denied", {
+          endpointId: normalizeText(payload.endpointId, "", 64) || null,
+          reason: "unauthorized"
+        });
         send(ws, "error", { code: "unauthorized", message: "invalid signaling auth token" }, requestId);
         return;
       }
@@ -342,15 +390,18 @@ function createSignalingServer(options = {}) {
       sockets.set(endpointId, ws);
       send(ws, "endpoint.registered", { endpoint: publicEndpoint(endpoint) }, requestId);
       if (previousSocket && previousSocket !== ws) {
+        recordEvent("endpoint.replaced", { endpointId });
         send(previousSocket, "endpoint.replaced", {
           endpointId,
           replacedAt: new Date().toISOString()
         });
         previousSocket.close(4000, "endpoint replaced");
       }
+      recordEvent("endpoint.registered", { endpointId, role: endpoint.role });
       for (const session of sessions.values()) {
         if (session.participants.includes(endpointId)) {
           send(ws, "session.resumed", { session: publicSession(session) });
+          recordEvent("session.resumed", { sessionId: session.sessionId, endpointId });
         }
       }
       sendDirectory();
@@ -407,6 +458,12 @@ function createSignalingServer(options = {}) {
         if (activeCall) cancelPendingCall(activeCall, "server", "timeout");
       }, callTimeoutMs);
       pendingCalls.set(call.callId, call);
+      recordEvent("call.requested", {
+        callId: call.callId,
+        fromEndpointId: call.fromEndpointId,
+        toEndpointId: call.toEndpointId,
+        requestedMode: call.requestedMode
+      });
       send(ws, "call.requested", { call: publicCall(call) }, requestId);
       send(targetSocket, "call.incoming", {
         call: publicCall(call),
@@ -448,6 +505,12 @@ function createSignalingServer(options = {}) {
         startedAt: new Date().toISOString()
       };
       sessions.set(session.sessionId, session);
+      recordEvent("session.started", {
+        sessionId: session.sessionId,
+        mode: session.mode,
+        participantLimit: session.participantLimit,
+        participants: session.participants
+      });
       const publicValue = publicSession(session);
       send(ws, "session.started", { session: publicValue }, requestId);
       const callerSocket = sockets.get(call.fromEndpointId);
@@ -463,6 +526,7 @@ function createSignalingServer(options = {}) {
         return;
       }
       clearPendingCall(call);
+      recordEvent("call.rejected", { callId: call.callId, byEndpointId: fromEndpoint.endpointId });
       const callerSocket = sockets.get(call.fromEndpointId);
       if (callerSocket) {
         send(callerSocket, "call.rejected", { callId: call.callId, byEndpointId: fromEndpoint.endpointId });
@@ -557,6 +621,7 @@ function createSignalingServer(options = {}) {
       }
       session.participants = session.participants.filter((endpointId) => endpointId !== fromEndpoint.endpointId);
       delete session.subscriptions[fromEndpoint.endpointId];
+      recordEvent("session.left", { sessionId: session.sessionId, endpointId: fromEndpoint.endpointId });
       send(ws, "session.left", { sessionId: session.sessionId }, requestId);
       if (session.participants.length < 2) {
         endSession(session, fromEndpoint.endpointId, "participant_left");
@@ -588,6 +653,7 @@ function createSignalingServer(options = {}) {
       }
       session.participants.push(fromEndpoint.endpointId);
       session.subscriptions[fromEndpoint.endpointId] = ["ch1"];
+      recordEvent("session.joined", { sessionId: session.sessionId, endpointId: fromEndpoint.endpointId });
       notifySession(session);
       send(ws, "session.joined", { session: publicSession(session) }, requestId);
       sendSessions();
@@ -628,7 +694,7 @@ function createSignalingServer(options = {}) {
     stop,
     httpServer,
     wss,
-    state: { endpoints, pendingCalls, sessions }
+    state: { endpoints, pendingCalls, sessions, eventLog }
   };
 }
 

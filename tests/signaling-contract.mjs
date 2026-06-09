@@ -181,6 +181,10 @@ async function main() {
   assert.deepEqual(httpSessions[0].participants, ["teach-1", "or-1"]);
   assert.equal("annotation" in httpSessions[0], false);
   assert.equal("subscriptions" in httpSessions[0], false);
+  const httpEvents = await getJson(`${httpBase}/events`);
+  assert.equal(httpEvents.some((event) => event.type === "endpoint.registered" && event.endpointId === "or-1"), true);
+  assert.equal(httpEvents.some((event) => event.type === "call.requested" && event.callId === requested.payload.call.callId), true);
+  assert.equal(httpEvents.some((event) => event.type === "session.started" && event.sessionId === session.sessionId), true);
   send(observerClient, "session.list");
   const sessionSnapshot = await waitFor(observerClient, "session.snapshot");
   assert.equal(sessionSnapshot.payload.sessions.length, 1);
@@ -510,6 +514,8 @@ async function main() {
   assert.equal(authenticatedHealth.endpoints, 1);
   const unauthorizedDirectory = await fetch(`${authHttpBase}/directory`);
   assert.equal(unauthorizedDirectory.status, 401);
+  const unauthorizedEvents = await fetch(`${authHttpBase}/events`);
+  assert.equal(unauthorizedEvents.status, 401);
   const authorizedDirectoryResponse = await fetch(`${authHttpBase}/directory`, {
     headers: { Authorization: "Bearer shared-secret" }
   });
@@ -520,6 +526,15 @@ async function main() {
   assert.equal(authorizedSessionsResponse.ok, true);
   const authorizedSessions = await authorizedSessionsResponse.json();
   assert.deepEqual(authorizedSessions, []);
+  const authorizedEventsResponse = await fetch(`${authHttpBase}/events`, {
+    headers: { Authorization: "Bearer shared-secret" }
+  });
+  assert.equal(authorizedEventsResponse.ok, true);
+  const authorizedEvents = await authorizedEventsResponse.json();
+  assert.equal(authorizedEvents.some((event) => event.type === "endpoint.register.denied"), true);
+  assert.equal(authorizedEvents.some((event) => event.type === "endpoint.registered" && event.endpointId === "auth-client"), true);
+  assert.equal(JSON.stringify(authorizedEvents).includes("shared-secret"), false);
+  assert.equal(JSON.stringify(authorizedEvents).includes("wrong-secret"), false);
   authClient.close();
   await authServer.stop();
 
