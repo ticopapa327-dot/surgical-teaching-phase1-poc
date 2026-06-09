@@ -509,6 +509,10 @@ function App() {
       participantLimit: session.participantLimit,
       subscribedChannels: sessionChannelsForEndpoint(session, endpointId)
     });
+    if (session.annotation) {
+      setAnnotationText(session.annotation.text || "");
+      setAnnotationVisible(Boolean(session.annotation.visible));
+    }
     if (resetLayout) setLayoutMode("single");
     setPendingCall(null);
     setOverLimitNotice("");
@@ -560,7 +564,12 @@ function App() {
       return;
     }
 
-    if (type === "session.updated" || type === "session.subscribed" || type === "session.joined") {
+    if (
+      type === "session.updated" ||
+      type === "session.subscribed" ||
+      type === "session.joined" ||
+      type === "session.annotation.updated"
+    ) {
       applySignalingSession(payload.session);
       return;
     }
@@ -636,6 +645,25 @@ function App() {
     if (sendSignaling("call.request", { toEndpointId: target.endpointId, mode: requestMode })) {
       setStatus(`已通过信令向 ${endpointLabel(target)} 发起 ${modeLabel(requestMode)} 呼叫。`);
     }
+  }
+
+  function syncSignalingAnnotation(text, visible) {
+    if (activeSession?.source !== "signaling") return;
+    sendSignaling("session.annotation", {
+      sessionId: activeSession.id,
+      text,
+      visible
+    });
+  }
+
+  function updateAnnotationText(value) {
+    setAnnotationText(value);
+    if (annotationVisible) syncSignalingAnnotation(value, annotationVisible);
+  }
+
+  function updateAnnotationVisible(checked) {
+    setAnnotationVisible(checked);
+    syncSignalingAnnotation(annotationText, checked);
   }
 
   function requestCall(direction) {
@@ -1182,13 +1210,13 @@ function App() {
             </div>
             <label className="annotation-input">
               标注内容
-              <input value={annotationText} onChange={(event) => setAnnotationText(event.target.value)} />
+              <input value={annotationText} onChange={(event) => updateAnnotationText(event.target.value)} />
             </label>
             <label className="checkline">
               <input
                 type="checkbox"
                 checked={annotationVisible}
-                onChange={(event) => setAnnotationVisible(event.target.checked)}
+                onChange={(event) => updateAnnotationVisible(event.target.checked)}
                 disabled={!activeSession}
               />
               手术室端标注远端可见

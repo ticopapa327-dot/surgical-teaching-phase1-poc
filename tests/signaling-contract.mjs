@@ -95,6 +95,19 @@ async function main() {
   const subscribed = await waitFor(teachingClient, "session.subscribed");
   assert.deepEqual(subscribed.payload.session.subscriptions["teach-1"], ["ch1", "ch2", "ch3"]);
 
+  send(orClient, "session.annotation", {
+    sessionId: session.sessionId,
+    text: "Key anatomy",
+    visible: true
+  });
+  const annotated = await waitFor(
+    teachingClient,
+    "session.updated",
+    (message) => message.payload.session.annotation?.visible === true
+  );
+  assert.equal(annotated.payload.session.annotation.text, "Key anatomy");
+  assert.equal(annotated.payload.session.annotation.updatedByEndpointId, "or-1");
+
   send(observerClient, "session.join", { sessionId: session.sessionId });
   const limitError = await waitFor(observerClient, "error", (message) => message.payload.code === "participant_limit");
   assert.equal(limitError.payload.code, "participant_limit");

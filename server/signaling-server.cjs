@@ -39,6 +39,7 @@ function publicSession(session) {
     participantLimit: session.participantLimit,
     participants: session.participants,
     subscriptions: session.subscriptions,
+    annotation: session.annotation,
     startedAt: session.startedAt
   };
 }
@@ -181,6 +182,12 @@ function createSignalingServer(options = {}) {
           [call.fromEndpointId]: ["ch1"],
           [call.toEndpointId]: ["ch1"]
         },
+        annotation: {
+          visible: false,
+          text: "",
+          updatedByEndpointId: null,
+          updatedAt: null
+        },
         startedAt: new Date().toISOString()
       };
       sessions.set(session.sessionId, session);
@@ -216,6 +223,23 @@ function createSignalingServer(options = {}) {
       session.subscriptions[fromEndpoint.endpointId] = [...new Set(channels)].slice(0, 4);
       notifySession(session);
       send(ws, "session.subscribed", { session: publicSession(session) }, requestId);
+      return;
+    }
+
+    if (type === "session.annotation") {
+      const session = sessions.get(payload.sessionId);
+      if (!session || !session.participants.includes(fromEndpoint.endpointId)) {
+        send(ws, "error", { code: "session_not_found", message: "session not found" }, requestId);
+        return;
+      }
+      session.annotation = {
+        visible: Boolean(payload.visible),
+        text: String(payload.text || "").slice(0, 200),
+        updatedByEndpointId: fromEndpoint.endpointId,
+        updatedAt: new Date().toISOString()
+      };
+      notifySession(session);
+      send(ws, "session.annotation.updated", { session: publicSession(session) }, requestId);
       return;
     }
 

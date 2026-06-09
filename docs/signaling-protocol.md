@@ -128,7 +128,7 @@
 
 接收方发送 `call.reject` 后，服务端向双方发送 `call.rejected`。
 
-## 六、会话订阅与参与上限
+## 六、会话订阅、标注与参与上限
 
 ### 1. 订阅通道
 
@@ -146,7 +146,33 @@
 
 当前服务端最多保留 4 个订阅通道，并向会话参与方广播 `session.updated`。
 
-### 2. 加入会话
+### 2. 同步标注
+
+会话参与方发送 `session.annotation`：
+
+```json
+{
+  "type": "session.annotation",
+  "payload": {
+    "sessionId": "session-...",
+    "text": "Needle entry",
+    "visible": true
+  }
+}
+```
+
+服务端会更新会话中的 `annotation` 字段，并向会话参与方广播 `session.updated`。发送方还会收到 `session.annotation.updated`。
+
+`annotation` 字段包含：
+
+| 字段 | 说明 |
+|---|---|
+| `visible` | 标注是否可见 |
+| `text` | 标注文本，当前最多保留 200 个字符 |
+| `updatedByEndpointId` | 最近一次更新标注的终端 ID |
+| `updatedAt` | 最近一次更新时间 |
+
+### 3. 加入会话
 
 在线终端发送 `session.join`：
 
@@ -179,7 +205,7 @@
 2. TLS、证书管理和跨网段安全接入。
 3. 会话持久化、断线重连和服务端高可用。
 4. 音视频媒体协商、SFU 转发、SRT/RTSP 接入和手机直播分发。
-5. 标注数据的服务端同步、版本控制和回放绑定。
+5. 标注权限控制、版本控制和录像回放绑定。
 6. HIS 患者信息绑定、录像文件索引和 AI 处理任务分发。
 
 后续进入真实媒体服务阶段时，信令协议应扩展媒体发布、媒体订阅、ICE/SDP 或 SFU 房间控制字段，但控制面仍不应直接承载媒体数据。

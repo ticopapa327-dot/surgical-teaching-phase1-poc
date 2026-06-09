@@ -72,6 +72,17 @@ test("phase 2 UI connects to signaling server and enters accepted session", asyn
     await expect(page.locator(".session-list dd").filter({ hasText: "交互模式" })).toBeVisible();
     await expect(page.locator(".session-list dd").filter({ hasText: "Teaching Remote" })).toBeVisible();
     await expect(page.getByText("信令会话已建立")).toBeVisible();
+
+    const annotationUpdate = waitFor(
+      teachingClient,
+      "session.updated",
+      (message) => message.payload.session.annotation?.visible === true
+    );
+    await page.getByLabel("标注内容").fill("Needle entry");
+    await page.getByLabel("手术室端标注远端可见").check();
+    const annotation = await annotationUpdate;
+    assert.equal(annotation.payload.session.annotation.text, "Needle entry");
+    assert.equal(annotation.payload.session.annotation.updatedByEndpointId, "or-ui");
   } finally {
     teachingClient.close();
     await server.stop();
