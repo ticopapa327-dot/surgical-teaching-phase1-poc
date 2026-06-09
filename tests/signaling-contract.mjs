@@ -97,6 +97,17 @@ async function main() {
   assert.equal(session.mode, "interactive");
   assert.deepEqual(session.subscriptions["teach-1"], ["ch1"]);
 
+  send(teachingClient, "peer.signal", {
+    sessionId: session.sessionId,
+    toEndpointId: "or-1",
+    signal: { type: "offer", sdp: "v=0" }
+  });
+  const relayedOffer = await waitFor(orClient, "peer.signal");
+  assert.equal(relayedOffer.payload.fromEndpointId, "teach-1");
+  assert.equal(relayedOffer.payload.signal.type, "offer");
+  const signalSent = await waitFor(teachingClient, "peer.signal.sent");
+  assert.equal(signalSent.payload.toEndpointId, "or-1");
+
   send(teachingClient, "session.subscribe", {
     sessionId: session.sessionId,
     channels: ["ch1", "ch2", "ch3"]

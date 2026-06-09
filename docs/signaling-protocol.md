@@ -228,7 +228,45 @@
 }
 ```
 
-## 七、当前边界
+## 七、WebRTC 协商透传
+
+会话参与方可以发送 `peer.signal`，用于在会话内透传 WebRTC offer、answer 或 ICE candidate。
+
+```json
+{
+  "type": "peer.signal",
+  "payload": {
+    "sessionId": "session-...",
+    "toEndpointId": "or-1",
+    "signal": {
+      "type": "offer",
+      "sdp": "v=0"
+    }
+  }
+}
+```
+
+服务端只做会话参与方校验和消息转发，不解析 SDP，不创建 PeerConnection，不转发媒体流。
+
+目标终端会收到：
+
+```json
+{
+  "type": "peer.signal",
+  "payload": {
+    "sessionId": "session-...",
+    "fromEndpointId": "teach-1",
+    "signal": {
+      "type": "offer",
+      "sdp": "v=0"
+    }
+  }
+}
+```
+
+发送方会收到 `peer.signal.sent`。如果目标不在会话内，服务端返回 `target_not_in_session`。
+
+## 八、当前边界
 
 当前协议未实现以下生产能力：
 

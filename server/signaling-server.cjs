@@ -280,6 +280,31 @@ function createSignalingServer(options = {}) {
       return;
     }
 
+    if (type === "peer.signal") {
+      const session = sessions.get(payload.sessionId);
+      const targetSocket = sockets.get(payload.toEndpointId);
+      const signal = payload.signal && typeof payload.signal === "object" ? payload.signal : null;
+      if (!session || !session.participants.includes(fromEndpoint.endpointId)) {
+        send(ws, "error", { code: "session_not_found", message: "session not found" }, requestId);
+        return;
+      }
+      if (!session.participants.includes(payload.toEndpointId) || !targetSocket) {
+        send(ws, "error", { code: "target_not_in_session", message: "target endpoint is not in session" }, requestId);
+        return;
+      }
+      if (!signal) {
+        send(ws, "error", { code: "bad_signal", message: "signal payload is required" }, requestId);
+        return;
+      }
+      send(targetSocket, "peer.signal", {
+        sessionId: session.sessionId,
+        fromEndpointId: fromEndpoint.endpointId,
+        signal
+      });
+      send(ws, "peer.signal.sent", { sessionId: session.sessionId, toEndpointId: payload.toEndpointId }, requestId);
+      return;
+    }
+
     if (type === "session.join") {
       const session = sessions.get(payload.sessionId);
       if (!session) {
