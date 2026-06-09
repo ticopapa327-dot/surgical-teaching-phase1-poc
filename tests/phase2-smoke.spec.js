@@ -24,6 +24,10 @@ test("phase 2 call workflow renders and reaches active interaction state", async
   await expect(page.locator(".session-list dd").filter({ hasText: "交互模式" })).toBeVisible();
   await expect(page.getByText("通道 1 全景").first()).toBeVisible();
 
+  await page.getByRole("button", { name: "建立音频通话" }).click();
+  await expect(page.locator(".status-list dd").filter({ hasText: "已建立，本地音频轨道" })).toBeVisible();
+  await page.getByRole("button", { name: "停止音频" }).click();
+
   await page.getByLabel("通道 2 术野").check();
   await page.getByRole("button", { name: "双画面" }).click();
   await expect(page.locator(".remote-video-tile")).toHaveCount(2);
