@@ -334,3 +334,36 @@ test("phase 2 UI reports invalid signaling URL", async ({ page }) => {
   await expect(page.getByText("连接错误")).toBeVisible();
   await expect(page.locator(".footer")).toContainText("信令地址无效");
 });
+
+test("phase 2 UI updates directory after remote endpoint disconnects", async ({ page }) => {
+  const server = createSignalingServer({ port: 0 });
+  const address = await server.start();
+  const url = `ws://127.0.0.1:${address.port}/signal`;
+  const teachingClient = await connect(url);
+
+  try {
+    send(teachingClient, "endpoint.register", {
+      endpointId: "teach-offline",
+      role: "teaching-room",
+      name: "Offline Teaching Room",
+      address: "192.168.10.40",
+      capabilities: ["subscribe-video"]
+    });
+    await waitFor(teachingClient, "endpoint.registered");
+
+    await page.goto("/");
+    await page.getByLabel("信令地址").fill(url);
+    await page.getByLabel("本端 ID").fill("or-ui");
+    await page.getByLabel("本端名称").fill("OR UI");
+    await page.getByRole("button", { name: "连接信令" }).click();
+    await expect(page.getByText("已注册 OR UI")).toBeVisible();
+    await expect(page.locator(".status-list.compact dd").filter({ hasText: "2 个终端" })).toBeVisible();
+    await page.getByLabel("信令目标").selectOption("teach-offline");
+
+    teachingClient.close();
+    await expect(page.locator(".status-list.compact dd").filter({ hasText: "1 个终端" })).toBeVisible();
+    await expect(page.getByLabel("信令目标")).toBeDisabled();
+  } finally {
+    await server.stop();
+  }
+});
