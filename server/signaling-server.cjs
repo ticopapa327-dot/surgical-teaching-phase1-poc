@@ -146,6 +146,7 @@ function createSignalingServer(options = {}) {
   const port = options.port ?? Number(process.env.SIGNALING_PORT || 7077);
   const host = options.host || process.env.SIGNALING_HOST || "127.0.0.1";
   const callTimeoutMs = normalizeCallTimeoutMs(options.callTimeoutMs ?? process.env.SIGNALING_CALL_TIMEOUT_MS);
+  const authToken = normalizeText(options.authToken ?? process.env.SIGNALING_AUTH_TOKEN, "", 256);
   const endpoints = new Map();
   const sockets = new Map();
   const pendingCalls = new Map();
@@ -296,6 +297,10 @@ function createSignalingServer(options = {}) {
     const { type, payload = {}, requestId = null } = msg;
 
     if (type === "endpoint.register") {
+      if (authToken && normalizeText(payload.authToken, "", 256) !== authToken) {
+        send(ws, "error", { code: "unauthorized", message: "invalid signaling auth token" }, requestId);
+        return;
+      }
       const endpointId = normalizeText(payload.endpointId, "", 64) || createId("endpoint");
       const previousEndpointId = endpointForSocket(ws);
       if (previousEndpointId && previousEndpointId !== endpointId) {

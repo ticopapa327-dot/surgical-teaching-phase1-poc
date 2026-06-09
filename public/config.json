@@ -1,5 +1,6 @@
 {
   "signalingUrl": "ws://127.0.0.1:7077/signal",
+  "signalingToken": "",
   "localEndpoint": {
     "id": "or-local",
     "name": "手术室端本机",

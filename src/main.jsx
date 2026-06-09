@@ -37,6 +37,7 @@ const MOCK_PATIENTS = [
 const DEFAULT_SIGNALING_URL = "ws://127.0.0.1:7077/signal";
 const DEFAULT_APP_CONFIG = {
   signalingUrl: DEFAULT_SIGNALING_URL,
+  signalingToken: "",
   localEndpoint: {
     id: "or-local",
     name: "手术室端本机",
@@ -241,6 +242,7 @@ function signalingErrorLabel(payload = {}) {
     target_not_in_session: "目标终端不在当前会话中",
     bad_signal: "协商消息无效",
     participant_limit: "已达到参与上限",
+    unauthorized: "信令鉴权失败",
     unknown_type: "不支持的信令消息类型"
   };
   return labels[payload.code] || payload.message || payload.code || "未知信令错误";
@@ -311,6 +313,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   const [signalingState, setSignalingState] = useState({ connected: false, label: "未连接" });
   const [signalingDirectory, setSignalingDirectory] = useState([]);
   const [signalingSessions, setSignalingSessions] = useState([]);
+  const [signalingToken, setSignalingToken] = useState(initialConfig.signalingToken || "");
   const [signalingTargetId, setSignalingTargetId] = useState("");
   const [signalingHealth, setSignalingHealth] = useState("-");
   const [joinSessionId, setJoinSessionId] = useState("");
@@ -809,6 +812,13 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
         setStatus(`信令错误：${messageText}。`);
         return;
       }
+      if (payload.code === "unauthorized") {
+        signalingCloseMessageRef.current = `信令错误：${messageText}。`;
+        setSignalingState({ connected: false, label: "连接错误" });
+        setStatus(`信令错误：${messageText}。`);
+        signalingSocket.current?.close();
+        return;
+      }
       setStatus(`信令错误：${messageText}。`);
     }
   }
@@ -821,6 +831,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     signalingSocket.current?.close();
     const endpointId = localEndpointId.trim() || "or-local";
     const endpointName = localEndpointName.trim() || endpointId;
+    const endpointToken = signalingToken.trim();
     signalingEndpointIdRef.current = endpointId;
     signalingCloseMessageRef.current = "";
     setSignalingState({ connected: false, label: "连接中" });
@@ -849,6 +860,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
           requestId: `register-${Date.now()}`,
           payload: {
             endpointId,
+            authToken: endpointToken || undefined,
             role: localEndpointRole,
             name: endpointName,
             address: "127.0.0.1",
@@ -1432,6 +1444,14 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
               <label>
                 信令地址
                 <input value={signalingUrl} onChange={(event) => setSignalingUrl(event.target.value)} />
+              </label>
+              <label>
+                信令令牌
+                <input
+                  type="password"
+                  value={signalingToken}
+                  onChange={(event) => setSignalingToken(event.target.value)}
+                />
               </label>
               <label>
                 本端 ID

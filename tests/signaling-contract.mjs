@@ -481,6 +481,36 @@ async function main() {
   timeoutCaller.close();
   timeoutTarget.close();
   await timeoutServer.stop();
+
+  const authServer = createSignalingServer({ port: 0, authToken: "shared-secret" });
+  const authAddress = await authServer.start();
+  const authUrl = `ws://127.0.0.1:${authAddress.port}/signal`;
+  const authHttpBase = `http://127.0.0.1:${authAddress.port}`;
+  const authClient = await connect(authUrl);
+
+  send(authClient, "endpoint.register", {
+    endpointId: "auth-client",
+    role: "observer",
+    name: "Auth Client",
+    authToken: "wrong-secret"
+  });
+  const unauthorized = await waitFor(authClient, "error", (message) => message.payload.code === "unauthorized");
+  assert.equal(unauthorized.payload.code, "unauthorized");
+  const unauthenticatedHealth = await getJson(`${authHttpBase}/health`);
+  assert.equal(unauthenticatedHealth.endpoints, 0);
+
+  send(authClient, "endpoint.register", {
+    endpointId: "auth-client",
+    role: "observer",
+    name: "Auth Client",
+    authToken: "shared-secret"
+  });
+  await waitFor(authClient, "endpoint.registered");
+  const authenticatedHealth = await getJson(`${authHttpBase}/health`);
+  assert.equal(authenticatedHealth.endpoints, 1);
+  authClient.close();
+  await authServer.stop();
+
   console.log("signaling contract test passed");
 }
 

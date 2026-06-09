@@ -709,6 +709,23 @@ test("phase 2 UI reports invalid signaling URL", async ({ page }) => {
   await expect(page.locator(".footer")).toContainText("信令地址无效");
 });
 
+test("phase 2 UI reports invalid signaling token", async ({ page }) => {
+  const server = createSignalingServer({ port: 0, authToken: "shared-secret" });
+  const address = await server.start();
+  const url = `ws://127.0.0.1:${address.port}/signal`;
+
+  try {
+    await page.goto("/");
+    await page.getByLabel("信令地址").fill(url);
+    await page.getByLabel("信令令牌").fill("wrong-secret");
+    await page.getByRole("button", { name: "连接信令" }).click();
+    await expect(page.locator(".footer")).toContainText("信令鉴权失败");
+    await expect(page.getByText("已注册")).toHaveCount(0);
+  } finally {
+    await server.stop();
+  }
+});
+
 test("phase 2 UI updates directory after remote endpoint disconnects", async ({ page }) => {
   const server = createSignalingServer({ port: 0 });
   const address = await server.start();
