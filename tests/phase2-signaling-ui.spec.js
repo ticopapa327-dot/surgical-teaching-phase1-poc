@@ -989,12 +989,16 @@ test("phase 2 UI clears signaling session when server disconnects", async ({ pag
 
     await page.getByRole("button", { name: "建立音频通话" }).click();
     await expect(page.locator(".status-list dd").filter({ hasText: "已建立，本地音频轨道" })).toBeVisible();
+    await page.getByRole("button", { name: "检查健康" }).click();
+    const healthMetric = page.locator(".status-list.compact div", { hasText: "健康检查" }).locator("dd");
+    await expect(healthMetric).toHaveText("2 终端 / 1 会话 / 0 呼叫");
 
     await server.stop();
     stopped = true;
     await expect(page.getByText("尚未建立互动连接")).toBeVisible();
     await expect(page.locator(".status-list dd").filter({ hasText: "未建立" })).toBeVisible();
     await expect(page.locator(".status-list.compact dd").filter({ hasText: "0 个终端" })).toBeVisible();
+    await expect(healthMetric).toHaveText("-");
     await expect(page.getByLabel("信令目标")).toBeDisabled();
     await expect(page.locator(".footer")).toContainText("信令连接已断开");
   } finally {

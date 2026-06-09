@@ -953,6 +953,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
         setSignalingDirectory([]);
         setSignalingSessions([]);
         setSignalingTargetId("");
+        setSignalingHealth("-");
         setSignalingState({ connected: false, label: "未连接" });
         setStatus(closeMessage);
       }
@@ -972,6 +973,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     setSignalingDirectory([]);
     setSignalingSessions([]);
     setSignalingTargetId("");
+    setSignalingHealth("-");
     setSignalingState({ connected: false, label: "未连接" });
     setStatus("信令连接已断开，已清理信令会话状态。");
   }
