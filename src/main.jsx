@@ -641,6 +641,16 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     }
 
     if (type === "call.requested") {
+      const call = payload.call;
+      setPendingCall({
+        id: call.callId,
+        source: "signaling",
+        direction: "signaling-outgoing",
+        from: localEndpointName.trim() || signalingEndpointIdRef.current,
+        to: endpointLabelById(call.toEndpointId),
+        requestedMode: call.requestedMode,
+        signalingCallId: call.callId
+      });
       setStatus(`信令呼叫已发出，呼叫 ID：${payload.call?.callId || "-"}`);
       return;
     }
@@ -899,6 +909,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
 
   function acceptCall() {
     if (!pendingCall) return;
+    if (pendingCall.direction === "signaling-outgoing") return;
     if (pendingCall.source === "signaling") {
       if (
         sendSignaling("call.accept", {
@@ -930,6 +941,12 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
 
   function rejectCall() {
     if (!pendingCall) return;
+    if (pendingCall.direction === "signaling-outgoing") {
+      sendSignaling("call.cancel", { callId: pendingCall.signalingCallId });
+      setPendingCall(null);
+      setStatus("已通过信令取消呼叫。");
+      return;
+    }
     if (pendingCall.source === "signaling") {
       sendSignaling("call.reject", { callId: pendingCall.signalingCallId });
       setPendingCall(null);
@@ -1387,11 +1404,11 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
               <button onClick={() => requestCall("or-to-teaching")} disabled={Boolean(activeSession || pendingCall)}>
                 手术室呼叫示教室
               </button>
-              <button onClick={acceptCall} disabled={!pendingCall}>
+              <button onClick={acceptCall} disabled={!pendingCall || pendingCall.direction === "signaling-outgoing"}>
                 接受呼叫
               </button>
               <button className="danger" onClick={rejectCall} disabled={!pendingCall}>
-                拒绝
+                {pendingCall?.direction === "signaling-outgoing" ? "取消呼叫" : "拒绝"}
               </button>
               <button className="danger" onClick={closeSession} disabled={!activeSession}>
                 结束连接
