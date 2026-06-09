@@ -133,16 +133,48 @@ async function main() {
   send(orClient, "call.accept", {
     callId: incoming.payload.call.callId,
     mode: "interactive",
-    participantLimit: 2
+    participantLimit: "not-a-number"
   });
   const sessionStarted = await waitFor(teachingClient, "session.started");
   const session = sessionStarted.payload.session;
   assert.equal(session.mode, "interactive");
+  assert.equal(session.participantLimit, 2);
   assert.deepEqual(session.subscriptions["teach-1"], ["ch1"]);
   const activeHealth = await getJson(`${httpBase}/health`);
   assert.equal(activeHealth.endpoints, 3);
   assert.equal(activeHealth.sessions, 1);
   assert.equal(activeHealth.pendingCalls, 0);
+
+  const malformedClient = await connect(url);
+  send(malformedClient, "endpoint.register", {
+    endpointId: { bad: true },
+    role: "invalid-role",
+    name: " ",
+    address: 100,
+    capabilities: ["subscribe-video", "", { bad: true }, "subscribe-video"],
+    channels: [
+      null,
+      { id: " ", label: "", role: 42 },
+      {
+        id: "channel-id-that-is-longer-than-thirty-two-characters",
+        label: "Channel label that is longer than eighty characters and should be trimmed by the signaling service",
+        role: "observer-return"
+      }
+    ]
+  });
+  const malformedRegistration = await waitFor(malformedClient, "endpoint.registered");
+  assert.match(malformedRegistration.payload.endpoint.endpointId, /^endpoint-/);
+  assert.equal(malformedRegistration.payload.endpoint.role, "observer");
+  assert.equal(malformedRegistration.payload.endpoint.name, malformedRegistration.payload.endpoint.endpointId);
+  assert.equal(malformedRegistration.payload.endpoint.address, "");
+  assert.deepEqual(malformedRegistration.payload.endpoint.capabilities, ["subscribe-video"]);
+  assert.equal(malformedRegistration.payload.endpoint.channels.length, 2);
+  assert.equal(malformedRegistration.payload.endpoint.channels[0].id, "ch1");
+  assert.equal(malformedRegistration.payload.endpoint.channels[0].label, "Channel 1");
+  assert.equal(malformedRegistration.payload.endpoint.channels[0].role, "");
+  assert.equal(malformedRegistration.payload.endpoint.channels[1].id.length, 32);
+  assert.equal(malformedRegistration.payload.endpoint.channels[1].label.length, 80);
+  malformedClient.close();
 
   send(teachingClient, "peer.signal", {
     sessionId: session.sessionId,

@@ -2,6 +2,8 @@ const http = require("http");
 const crypto = require("crypto");
 const { WebSocketServer } = require("ws");
 
+const VALID_ENDPOINT_ROLES = new Set(["operating-room", "teaching-room", "observer"]);
+
 function createId(prefix) {
   return `${prefix}-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
 }
@@ -14,6 +16,28 @@ function safeJsonParse(raw) {
   }
 }
 
+function normalizeText(value, fallback = "", maxLength = 80) {
+  if (typeof value !== "string") return fallback;
+  const text = value.trim();
+  return text ? text.slice(0, maxLength) : fallback;
+}
+
+function normalizeRole(role) {
+  return VALID_ENDPOINT_ROLES.has(role) ? role : "observer";
+}
+
+function normalizeCapabilities(capabilities) {
+  if (!Array.isArray(capabilities)) return [];
+  const normalized = [];
+  for (const capability of capabilities) {
+    const value = normalizeText(capability, "", 48);
+    if (!value || normalized.includes(value)) continue;
+    normalized.push(value);
+    if (normalized.length >= 16) break;
+  }
+  return normalized;
+}
+
 function send(ws, type, payload = {}, requestId = null) {
   if (ws.readyState !== ws.OPEN) return;
   ws.send(JSON.stringify({ type, requestId, payload }));
@@ -21,11 +45,18 @@ function send(ws, type, payload = {}, requestId = null) {
 
 function normalizeChannels(channels) {
   if (!Array.isArray(channels)) return [];
-  return channels.slice(0, 16).map((channel, index) => ({
-    id: String(channel.id || `ch${index + 1}`).slice(0, 32),
-    label: String(channel.label || `Channel ${index + 1}`).slice(0, 80),
-    role: String(channel.role || "").slice(0, 80)
-  }));
+  const normalized = [];
+  for (const channel of channels) {
+    if (!channel || typeof channel !== "object") continue;
+    const index = normalized.length + 1;
+    normalized.push({
+      id: normalizeText(channel.id, `ch${index}`, 32),
+      label: normalizeText(channel.label, `Channel ${index}`, 80),
+      role: normalizeText(channel.role, "", 80)
+    });
+    if (normalized.length >= 16) break;
+  }
+  return normalized;
 }
 
 function normalizeSubscriptionChannels(channels) {
@@ -72,7 +103,9 @@ function resolveMode(requestMode, acceptMode) {
 }
 
 function normalizeParticipantLimit(value) {
-  return Math.max(2, Math.min(16, Number(value || 2)));
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return 2;
+  return Math.max(2, Math.min(16, Math.trunc(numericValue)));
 }
 
 function createSignalingServer(options = {}) {
@@ -187,13 +220,13 @@ function createSignalingServer(options = {}) {
     const { type, payload = {}, requestId = null } = msg;
 
     if (type === "endpoint.register") {
-      const endpointId = payload.endpointId || createId("endpoint");
+      const endpointId = normalizeText(payload.endpointId, "", 64) || createId("endpoint");
       const endpoint = {
         endpointId,
-        role: payload.role || "unknown",
-        name: payload.name || endpointId,
-        address: payload.address || "",
-        capabilities: payload.capabilities || [],
+        role: normalizeRole(payload.role),
+        name: normalizeText(payload.name, endpointId, 80),
+        address: normalizeText(payload.address, "", 120),
+        capabilities: normalizeCapabilities(payload.capabilities),
         channels: normalizeChannels(payload.channels),
         registeredAt: new Date().toISOString()
       };
