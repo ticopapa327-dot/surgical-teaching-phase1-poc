@@ -303,6 +303,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   const signalingSocket = useRef(null);
   const signalingEndpointIdRef = useRef(localEndpointId);
   const signalingDirectoryRef = useRef([]);
+  const activeSessionRef = useRef(null);
 
   const supportedMimeType = useMemo(getSupportedMimeType, []);
 
@@ -323,6 +324,10 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   useEffect(() => {
     signalingDirectoryRef.current = signalingDirectory;
   }, [signalingDirectory]);
+
+  useEffect(() => {
+    activeSessionRef.current = activeSession;
+  }, [activeSession]);
 
   useEffect(() => {
     if (!activeSession) return;
@@ -605,10 +610,13 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     return true;
   }
 
-  function applySignalingSession(session, resetLayout = false) {
+  function applySignalingSession(session, resetLayout = false, allowNew = false) {
     if (!session) return;
+    const currentSession = activeSessionRef.current;
+    if (!allowNew && !currentSession) return;
+    if (currentSession?.id && currentSession.id !== session.sessionId) return;
     const endpointId = signalingEndpointIdRef.current;
-    setActiveSession({
+    const nextSession = {
       id: session.sessionId,
       source: "signaling",
       startedAt: session.startedAt,
@@ -616,7 +624,9 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       participants: session.participants.map(endpointLabelById),
       participantLimit: session.participantLimit,
       subscribedChannels: sessionChannelsForEndpoint(session, endpointId)
-    });
+    };
+    activeSessionRef.current = nextSession;
+    setActiveSession(nextSession);
     if (session.annotation) {
       setAnnotationText(session.annotation.text || "");
       setAnnotationVisible(Boolean(session.annotation.visible));
@@ -683,17 +693,17 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     }
 
     if (type === "session.started") {
-      applySignalingSession(payload.session, true);
+      applySignalingSession(payload.session, true, true);
       setStatus(`信令会话已建立，最终模式为 ${modeLabel(payload.session?.mode)}。`);
       return;
     }
 
-    if (
-      type === "session.updated" ||
-      type === "session.subscribed" ||
-      type === "session.joined" ||
-      type === "session.annotation.updated"
-    ) {
+    if (type === "session.joined") {
+      applySignalingSession(payload.session, false, true);
+      return;
+    }
+
+    if (type === "session.updated" || type === "session.subscribed" || type === "session.annotation.updated") {
       applySignalingSession(payload.session);
       return;
     }
@@ -970,6 +980,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
 
   function clearLocalSession(message = "互动连接已结束。") {
     stopInteractionAudio();
+    activeSessionRef.current = null;
     setActiveSession(null);
     setAnnotationVisible(false);
     setOverLimitNotice("");
