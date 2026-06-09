@@ -423,6 +423,43 @@ async function main() {
   send(observerClient, "session.join", { sessionId: orOwnedLimitSession.payload.session.sessionId });
   const observerJoined = await waitFor(observerClient, "session.joined");
   assert.equal(observerJoined.payload.session.participants.length, 3);
+
+  const busyJoinOrClient = await connect(url);
+  const busyJoinTeachingClient = await connect(url);
+  send(busyJoinOrClient, "endpoint.register", {
+    endpointId: "busy-join-or",
+    role: "operating-room",
+    name: "Busy Join OR"
+  });
+  await waitFor(busyJoinOrClient, "endpoint.registered");
+  send(busyJoinTeachingClient, "endpoint.register", {
+    endpointId: "busy-join-teach",
+    role: "teaching-room",
+    name: "Busy Join Teaching"
+  });
+  await waitFor(busyJoinTeachingClient, "endpoint.registered");
+  const busyJoinIncoming = waitFor(busyJoinTeachingClient, "call.incoming");
+  send(busyJoinOrClient, "call.request", {
+    toEndpointId: "busy-join-teach",
+    mode: "interactive",
+    participantLimit: 4
+  });
+  const busyJoinCall = await busyJoinIncoming;
+  const busyJoinStartedForOr = waitFor(busyJoinOrClient, "session.started");
+  send(busyJoinTeachingClient, "call.accept", {
+    callId: busyJoinCall.payload.call.callId,
+    mode: "interactive",
+    participantLimit: 4
+  });
+  const busyJoinSession = await busyJoinStartedForOr;
+  send(observerClient, "session.join", { sessionId: busyJoinSession.payload.session.sessionId });
+  const busyJoinError = await waitFor(observerClient, "error", (message) => message.payload.code === "endpoint_busy");
+  assert.equal(busyJoinError.payload.code, "endpoint_busy");
+  send(busyJoinOrClient, "session.end", { sessionId: busyJoinSession.payload.session.sessionId });
+  await waitFor(busyJoinTeachingClient, "session.ended");
+  busyJoinOrClient.close();
+  busyJoinTeachingClient.close();
+
   send(observerClient, "session.leave", { sessionId: orOwnedLimitSession.payload.session.sessionId });
   await waitFor(observerClient, "session.left");
   const observerLeftUpdate = await waitFor(

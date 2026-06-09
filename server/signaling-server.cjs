@@ -642,6 +642,10 @@ function createSignalingServer(options = {}) {
         send(ws, "session.joined", { session: publicSession(session) }, requestId);
         return;
       }
+      if (endpointIsBusy(fromEndpoint.endpointId)) {
+        send(ws, "error", { code: "endpoint_busy", message: "endpoint is busy" }, requestId);
+        return;
+      }
       if (session.participants.length >= session.participantLimit) {
         send(
           ws,
