@@ -746,7 +746,11 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
 
     if (type === "error") {
       const messageText = payload.message || payload.code || "未知信令错误";
-      if (payload.code === "participant_limit") setOverLimitNotice("信令服务器拒绝加入：已达到参与上限。");
+      if (payload.code === "participant_limit") {
+        setOverLimitNotice("信令服务器拒绝加入：已达到参与上限。");
+        setStatus("信令错误：已达到参与上限。");
+        return;
+      }
       if (payload.code === "endpoint_busy") {
         setOverLimitNotice("信令服务器拒绝呼叫：本端或目标终端忙线。");
         setStatus("信令错误：本端或目标终端忙线。");

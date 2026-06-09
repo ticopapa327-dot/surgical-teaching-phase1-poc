@@ -392,6 +392,7 @@ test("phase 2 UI reports participant limit when joining a full signaling session
     await page.getByRole("button", { name: "加入信令会话" }).click();
 
     await expect(page.getByText("信令服务器拒绝加入：已达到参与上限。")).toBeVisible();
+    await expect(page.locator(".footer")).toContainText("信令错误：已达到参与上限");
     await expect(page.getByText("尚未建立互动连接")).toBeVisible();
   } finally {
     orClient.close();
