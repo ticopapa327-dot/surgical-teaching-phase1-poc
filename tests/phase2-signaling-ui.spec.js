@@ -763,6 +763,50 @@ test("phase 2 UI resumes an existing signaling session after endpoint replacemen
   }
 });
 
+test("phase 2 UI clears signaling session when the user disconnects signaling", async ({ page }) => {
+  const server = createSignalingServer({ port: 0 });
+  const address = await server.start();
+  const url = `ws://127.0.0.1:${address.port}/signal`;
+  const teachingClient = await connect(url);
+
+  try {
+    send(teachingClient, "endpoint.register", {
+      endpointId: "teach-user-disconnect",
+      role: "teaching-room",
+      name: "User Disconnect Teaching Room",
+      address: "192.168.10.67",
+      capabilities: ["subscribe-video"]
+    });
+    await waitFor(teachingClient, "endpoint.registered");
+
+    await page.goto("/");
+    await page.getByLabel("信令地址").fill(url);
+    await page.getByLabel("本端 ID").fill("or-ui");
+    await page.getByLabel("本端名称").fill("OR UI");
+    await page.getByRole("button", { name: "连接信令" }).click();
+    await expect(page.getByText("已注册 OR UI")).toBeVisible();
+    await page.getByLabel("信令目标").selectOption("teach-user-disconnect");
+
+    const incomingCall = waitFor(teachingClient, "call.incoming");
+    await page.getByRole("button", { name: "信令呼叫选中终端" }).click();
+    const incoming = await incomingCall;
+    send(teachingClient, "call.accept", {
+      callId: incoming.payload.call.callId,
+      mode: "interactive",
+      participantLimit: 2
+    });
+    await expect(page.locator(".session-list dd").filter({ hasText: "交互模式" })).toBeVisible();
+
+    await page.getByRole("button", { name: "断开" }).click();
+    await expect(page.getByText("尚未建立互动连接")).toBeVisible();
+    await expect(page.locator(".status-list.compact dd").filter({ hasText: "未连接" })).toBeVisible();
+    await expect(page.locator(".footer")).toContainText("已清理信令会话状态");
+  } finally {
+    teachingClient.close();
+    await server.stop();
+  }
+});
+
 test("phase 2 UI clears signaling session when server disconnects", async ({ page }) => {
   const server = createSignalingServer({ port: 0 });
   const address = await server.start();

@@ -842,10 +842,15 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   function disconnectSignaling() {
     signalingSocket.current?.close();
     signalingSocket.current = null;
+    signalingCloseMessageRef.current = "";
+    setPendingCall(null);
+    activeSessionRef.current = null;
+    setActiveSession((session) => (session?.source === "signaling" ? null : session));
+    setOverLimitNotice("");
     setSignalingDirectory([]);
     setSignalingTargetId("");
     setSignalingState({ connected: false, label: "未连接" });
-    setStatus("信令连接已断开。");
+    setStatus("信令连接已断开，已清理信令会话状态。");
   }
 
   function requestSignalingCall() {
