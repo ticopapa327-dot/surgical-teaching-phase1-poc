@@ -536,6 +536,12 @@ async function main() {
   assert.equal(annotationEvent.sessionId, session.sessionId);
   assert.equal(annotationEvent.byEndpointId, "or-1");
   assert.equal(JSON.stringify(eventsAfterAnnotation).includes("Key anatomy"), false);
+  const limitedEvents = await getJson(`${httpBase}/events?limit=2`);
+  assert.equal(limitedEvents.length, 2);
+  assert.deepEqual(
+    limitedEvents.map((event) => event.eventId),
+    eventsAfterAnnotation.slice(-2).map((event) => event.eventId)
+  );
   debugMark("annotation events");
 
   send(observerClient, "session.join", { sessionId: session.sessionId });

@@ -395,8 +395,12 @@ function healthUrlFromSignalingUrl(value) {
   return httpUrlFromSignalingUrl(value, "/health");
 }
 
-function eventsUrlFromSignalingUrl(value) {
-  return httpUrlFromSignalingUrl(value, "/events");
+function eventsUrlFromSignalingUrl(value, options = {}) {
+  const url = new URL(httpUrlFromSignalingUrl(value, "/events"));
+  if (Number.isFinite(options.limit) && options.limit > 0) {
+    url.searchParams.set("limit", String(Math.trunc(options.limit)));
+  }
+  return url.toString();
 }
 
 function signalingEventLabel(event) {
@@ -2438,7 +2442,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     }
   }
 
-  async function loadSignalingEvents({ updateFooter = true } = {}) {
+  async function loadSignalingEvents({ updateFooter = true, limit = null } = {}) {
     const nextUrl = signalingUrl.trim() || defaultSignalingUrlForPage();
     if (!isValidWebSocketUrl(nextUrl)) {
       setSignalingEventsStatus("地址无效");
@@ -2448,14 +2452,14 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     }
     try {
       const headers = signalingToken.trim() ? { Authorization: `Bearer ${signalingToken.trim()}` } : {};
-      const response = await fetch(eventsUrlFromSignalingUrl(nextUrl), { cache: "no-store", headers });
+      const response = await fetch(eventsUrlFromSignalingUrl(nextUrl, { limit }), { cache: "no-store", headers });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const events = await response.json();
       if (!Array.isArray(events)) throw new Error("事件日志格式无效");
       const visibleEvents = events.slice(-10).reverse();
       setSignalingEvents(visibleEvents);
-      setSignalingEventsStatus(`${events.length} 条，显示 ${visibleEvents.length} 条`);
-      if (updateFooter) setStatus(`已读取 ${events.length} 条信令事件。`);
+      setSignalingEventsStatus(limit ? `最近 ${visibleEvents.length} 条` : `${events.length} 条，显示 ${visibleEvents.length} 条`);
+      if (updateFooter) setStatus(limit ? `已读取最近 ${visibleEvents.length} 条信令事件。` : `已读取 ${events.length} 条信令事件。`);
       return { events: visibleEvents, total: events.length, error: null };
     } catch (error) {
       setSignalingEventsStatus("读取失败");
@@ -2903,7 +2907,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     let eventRefresh = signalingState.connected ? "failed" : "not_connected";
     let eventRefreshError = null;
     if (signalingState.connected) {
-      const result = await loadSignalingEvents({ updateFooter: false });
+      const result = await loadSignalingEvents({ updateFooter: false, limit: 10 });
       snapshotEvents = result.events;
       eventRefreshError = result.error;
       eventRefresh = result.error ? "failed" : "ok";

@@ -197,6 +197,13 @@ function normalizeEventLogLimit(value) {
   return Math.max(20, Math.min(1000, Math.trunc(numericValue)));
 }
 
+function normalizeEventQueryLimit(value, maxLimit) {
+  if (value == null || value === "") return null;
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue) || numericValue <= 0) return null;
+  return Math.max(1, Math.min(maxLimit, Math.trunc(numericValue)));
+}
+
 function normalizeHeartbeatMs(value) {
   const numericValue = Number(value);
   if (!Number.isFinite(numericValue)) return 30000;
@@ -298,8 +305,9 @@ function createSignalingServer(options = {}) {
         writeUnauthorized(res);
         return;
       }
+      const limit = normalizeEventQueryLimit(requestUrl.searchParams.get("limit"), eventLogLimit);
       res.writeHead(200, jsonHeaders);
-      res.end(JSON.stringify(eventLog));
+      res.end(JSON.stringify(limit ? eventLog.slice(-limit) : eventLog));
       return;
     }
     res.writeHead(404, jsonHeaders);
