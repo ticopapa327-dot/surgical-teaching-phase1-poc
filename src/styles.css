@@ -18,13 +18,15 @@ body {
 
 button,
 select,
-input {
+input,
+textarea {
   font: inherit;
 }
 
 button,
 select,
-input {
+input,
+textarea {
   border: 1px solid #c8d1dc;
   border-radius: 6px;
   background: #fff;
@@ -59,6 +61,14 @@ input {
   min-height: 36px;
   padding: 0 10px;
   width: 100%;
+}
+
+textarea {
+  width: 100%;
+  min-height: 150px;
+  padding: 10px;
+  resize: vertical;
+  line-height: 1.5;
 }
 
 .app-shell {
@@ -240,6 +250,14 @@ input {
 
 .notice {
   color: #9b1c1c;
+}
+
+.diagnostic-snapshot {
+  margin-top: 10px;
+  background: #f8fafc;
+  color: #25313d;
+  font-family: Consolas, "Microsoft YaHei", monospace;
+  font-size: 12px;
 }
 
 .signal-events {

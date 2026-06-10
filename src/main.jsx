@@ -425,6 +425,48 @@ function signalingEventDetails(event) {
   return details.join(" / ");
 }
 
+function redactedUrl(value) {
+  try {
+    const url = new URL(value);
+    url.username = "";
+    url.password = "";
+    url.search = "";
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return "invalid-url";
+  }
+}
+
+function compactDiagnosticObject(value) {
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined && item !== ""));
+}
+
+function diagnosticEventSummary(event) {
+  return compactDiagnosticObject({
+    at: event.at,
+    type: event.type,
+    eventId: event.eventId,
+    endpointId: event.endpointId,
+    sessionId: event.sessionId,
+    callId: event.callId,
+    fromEndpointId: event.fromEndpointId,
+    toEndpointId: event.toEndpointId,
+    byEndpointId: event.byEndpointId,
+    endedByEndpointId: event.endedByEndpointId,
+    role: event.role,
+    mode: event.mode,
+    requestedMode: event.requestedMode,
+    participantLimit: event.participantLimit,
+    signalKind: event.signalKind,
+    descriptionType: event.descriptionType,
+    channelIds: event.channelIds,
+    trackCount: event.trackCount,
+    reason: event.reason,
+    details: signalingEventDetails(event)
+  });
+}
+
 function endpointLabel(endpoint) {
   if (!endpoint) return "未知终端";
   return `${endpoint.name || endpoint.endpointId}${endpoint.address ? ` (${endpoint.address})` : ""}`;
@@ -596,6 +638,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   const [webrtcStatsLabel, setWebrtcStatsLabel] = useState("-");
   const [mediaVersion, setMediaVersion] = useState(0);
   const [overLimitNotice, setOverLimitNotice] = useState("");
+  const [diagnosticSnapshot, setDiagnosticSnapshot] = useState("");
 
   const videoRefs = useRef({});
   const remoteVideoRefs = useRef({});
@@ -1082,6 +1125,25 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     if (!deviceId) return "未选麦克风";
     const device = audioDevices.find((item) => item.deviceId === deviceId);
     return device?.label || "已选麦克风";
+  }
+
+  async function writeClipboardText(text) {
+    if (navigator.clipboard?.writeText && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.top = "-1000px";
+    textarea.style.left = "-1000px";
+    document.body.appendChild(textarea);
+    textarea.select();
+    const copied = document.execCommand("copy");
+    textarea.remove();
+    if (!copied) throw new Error("当前浏览器不允许写入剪贴板");
   }
 
   function queryMockPatient() {
@@ -2729,6 +2791,88 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     audioOutputDeviceId ? `回放 ${audioOutputLabel(audioOutputDeviceId)}` : "系统回放"
   ].join(" / ");
 
+  function buildDiagnosticSnapshot() {
+    return {
+      schema: "surgical-teaching-diagnostic-v1",
+      generatedAt: new Date().toISOString(),
+      app: {
+        name: appInfo?.appName || "unknown",
+        version: appInfo?.appVersion || "unknown",
+        recordingStorage: appInfo?.recordingsDir || "-"
+      },
+      endpoint: {
+        id: signalingEndpointIdRef.current,
+        name: localEndpointName,
+        role: localEndpointRole
+      },
+      signaling: {
+        url: redactedUrl(signalingUrl),
+        connected: signalingState.connected,
+        state: signalingState.label,
+        tokenConfigured: Boolean(signalingToken),
+        directoryCount: signalingDirectory.length,
+        sessionCount: signalingSessions.length,
+        health: signalingHealth,
+        events: signalingEventsStatus,
+        selectedTargetId: signalingTargetId || null
+      },
+      session: activeSession
+        ? {
+            id: activeSession.id,
+            source: activeSession.source,
+            mode: activeSession.mode,
+            ownerEndpointId: activeSession.ownerEndpointId,
+            participantIds: activeSession.participantIds || [],
+            participantCount: activeSession.participants?.length || 0,
+            participantLimit: activeSession.participantLimit,
+            subscribedChannels: activeSession.subscribedChannels || []
+          }
+        : null,
+      media: {
+        state: webrtcMediaState.state,
+        label: webrtcMediaState.label,
+        stats: webrtcStatsLabel,
+        iceServerCount: webrtcIceServers.length,
+        diagnostics: remoteMediaDiagnostics.map((item) => ({
+          channelId: item.channelId,
+          state: item.state,
+          label: item.label,
+          detail: item.detail
+        })),
+        peerConnections: peerConnectionDiagnostics.map((item) => ({
+          endpointId: item.endpointId,
+          state: item.state,
+          label: item.label,
+          detail: item.detail
+        }))
+      },
+      audio: {
+        state: audioCall.state,
+        label: audioCall.label,
+        includeInRecording: includeAudio,
+        diagnostics: audioDiagnostics
+      },
+      devices: {
+        permissionRequested: isPermissionReady,
+        videoInputs: videoDevices.length,
+        audioInputs: audioDevices.length,
+        audioOutputs: audioOutputDevices.length
+      },
+      recentEvents: signalingEvents.slice(0, 10).map(diagnosticEventSummary)
+    };
+  }
+
+  async function copyDiagnosticSnapshot() {
+    const snapshotText = JSON.stringify(buildDiagnosticSnapshot(), null, 2);
+    setDiagnosticSnapshot(snapshotText);
+    try {
+      await writeClipboardText(snapshotText);
+      setStatus(`诊断快照已复制，${snapshotText.length} 字符。`);
+    } catch (error) {
+      setStatus(`诊断快照已生成，但复制失败：${error.message}`);
+    }
+  }
+
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -2904,7 +3048,13 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
                 <dd>{appInfo?.recordingsDir || "-"}</dd>
               </div>
             </dl>
-            <button onClick={openRecordingRoot}>打开录像目录</button>
+            <div className="button-row">
+              <button onClick={openRecordingRoot}>打开录像目录</button>
+              <button onClick={copyDiagnosticSnapshot}>复制诊断快照</button>
+            </div>
+            {diagnosticSnapshot && (
+              <textarea className="diagnostic-snapshot" aria-label="诊断快照" readOnly value={diagnosticSnapshot} />
+            )}
           </section>
 
           <section className="panel-block">

@@ -172,6 +172,55 @@ test("runtime config normalizes WebRTC ICE servers", async ({ page }) => {
   await expect(page.locator(".status-list div").filter({ hasText: "ICE 服务" })).toContainText("2 组");
 });
 
+test("diagnostic snapshot copies operational state without signaling token", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__copiedDiagnosticText = "";
+    Object.defineProperty(Navigator.prototype, "clipboard", {
+      configurable: true,
+      get() {
+        return {
+          writeText: async (text) => {
+            window.__copiedDiagnosticText = text;
+          }
+        };
+      }
+    });
+  });
+  await page.route("**/config.json", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        signalingUrl: "ws://127.0.0.1:7077/signal?authToken=secret-token",
+        signalingToken: "secret-token",
+        localEndpoint: {
+          id: "diag-or",
+          name: "Diagnostic OR",
+          role: "operating-room"
+        },
+        webrtc: {
+          iceServers: [{ urls: "stun:stun.example.test:3478" }]
+        }
+      })
+    })
+  );
+
+  await page.goto("/");
+  await expect(page.getByLabel("本端 ID")).toHaveValue("diag-or");
+  await page.getByRole("button", { name: "复制诊断快照" }).click();
+
+  const copiedText = await page.evaluate(() => window.__copiedDiagnosticText);
+  const snapshot = JSON.parse(copiedText);
+  expect(snapshot.schema).toBe("surgical-teaching-diagnostic-v1");
+  expect(snapshot.endpoint).toMatchObject({ id: "diag-or", name: "Diagnostic OR", role: "operating-room" });
+  expect(snapshot.signaling.url).toBe("ws://127.0.0.1:7077/signal");
+  expect(snapshot.signaling.tokenConfigured).toBe(true);
+  expect(snapshot.media.iceServerCount).toBe(1);
+  expect(snapshot.status).toBeUndefined();
+  expect(copiedText).not.toContain("secret-token");
+  await expect(page.getByLabel("诊断快照")).toHaveValue(/"tokenConfigured": true/);
+  await expect(page.locator(".footer")).toContainText("诊断快照已复制");
+});
+
 test("phase 1 UVC PTZ controls apply video track constraints", async ({ page }) => {
   await page.addInitScript(() => {
     window.__ptzApplied = [];
