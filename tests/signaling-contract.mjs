@@ -398,6 +398,33 @@ async function main() {
 
   send(teachingClient, "peer.signal", {
     sessionId: session.sessionId,
+    toEndpointId: "or-1",
+    signal: { kind: "media-refresh-request", channelIds: ["ch1", "ch4"] }
+  });
+  const relayedRefreshRequest = await waitFor(
+    orClient,
+    "peer.signal",
+    (message) => message.payload.signal.kind === "media-refresh-request"
+  );
+  assert.equal(relayedRefreshRequest.payload.fromEndpointId, "teach-1");
+  assert.deepEqual(relayedRefreshRequest.payload.signal.channelIds, ["ch1", "ch4"]);
+  const refreshSignalSent = await waitFor(teachingClient, "peer.signal.sent");
+  assert.equal(refreshSignalSent.payload.toEndpointId, "or-1");
+  const refreshSignalEvents = await getJson(`${httpBase}/events`);
+  const refreshEvent = refreshSignalEvents.find(
+    (event) =>
+      event.type === "peer.signal.forwarded" &&
+      event.sessionId === session.sessionId &&
+      event.fromEndpointId === "teach-1" &&
+      event.toEndpointId === "or-1" &&
+      event.signalKind === "media-refresh-request"
+  );
+  assert.ok(refreshEvent);
+  assert.deepEqual(refreshEvent.channelIds, ["ch1", "ch4"]);
+  assert.equal("signal" in refreshEvent, false);
+
+  send(teachingClient, "peer.signal", {
+    sessionId: session.sessionId,
     toEndpointId: "observer-1",
     signal: { type: "offer", sdp: "v=0" }
   });
