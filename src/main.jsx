@@ -857,74 +857,98 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   }
 
   async function startRecording(channel) {
-    if (!supportedMimeType) {
-      setStatus("当前环境不支持 MediaRecorder，无法录制。");
-      return;
-    }
-    if (!previewStreams.current[channel.id]) {
-      await startPreview(channel);
-    }
-    if (activeRecorders.current[channel.id]) return;
+    let recordStream = null;
+    try {
+      if (!supportedMimeType) {
+        setStatus("当前环境不支持 MediaRecorder，无法录制。");
+        return;
+      }
+      if (!previewStreams.current[channel.id]) {
+        await startPreview(channel);
+      }
+      if (activeRecorders.current[channel.id]) return;
 
-    const previewStream = previewStreams.current[channel.id];
-    const videoTrack = previewStream.getVideoTracks()[0];
-    if (!videoTrack) throw new Error(`${channel.label} 没有可录制的视频轨道`);
+      const previewStream = previewStreams.current[channel.id];
+      const videoTrack = previewStream.getVideoTracks()[0];
+      if (!videoTrack) throw new Error("没有可录制的视频轨道");
 
-    const audioTracks = await getAudioTracksForRecording();
-    const recordStream = new MediaStream([videoTrack.clone(), ...audioTracks]);
-    const startedAt = new Date().toISOString();
-    const sessionId = recordingSessionId || `phase1-${startedAt.slice(0, 19).replace(/[:T]/g, "-")}`;
-    setRecordingSessionId(sessionId);
+      const audioTracks = await getAudioTracksForRecording();
+      recordStream = new MediaStream([videoTrack.clone(), ...audioTracks]);
+      const startedAt = new Date().toISOString();
+      const sessionId = recordingSessionId || `phase1-${startedAt.slice(0, 19).replace(/[:T]/g, "-")}`;
+      setRecordingSessionId(sessionId);
 
-    const created = await api.recordings.create({
-      sessionId,
-      channelId: channel.id,
-      channelLabel: `${channel.label}-${channel.role}`,
-      sourceMode: channelConfig[channel.id].sourceMode,
-      sourceDeviceId: channelConfig[channel.id].deviceId,
-      sourceLabel: getDeviceLabel(channelConfig[channel.id].deviceId),
-      patient: currentPatient,
-      mimeType: supportedMimeType,
-      startedAt
-    });
-
-    const recorder = new MediaRecorder(recordStream, { mimeType: supportedMimeType });
-    const writes = [];
-    pendingWrites.current[channel.id] = writes;
-
-    recorder.ondataavailable = (event) => {
-      if (!event.data || event.data.size === 0) return;
-      const writePromise = event.data.arrayBuffer().then((chunk) =>
-        api.recordings.writeChunk({
-          recordingId: created.id,
-          chunk
-        })
-      );
-      writes.push(writePromise);
-    };
-
-    recorder.onstop = async () => {
-      await Promise.allSettled(writes);
-      const active = activeRecorders.current[channel.id];
-      await api.recordings.close({
-        recordingId: created.id,
-        stoppedAt: new Date().toISOString(),
-        durationMs: active ? Date.now() - active.startedAtMs : null
+      const created = await api.recordings.create({
+        sessionId,
+        channelId: channel.id,
+        channelLabel: `${channel.label}-${channel.role}`,
+        sourceMode: channelConfig[channel.id].sourceMode,
+        sourceDeviceId: channelConfig[channel.id].deviceId,
+        sourceLabel: getDeviceLabel(channelConfig[channel.id].deviceId),
+        patient: currentPatient,
+        mimeType: supportedMimeType,
+        startedAt
       });
-      stopStream(recordStream);
-      delete activeRecorders.current[channel.id];
-      delete pendingWrites.current[channel.id];
-      await refreshRecordings();
-      setStatus(`${channel.label} 录制已完成。`);
-    };
 
-    activeRecorders.current[channel.id] = {
-      recorder,
-      recordingId: created.id,
-      startedAtMs: Date.now()
-    };
-    recorder.start(1000);
-    setStatus(`${channel.label} 正在录制。`);
+      const recorder = new MediaRecorder(recordStream, { mimeType: supportedMimeType });
+      const writes = [];
+      pendingWrites.current[channel.id] = writes;
+
+      recorder.ondataavailable = (event) => {
+        if (!event.data || event.data.size === 0) return;
+        const writePromise = event.data.arrayBuffer().then((chunk) =>
+          api.recordings.writeChunk({
+            recordingId: created.id,
+            chunk
+          })
+        );
+        writes.push(writePromise);
+      };
+
+      recorder.onerror = (event) => {
+        setStatus(`${channel.label} 录制错误：${event.error?.message || "未知错误"}`);
+      };
+
+      recorder.onstop = async () => {
+        let nextStatus = `${channel.label} 录制已完成。`;
+        try {
+          const writeResults = await Promise.allSettled(writes);
+          const failedWrite = writeResults.find(
+            (result) => result.status === "rejected" || result.value?.ok === false
+          );
+          const active = activeRecorders.current[channel.id];
+          const closeResult = await api.recordings.close({
+            recordingId: created.id,
+            stoppedAt: new Date().toISOString(),
+            durationMs: active ? Date.now() - active.startedAtMs : null
+          });
+          if (!closeResult?.ok) {
+            nextStatus = `${channel.label} 录制停止失败：${closeResult?.reason || "关闭失败"}`;
+          } else if (failedWrite) {
+            nextStatus = `${channel.label} 录制已停止，但部分数据写入失败。`;
+          }
+        } catch (error) {
+          nextStatus = `${channel.label} 录制停止失败：${error.message}`;
+        } finally {
+          stopStream(recordStream);
+          delete activeRecorders.current[channel.id];
+          delete pendingWrites.current[channel.id];
+          await refreshRecordings();
+          setStatus(nextStatus);
+        }
+      };
+
+      recorder.start(1000);
+      activeRecorders.current[channel.id] = {
+        recorder,
+        recordingId: created.id,
+        startedAtMs: Date.now()
+      };
+      setStatus(`${channel.label} 正在录制。`);
+    } catch (error) {
+      stopStream(recordStream);
+      setStatus(`${channel.label} 录制启动失败：${error.message}`);
+    }
   }
 
   async function stopRecording(channel) {
