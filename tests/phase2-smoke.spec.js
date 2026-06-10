@@ -175,6 +175,18 @@ test("runtime config normalizes WebRTC ICE servers", async ({ page }) => {
 test("diagnostic snapshot copies operational state without signaling token", async ({ page }) => {
   await page.addInitScript(() => {
     window.__copiedDiagnosticText = "";
+    Object.defineProperty(navigator.mediaDevices, "enumerateDevices", {
+      configurable: true,
+      value: async () => [
+        { kind: "videoinput", deviceId: "secret-video-id", label: "USB Capture 1" },
+        { kind: "audioinput", deviceId: "secret-audio-id", label: "USB Mic" },
+        { kind: "audiooutput", deviceId: "secret-speaker-id", label: "Teaching Speaker" }
+      ]
+    });
+    Object.defineProperty(navigator.mediaDevices, "getUserMedia", {
+      configurable: true,
+      value: async () => new MediaStream()
+    });
     Object.defineProperty(Navigator.prototype, "clipboard", {
       configurable: true,
       get() {
@@ -206,6 +218,10 @@ test("diagnostic snapshot copies operational state without signaling token", asy
 
   await page.goto("/");
   await expect(page.getByLabel("本端 ID")).toHaveValue("diag-or");
+  await page.getByRole("button", { name: "授权并刷新设备" }).click();
+  const firstChannel = page.locator(".channel-card").first();
+  await firstChannel.locator("select").first().selectOption("device");
+  await firstChannel.locator("select").nth(1).selectOption("secret-video-id");
   await page.getByRole("button", { name: "复制诊断快照" }).click();
 
   const copiedText = await page.evaluate(() => window.__copiedDiagnosticText);
@@ -216,7 +232,17 @@ test("diagnostic snapshot copies operational state without signaling token", asy
   expect(snapshot.signaling.tokenConfigured).toBe(true);
   expect(snapshot.media.iceServerCount).toBe(1);
   expect(snapshot.status).toBeUndefined();
+  expect(snapshot.channels).toHaveLength(4);
+  expect(snapshot.channels[0]).toMatchObject({
+    id: "ch1",
+    sourceMode: "device",
+    deviceSelected: true,
+    deviceLabel: "USB Capture 1"
+  });
   expect(copiedText).not.toContain("secret-token");
+  expect(copiedText).not.toContain("secret-video-id");
+  expect(copiedText).not.toContain("secret-audio-id");
+  expect(copiedText).not.toContain("secret-speaker-id");
   await expect(page.getByLabel("诊断快照")).toHaveValue(/"tokenConfigured": true/);
   await expect(page.locator(".footer")).toContainText("诊断快照已复制");
 });

@@ -1127,6 +1127,30 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     return device?.label || "已选麦克风";
   }
 
+  function channelDiagnosticSummary(channel) {
+    const config = channelConfig[channel.id] || {};
+    const stream = previewStreams.current[channel.id] || null;
+    const videoTracks = stream?.getVideoTracks?.() || [];
+    const liveVideoTracks = videoTracks.filter((track) => track.readyState === "live");
+    const mutedVideoTracks = liveVideoTracks.filter((track) => track.muted).length;
+    return {
+      id: channel.id,
+      label: channel.label,
+      role: channel.role,
+      enabled: Boolean(config.enabled),
+      sourceMode: config.sourceMode || "mock",
+      selectedForRecording: Boolean(config.selectedForRecording),
+      recordingActive: Boolean(activeRecorders.current[channel.id]),
+      deviceSelected: Boolean(config.deviceId),
+      deviceLabel: config.deviceId ? getDeviceLabel(config.deviceId) || "unknown-device" : null,
+      preview: {
+        active: Boolean(stream),
+        liveVideoTracks: liveVideoTracks.length,
+        mutedVideoTracks
+      }
+    };
+  }
+
   async function writeClipboardText(text) {
     if (navigator.clipboard?.writeText && window.isSecureContext) {
       await navigator.clipboard.writeText(text);
@@ -2858,6 +2882,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
         audioInputs: audioDevices.length,
         audioOutputs: audioOutputDevices.length
       },
+      channels: CHANNELS.map(channelDiagnosticSummary),
       recentEvents: signalingEvents.slice(0, 10).map(diagnosticEventSummary)
     };
   }
