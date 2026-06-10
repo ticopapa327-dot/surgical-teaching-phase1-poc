@@ -388,6 +388,15 @@ function healthUrlFromSignalingUrl(value) {
   return httpUrlFromSignalingUrl(value, "/health");
 }
 
+function eventsUrlFromSignalingUrl(value) {
+  return httpUrlFromSignalingUrl(value, "/events");
+}
+
+function signalingEventLabel(event) {
+  const id = event.sessionId || event.callId || event.endpointId || event.eventId || "";
+  return `${event.type || "event"}${id ? ` / ${id}` : ""}`;
+}
+
 function endpointLabel(endpoint) {
   if (!endpoint) return "未知终端";
   return `${endpoint.name || endpoint.endpointId}${endpoint.address ? ` (${endpoint.address})` : ""}`;
@@ -526,6 +535,8 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   const [signalingToken, setSignalingToken] = useState(initialConfig.signalingToken || "");
   const [signalingTargetId, setSignalingTargetId] = useState("");
   const [signalingHealth, setSignalingHealth] = useState("-");
+  const [signalingEventsStatus, setSignalingEventsStatus] = useState("-");
+  const [signalingEvents, setSignalingEvents] = useState([]);
   const [joinSessionId, setJoinSessionId] = useState("");
 
   const [callTargetId, setCallTargetId] = useState(ADDRESS_BOOK[0].id);
@@ -1838,6 +1849,8 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
         setSignalingSessions([]);
         setSignalingTargetId("");
         setSignalingHealth("-");
+        setSignalingEvents([]);
+        setSignalingEventsStatus("-");
         setSignalingState({ connected: false, label: "未连接" });
         setStatus(closeMessage);
       }
@@ -1861,6 +1874,8 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     setSignalingSessions([]);
     setSignalingTargetId("");
     setSignalingHealth("-");
+    setSignalingEvents([]);
+    setSignalingEventsStatus("-");
     setSignalingState({ connected: false, label: "未连接" });
     setStatus("信令连接已断开，已清理信令会话状态。");
   }
@@ -1892,6 +1907,28 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     } catch (error) {
       setSignalingHealth("检查失败");
       setStatus(`信令健康检查失败：${error.message}`);
+    }
+  }
+
+  async function refreshSignalingEvents() {
+    const nextUrl = signalingUrl.trim() || defaultSignalingUrlForPage();
+    if (!isValidWebSocketUrl(nextUrl)) {
+      setSignalingEventsStatus("地址无效");
+      setStatus("信令地址无效：必须使用 ws:// 或 wss:// 地址。");
+      return;
+    }
+    try {
+      const headers = signalingToken.trim() ? { Authorization: `Bearer ${signalingToken.trim()}` } : {};
+      const response = await fetch(eventsUrlFromSignalingUrl(nextUrl), { cache: "no-store", headers });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const events = await response.json();
+      if (!Array.isArray(events)) throw new Error("事件日志格式无效");
+      setSignalingEvents(events.slice(-5).reverse());
+      setSignalingEventsStatus(`${events.length} 条`);
+      setStatus(`已读取 ${events.length} 条信令事件。`);
+    } catch (error) {
+      setSignalingEventsStatus("读取失败");
+      setStatus(`信令事件读取失败：${error.message}`);
     }
   }
 
@@ -2552,6 +2589,10 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
                 <dd>{signalingHealth}</dd>
               </div>
               <div>
+                <dt>事件日志</dt>
+                <dd>{signalingEventsStatus}</dd>
+              </div>
+              <div>
                 <dt>目标通道</dt>
                 <dd>{selectedTargetChannels}</dd>
               </div>
@@ -2564,6 +2605,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
                 断开
               </button>
               <button onClick={checkSignalingHealth}>检查健康</button>
+              <button onClick={refreshSignalingEvents}>刷新事件</button>
               <button onClick={refreshSignalingSessions} disabled={!signalingState.connected}>
                 刷新会话
               </button>
@@ -2579,6 +2621,18 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
               >
                 加入信令会话
               </button>
+            </div>
+            <div className="signal-events">
+              {signalingEvents.length === 0 ? (
+                <p className="hint">暂无信令事件。</p>
+              ) : (
+                signalingEvents.map((event) => (
+                  <div className="signal-event" key={event.eventId || `${event.type}-${event.at}`}>
+                    <span>{event.at ? new Date(event.at).toLocaleTimeString() : "-"}</span>
+                    <strong>{signalingEventLabel(event)}</strong>
+                  </div>
+                ))
+              )}
             </div>
             <p className="hint">该面板负责 C/S 控制面；真实媒体当前验证通道 1 至通道 4 的浏览器 WebRTC P2P 按订阅链路。</p>
           </section>

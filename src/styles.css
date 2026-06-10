@@ -229,6 +229,31 @@ input {
   color: #9b1c1c;
 }
 
+.signal-events {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.signal-event {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid #eef2f6;
+  border-radius: 6px;
+  background: #f8fafc;
+  font-size: 12px;
+}
+
+.signal-event span {
+  color: #657281;
+}
+
+.signal-event strong {
+  overflow-wrap: anywhere;
+}
+
 .status-list,
 .session-list {
   margin: 0 0 10px;

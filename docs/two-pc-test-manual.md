@@ -458,6 +458,7 @@ http://<PC-A局域网IP>:7077/events
 ```
 
 如果启用了 `SIGNALING_AUTH_TOKEN`，`/directory`、`/sessions` 和 `/events` 需要携带令牌。
+前端“信令控制面”也提供“刷新事件”按钮，可直接查看最近 5 条控制面事件。
 
 ## 九、常见问题处理
 
