@@ -51,10 +51,12 @@ function validatePortNumber(name, value) {
   }
 }
 
-function checkPortAvailable(host, port) {
+function checkPortAvailable(name, host, port) {
   return new Promise((resolve, reject) => {
     const server = net.createServer();
-    server.once("error", reject);
+    server.once("error", (error) => {
+      reject(new Error(`${name} port ${port} on ${host} is unavailable: ${error.code || error.message}`));
+    });
     server.listen(port, host, () => {
       server.close(() => resolve());
     });
@@ -150,8 +152,8 @@ async function main() {
   const addresses = localIPv4Addresses();
   printAccessInfo(addresses);
 
-  await checkPortAvailable(signalingHost, signalingPort);
-  await checkPortAvailable(webHost, webPort);
+  await checkPortAvailable("SIGNALING_PORT", signalingHost, signalingPort);
+  await checkPortAvailable("UST_WEB_PORT", webHost, webPort);
   console.log("Port check: OK");
 
   if (dryRun) return;
