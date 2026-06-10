@@ -368,7 +368,25 @@ function capabilitiesForRole(role) {
 
 function sessionChannelsForEndpoint(session, endpointId) {
   const channels = session.subscriptions?.[endpointId];
-  return Array.isArray(channels) && channels.length ? channels : ["ch1"];
+  return normalizeChannelSelection(channels);
+}
+
+function normalizeChannelSelection(channelIds) {
+  const validIds = new Set(CHANNELS.map((channel) => channel.id));
+  const values = Array.isArray(channelIds) ? channelIds : [channelIds];
+  const normalized = [];
+  for (const channelId of values) {
+    if (typeof channelId !== "string") continue;
+    const value = channelId.trim();
+    if (!validIds.has(value) || normalized.includes(value)) continue;
+    normalized.push(value);
+    if (normalized.length >= 4) break;
+  }
+  return normalized.length ? normalized : ["ch1"];
+}
+
+function sessionChannelsForRemoteEndpoint(session, endpointId) {
+  return normalizeChannelSelection(session?.subscriptions?.[endpointId]);
 }
 
 function interactionAudioConstraints(audioDeviceId) {
@@ -495,6 +513,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   const signalingCloseMessageRef = useRef("");
   const mediaPeerConnections = useRef(new Map());
   const mediaPeerChannels = useRef(new Map());
+  const mediaPeerTrackMetadata = useRef(new Map());
   const mediaRemoteStreams = useRef({});
   const mediaRemoteAudioStreams = useRef({});
   const localAudioSenders = useRef(new Map());
@@ -923,6 +942,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       participantIds: session.participants,
       participants: session.participants.map(endpointLabelById),
       participantLimit: session.participantLimit,
+      subscriptions: session.subscriptions || {},
       subscribedChannels: sessionChannelsForEndpoint(session, endpointId)
     };
     activeSessionRef.current = nextSession;
@@ -1089,10 +1109,11 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     return stream.getAudioTracks().length > 0;
   }
 
-  async function renegotiatePeerConnection(endpointId, channelId = "ch1") {
+  async function renegotiatePeerConnection(endpointId, channelIds = ["ch1"]) {
     const session = activeSessionRef.current;
     const peerConnection = mediaPeerConnections.current.get(endpointId);
     if (!session?.id || !peerConnection) return;
+    const normalizedChannelIds = normalizeChannelSelection(channelIds);
     const offer = await peerConnection.createOffer();
     await setLowLatencyLocalDescription(peerConnection, offer);
     sendSignaling("peer.signal", {
@@ -1100,7 +1121,9 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       toEndpointId: endpointId,
       signal: {
         kind: "media-offer",
-        channelId,
+        channelId: normalizedChannelIds[0],
+        channelIds: normalizedChannelIds,
+        tracks: mediaPeerTrackMetadata.current.get(endpointId) || [],
         description: peerConnection.localDescription
       }
     });
@@ -1135,7 +1158,13 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     peerConnection.ontrack = (event) => {
       const stream = event.streams?.[0];
       if (!stream) return;
-      const channelId = mediaPeerChannels.current.get(endpointId) || "ch1";
+      const trackMetadata = mediaPeerTrackMetadata.current.get(endpointId) || [];
+      const mappedTrack = trackMetadata.find(
+        (item) =>
+          item.kind === event.track.kind &&
+          (item.trackId === event.track.id || item.streamId === stream.id)
+      );
+      const channelId = mappedTrack?.channelId || mediaPeerChannels.current.get(endpointId) || "ch1";
       if (event.track.kind === "video") {
         mediaRemoteStreams.current[channelId] = stream;
         setWebrtcMediaState({
@@ -1186,6 +1215,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     if (existing) existing.close();
     mediaPeerConnections.current.delete(endpointId);
     mediaPeerChannels.current.delete(endpointId);
+    mediaPeerTrackMetadata.current.delete(endpointId);
     localAudioSenders.current.delete(endpointId);
     delete mediaRemoteAudioStreams.current[endpointId];
     pendingMediaIceCandidates.current.delete(endpointId);
@@ -1213,6 +1243,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     for (const peerConnection of mediaPeerConnections.current.values()) peerConnection.close();
     mediaPeerConnections.current.clear();
     mediaPeerChannels.current.clear();
+    mediaPeerTrackMetadata.current.clear();
     mediaRemoteStreams.current = {};
     mediaRemoteAudioStreams.current = {};
     localAudioSenders.current.clear();
@@ -1277,9 +1308,17 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       for (const endpointId of peers) {
         mediaPeerChannels.current.set(endpointId, channelId);
         const peerConnection = createMediaPeerConnection(endpointId);
+        const trackMetadata = [];
         for (const track of stream.getTracks()) {
           peerConnection.addTrack(track, stream);
+          trackMetadata.push({
+            kind: track.kind,
+            channelId,
+            streamId: stream.id,
+            trackId: track.id
+          });
         }
+        mediaPeerTrackMetadata.current.set(endpointId, trackMetadata);
         if (session.mode === "interactive") {
           try {
             audioAttached = (await addInteractionAudioToPeerConnection(peerConnection, endpointId)) || audioAttached;
@@ -1288,7 +1327,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
             setAudioCall({ state: "error", label: error.message });
           }
         }
-        await renegotiatePeerConnection(endpointId, channelId);
+        await renegotiatePeerConnection(endpointId, [channelId]);
       }
 
       setWebrtcMediaState({
@@ -1297,6 +1336,86 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       });
       setStatus(
         `${channelLabelById(channelId)} WebRTC 媒体发布已发起${
+          audioAttached ? "，交互音频已随同发布" : ""
+        }${audioErrors.length ? `；音频未加入：${Array.from(new Set(audioErrors)).join("；")}` : ""}。`
+      );
+    } catch (error) {
+      cleanupWebRtcMedia();
+      setWebrtcMediaState({ state: "error", label: error.message });
+      setStatus(`WebRTC 媒体发布失败：${error.message}`);
+    }
+  }
+
+  async function startSubscribedWebRtcMedia() {
+    const session = activeSessionRef.current;
+    if (!session || session.source !== "signaling") {
+      setStatus("请先建立信令会话，再发布媒体。");
+      return;
+    }
+    if (localEndpointRole !== "operating-room") {
+      setStatus("当前 PoC 只允许手术室端发布媒体。");
+      return;
+    }
+    const peers = activeRemoteEndpointIds();
+    if (peers.length === 0) {
+      setStatus("当前会话没有可发布媒体的远端参与方。");
+      return;
+    }
+
+    try {
+      cleanupWebRtcMedia();
+      let audioAttached = false;
+      const audioErrors = [];
+      const publishedChannelIds = new Set();
+
+      for (const endpointId of peers) {
+        const endpointChannelIds = sessionChannelsForRemoteEndpoint(session, endpointId);
+        mediaPeerChannels.current.set(endpointId, endpointChannelIds[0]);
+        const peerConnection = createMediaPeerConnection(endpointId);
+        const trackMetadata = [];
+
+        for (const channelId of endpointChannelIds) {
+          const channel = CHANNELS.find((item) => item.id === channelId);
+          if (!channel) continue;
+          if (!previewStreams.current[channelId]) {
+            await startPreview(channel);
+          }
+          const stream = previewStreams.current[channelId];
+          const videoTracks = stream?.getVideoTracks() || [];
+          if (!videoTracks.length) {
+            throw new Error(`${channelLabelById(channelId)} 没有可发布的视频轨道`);
+          }
+          for (const track of videoTracks) {
+            peerConnection.addTrack(track, stream);
+            trackMetadata.push({
+              kind: track.kind,
+              channelId,
+              streamId: stream.id,
+              trackId: track.id
+            });
+          }
+          publishedChannelIds.add(channelId);
+        }
+
+        mediaPeerTrackMetadata.current.set(endpointId, trackMetadata);
+        if (session.mode === "interactive") {
+          try {
+            audioAttached = (await addInteractionAudioToPeerConnection(peerConnection, endpointId)) || audioAttached;
+          } catch (error) {
+            audioErrors.push(error.message);
+            setAudioCall({ state: "error", label: error.message });
+          }
+        }
+        await renegotiatePeerConnection(endpointId, endpointChannelIds);
+      }
+
+      const publishedLabel = Array.from(publishedChannelIds).map(channelLabelById).join("、") || "通道 1";
+      setWebrtcMediaState({
+        state: "publishing",
+        label: `正在发布 ${publishedLabel} 至 ${peers.length} 个远端`
+      });
+      setStatus(
+        `${publishedLabel} WebRTC 媒体发布已发起${
           audioAttached ? "，交互音频已随同发布" : ""
         }${audioErrors.length ? `；音频未加入：${Array.from(new Set(audioErrors)).join("；")}` : ""}。`
       );
@@ -1317,10 +1436,22 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       if (!fromEndpointId || !signal.kind) return;
 
       if (signal.kind === "media-offer") {
-        const channelId = signal.channelId || "ch1";
+        const channelIds = normalizeChannelSelection(signal.channelIds || signal.channelId || "ch1");
+        const channelId = channelIds[0];
+        const trackMetadata = Array.isArray(signal.tracks)
+          ? signal.tracks
+              .filter((item) => item && item.kind === "video" && typeof item.channelId === "string")
+              .map((item) => ({
+                kind: item.kind,
+                channelId: item.channelId,
+                streamId: typeof item.streamId === "string" ? item.streamId : "",
+                trackId: typeof item.trackId === "string" ? item.trackId : ""
+              }))
+          : [];
         mediaPeerChannels.current.set(fromEndpointId, channelId);
         closeMediaPeerConnection(fromEndpointId);
         mediaPeerChannels.current.set(fromEndpointId, channelId);
+        mediaPeerTrackMetadata.current.set(fromEndpointId, trackMetadata);
         const peerConnection = createMediaPeerConnection(fromEndpointId);
         await peerConnection.setRemoteDescription(new RTCSessionDescription(signal.description));
         await flushQueuedMediaIceCandidates(fromEndpointId, peerConnection);
@@ -1340,6 +1471,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
           signal: {
             kind: "media-answer",
             channelId,
+            channelIds,
             description: peerConnection.localDescription
           }
         });
@@ -1890,7 +2022,13 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
           const peerConnection = mediaPeerConnections.current.get(endpointId);
           if (!peerConnection) continue;
           await addInteractionAudioToPeerConnection(peerConnection, endpointId);
-          await renegotiatePeerConnection(endpointId, mediaPeerChannels.current.get(endpointId) || "ch1");
+          const videoChannelIds = (mediaPeerTrackMetadata.current.get(endpointId) || [])
+            .filter((item) => item.kind === "video")
+            .map((item) => item.channelId);
+          await renegotiatePeerConnection(
+            endpointId,
+            videoChannelIds.length ? videoChannelIds : mediaPeerChannels.current.get(endpointId) || "ch1"
+          );
           renegotiatedPeers.push(endpointId);
         }
       }
@@ -1980,7 +2118,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       <header className="topbar">
         <div>
           <h1>手术示教 Phase 3 PoC</h1>
-          <p>4 路采集录制和信令控制已通过，当前验证单路 WebRTC 远端视频链路。</p>
+          <p>4 路采集录制和信令控制已通过，当前验证按订阅多通道 WebRTC 远端视频链路。</p>
         </div>
         <div className="top-actions">
           <button onClick={requestDevicePermissionAndRefresh}>授权并刷新设备</button>
@@ -2077,7 +2215,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
                 </option>
               ))}
             </select>
-            <p className="hint">当前阶段已接入单路 WebRTC 视频 PoC；音频通话仍使用本地采集验证回声消除约束。</p>
+            <p className="hint">当前阶段已接入按订阅多通道 WebRTC 视频 PoC；交互模式下音频通话会进入同一 WebRTC 媒体链路。</p>
           </section>
 
           <section className="panel-block">
@@ -2320,7 +2458,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
                 加入信令会话
               </button>
             </div>
-            <p className="hint">该面板负责 C/S 控制面；真实媒体当前只验证通道 1 的浏览器 WebRTC P2P 链路。</p>
+            <p className="hint">该面板负责 C/S 控制面；真实媒体当前验证通道 1 至通道 4 的浏览器 WebRTC P2P 按订阅链路。</p>
           </section>
 
           <section className="panel-block">
@@ -2440,10 +2578,10 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
                 停止音频
               </button>
               <button
-                onClick={() => startWebRtcMedia("ch1")}
+                onClick={startSubscribedWebRtcMedia}
                 disabled={!activeSession || activeSession.source !== "signaling" || localEndpointRole !== "operating-room"}
               >
-                发布通道 1 媒体
+                发布订阅通道媒体
               </button>
               <button
                 onClick={() => stopWebRtcMedia()}

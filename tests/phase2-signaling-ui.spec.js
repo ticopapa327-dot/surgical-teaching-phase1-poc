@@ -1007,7 +1007,7 @@ test("phase 2 UI clears signaling session when server disconnects", async ({ pag
   }
 });
 
-test("phase 3 UI sends channel 1 video over WebRTC signaling", async ({ page }) => {
+test("phase 3 UI sends subscribed videos over WebRTC signaling", async ({ page }) => {
   const server = createSignalingServer({ port: 0 });
   const address = await server.start();
   const url = `ws://127.0.0.1:${address.port}/signal`;
@@ -1039,7 +1039,17 @@ test("phase 3 UI sends channel 1 video over WebRTC signaling", async ({ page }) 
     await expect(page.locator(".session-list dd").filter({ hasText: "Media Teaching" })).toBeVisible();
     await expect(teachingPage.locator(".session-list dd").filter({ hasText: "Media OR" })).toBeVisible();
 
-    await page.getByRole("button", { name: "发布通道 1 媒体" }).click();
+    await teachingPage.getByLabel("通道 2 术野").click();
+    await expect(teachingPage.getByLabel("通道 2 术野")).toBeChecked();
+    await teachingPage.getByLabel("通道 3 腹腔镜").click();
+    await expect(teachingPage.getByLabel("通道 3 腹腔镜")).toBeChecked();
+    await teachingPage.getByRole("button", { name: "四画面" }).click();
+    await expect(teachingPage.locator(".remote-video-tile")).toHaveCount(3);
+    await expect
+      .poll(() => server.state.sessions.values().next().value?.subscriptions["teach-media-ui"]?.join(","))
+      .toBe("ch1,ch2,ch3");
+
+    await page.getByRole("button", { name: "发布订阅通道媒体" }).click();
     await expect(teachingPage.locator(".status-list dd").filter({ hasText: /收到 Media OR|正在接收 Media OR/ })).toBeVisible({
       timeout: 15000
     });
@@ -1048,6 +1058,16 @@ test("phase 3 UI sends channel 1 video over WebRTC signaling", async ({ page }) 
         const video = document.querySelector(".remote-video-tile video");
         const stream = video?.srcObject;
         return Boolean(stream?.getVideoTracks?.().some((track) => track.readyState === "live"));
+      },
+      null,
+      { timeout: 15000 }
+    );
+    await teachingPage.waitForFunction(
+      () => {
+        const streams = [...document.querySelectorAll(".remote-video-tile video")]
+          .map((video) => video.srcObject)
+          .filter((stream) => stream?.getVideoTracks?.().some((track) => track.readyState === "live"));
+        return streams.length >= 3 && new Set(streams.map((stream) => stream.id)).size >= 3;
       },
       null,
       { timeout: 15000 }
