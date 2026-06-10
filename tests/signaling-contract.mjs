@@ -548,6 +548,29 @@ async function main() {
   busyJoinOrClient.close();
   busyJoinTeachingClient.close();
 
+  const disconnectObserverClient = await connect(url);
+  send(disconnectObserverClient, "endpoint.register", {
+    endpointId: "observer-disconnect",
+    role: "observer",
+    name: "Disconnect Observer"
+  });
+  await waitFor(disconnectObserverClient, "endpoint.registered");
+  send(disconnectObserverClient, "session.join", { sessionId: orOwnedLimitSession.payload.session.sessionId });
+  const disconnectObserverJoined = await waitFor(disconnectObserverClient, "session.joined");
+  assert.equal(disconnectObserverJoined.payload.session.participants.length, 4);
+  const participantDisconnectedUpdate = waitFor(
+    orClient,
+    "session.updated",
+    (message) =>
+      message.payload.session.participants.length === 3 &&
+      !message.payload.session.participants.includes("observer-disconnect")
+  );
+  disconnectObserverClient.close();
+  const participantDisconnected = await participantDisconnectedUpdate;
+  assert.equal(participantDisconnected.payload.session.sessionId, orOwnedLimitSession.payload.session.sessionId);
+  assert.equal(server.state.sessions.has(orOwnedLimitSession.payload.session.sessionId), true);
+  assert.equal(server.state.sessions.get(orOwnedLimitSession.payload.session.sessionId).subscriptions["observer-disconnect"], undefined);
+
   send(observerClient, "session.leave", { sessionId: orOwnedLimitSession.payload.session.sessionId });
   await waitFor(observerClient, "session.left");
   const observerLeftUpdate = await waitFor(

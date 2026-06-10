@@ -395,6 +395,26 @@ function createSignalingServer(options = {}) {
     sendSessions();
   }
 
+  function removeSessionParticipant(session, endpointId, reason = "endpoint_disconnected") {
+    session.participants = session.participants.filter((participantId) => participantId !== endpointId);
+    delete session.subscriptions[endpointId];
+    recordEvent("session.participant_removed", {
+      sessionId: session.sessionId,
+      endpointId,
+      reason
+    });
+    if (endpointId === session.ownerEndpointId) {
+      endSession(session, endpointId, reason);
+      return;
+    }
+    if (session.participants.length < 2) {
+      endSession(session, endpointId, reason);
+      return;
+    }
+    notifySession(session);
+    sendSessions();
+  }
+
   function removeEndpoint(endpointId, reason = "endpoint_disconnected") {
     for (const [, call] of pendingCalls.entries()) {
       if (call.fromEndpointId === endpointId || call.toEndpointId === endpointId) {
@@ -406,7 +426,7 @@ function createSignalingServer(options = {}) {
     recordEvent("endpoint.removed", { endpointId, reason });
     for (const session of Array.from(sessions.values())) {
       if (session.participants.includes(endpointId)) {
-        endSession(session, endpointId, reason);
+        removeSessionParticipant(session, endpointId, reason);
       }
     }
     sendDirectory();

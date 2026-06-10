@@ -323,7 +323,7 @@ HTTP `/events` 返回最近控制面事件摘要：
 | `reason` | 结束原因，当前支持 `requested` 和 `endpoint_disconnected` |
 | `endedAt` | 结束时间 |
 
-如果会话参与方的 WebSocket 连接异常关闭，服务端会删除该会话，并向剩余在线参与方广播 `reason` 为 `endpoint_disconnected` 的 `session.ended`。
+如果会话参与方的 WebSocket 连接异常关闭，服务端会先将该终端移出会话并删除其订阅。若断开方是 `ownerEndpointId`，或移除后会话不足 2 人，服务端会删除该会话，并向剩余在线参与方广播 `reason` 为 `endpoint_disconnected` 的 `session.ended`；若普通参与方断开后仍剩余至少 2 人，服务端保留会话并向剩余参与方广播 `session.updated`。
 
 ### 4. 加入会话
 
