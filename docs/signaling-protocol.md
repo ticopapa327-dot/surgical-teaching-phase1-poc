@@ -398,7 +398,7 @@ HTTP `/events` 返回最近控制面事件摘要：
 | `media-offer` | 媒体发布端到接收端 | 携带 `channelId`、`channelIds`、`tracks` 和 WebRTC offer description；当前可包含按订阅发布的多路视频轨道和交互音频轨道。 |
 | `media-answer` | 媒体接收端到发布端 | 携带 `channelId`、`channelIds` 和 WebRTC answer description；交互模式下可包含应答端本地音频轨道。 |
 | `ice` | 双向 | 携带 ICE candidate。 |
-| `media-stop` | 双向 | 通知对端清理当前 PoC 媒体链路。 |
+| `media-stop` | 发布端到接收端，或接收端到手术室 owner | 通知对端清理当前 PoC 媒体链路。手术室 owner 停止时可逐个通知所有远端；非 owner 终端停止时只通知手术室 owner 清理该终端对应的 PeerConnection，不应广播给其他接收端。 |
 | `media-refresh-request` | 媒体接收端到手术室 owner | 请求手术室端按当前会话订阅重新发布媒体；只触发控制面重协商，不承载媒体数据。 |
 
 目标终端会收到：
