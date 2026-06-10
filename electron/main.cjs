@@ -8,7 +8,8 @@ const {
   ftpRemoteFileName,
   ftpSecureMode,
   safeRecordingFilePath,
-  sanitizeName
+  sanitizeName,
+  writeBufferToStream
 } = require("./recording-utils.cjs");
 
 protocol.registerSchemesAsPrivileged([
@@ -179,13 +180,16 @@ ipcMain.handle("recording:create", (_event, payload) => {
   return { id, filePath, fileName };
 });
 
-ipcMain.handle("recording:write-chunk", (_event, payload) => {
+ipcMain.handle("recording:write-chunk", async (_event, payload) => {
   const entry = activeRecordings.get(payload.recordingId);
   if (!entry) return { ok: false, reason: "recording_not_found" };
-  const chunk = Buffer.from(payload.chunk);
-  entry.bytes += chunk.length;
-  entry.stream.write(chunk);
-  return { ok: true, bytes: entry.bytes };
+  try {
+    const bytes = await writeBufferToStream(entry.stream, payload.chunk);
+    entry.bytes += bytes;
+    return { ok: true, bytes: entry.bytes };
+  } catch (error) {
+    return { ok: false, reason: error.code || error.message || "write_failed" };
+  }
 });
 
 ipcMain.handle("recording:close", async (_event, payload) => {

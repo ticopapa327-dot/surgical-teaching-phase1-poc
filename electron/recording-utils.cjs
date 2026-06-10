@@ -36,11 +36,39 @@ function safeRecordingFilePath(recordingsDir, item) {
   return isPathInside(recordingsDir, filePath) ? filePath : "";
 }
 
+function writeBufferToStream(stream, chunk) {
+  return new Promise((resolve, reject) => {
+    const buffer = Buffer.from(chunk);
+    let settled = false;
+    const cleanup = () => {
+      setImmediate(() => stream.off("error", onError));
+    };
+    const settle = (callback) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      callback();
+    };
+    const onError = (error) => {
+      settle(() => reject(error));
+    };
+    stream.once("error", onError);
+    stream.write(buffer, (error) => {
+      if (error) {
+        settle(() => reject(error));
+        return;
+      }
+      settle(() => resolve(buffer.length));
+    });
+  });
+}
+
 module.exports = {
   sanitizeName,
   ftpSecureMode,
   ftpRemoteFileName,
   extensionFromMime,
   isPathInside,
-  safeRecordingFilePath
+  safeRecordingFilePath,
+  writeBufferToStream
 };
