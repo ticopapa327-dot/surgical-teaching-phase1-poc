@@ -1223,3 +1223,69 @@ test("phase 3 UI publishes each remote endpoint subscription independently", asy
     await server.stop();
   }
 });
+
+test("phase 3 UI publishes to an observer that joins after media starts", async ({ page }) => {
+  const server = createSignalingServer({ port: 0 });
+  const address = await server.start();
+  const url = `ws://127.0.0.1:${address.port}/signal`;
+  const teachingPage = await page.context().newPage();
+  const observerPage = await page.context().newPage();
+
+  try {
+    await page.goto("/");
+    await teachingPage.goto("/");
+    await observerPage.goto("/");
+
+    await page.getByLabel("信令地址").fill(url);
+    await page.getByLabel("本端 ID").fill("or-late-media");
+    await page.getByLabel("本端名称").fill("Late Join OR");
+    await page.getByLabel("手术室参与上限").fill("3");
+    await page.getByLabel("发起模式").selectOption("view");
+    await page.getByRole("button", { name: "连接信令" }).click();
+    await expect(page.getByText("已注册 Late Join OR")).toBeVisible();
+
+    await teachingPage.getByLabel("信令地址").fill(url);
+    await teachingPage.getByLabel("本端 ID").fill("teach-late-media");
+    await teachingPage.getByLabel("本端名称").fill("Late Join Teaching");
+    await teachingPage.getByLabel("本端角色").selectOption("teaching-room");
+    await teachingPage.getByRole("button", { name: "连接信令" }).click();
+    await expect(teachingPage.getByText("已注册 Late Join Teaching")).toBeVisible();
+
+    await page.getByLabel("信令目标").selectOption("teach-late-media");
+    await page.getByRole("button", { name: "信令呼叫选中终端" }).click();
+    await expect(teachingPage.getByText("待确认呼叫")).toBeVisible();
+    await teachingPage.getByRole("button", { name: "接受呼叫" }).click();
+    await expect(page.locator(".session-list dd").filter({ hasText: "2 / 3" })).toBeVisible();
+
+    await page.getByRole("button", { name: "发布订阅通道媒体" }).click();
+    await expectLiveRemoteVideoCount(teachingPage, 1);
+    await expect(teachingPage.locator(".remote-health-live")).toHaveCount(1);
+
+    const sessionId = await expect
+      .poll(() => server.state.sessions.values().next().value?.sessionId)
+      .not.toBeUndefined()
+      .then(() => server.state.sessions.values().next().value.sessionId);
+
+    await observerPage.getByLabel("信令地址").fill(url);
+    await observerPage.getByLabel("本端 ID").fill("observer-late-media");
+    await observerPage.getByLabel("本端名称").fill("Late Join Observer");
+    await observerPage.getByLabel("本端角色").selectOption("observer");
+    await observerPage.getByRole("button", { name: "连接信令" }).click();
+    await expect(observerPage.getByText("已注册 Late Join Observer")).toBeVisible();
+    await observerPage.getByLabel("加入会话 ID").fill(sessionId);
+    await observerPage.getByRole("button", { name: "加入信令会话" }).click();
+
+    await expect(page.locator(".session-list dd").filter({ hasText: "3 / 3" })).toBeVisible();
+    await expect(observerPage.locator(".session-list dd").filter({ hasText: "Late Join OR" })).toBeVisible();
+    await expect
+      .poll(() => server.state.sessions.values().next().value?.subscriptions["observer-late-media"]?.join(","))
+      .toBe("ch1");
+    await expectLiveRemoteVideoCount(observerPage, 1);
+    await expect(observerPage.locator(".remote-health-live")).toHaveCount(1);
+    await expect(observerPage.locator(".peer-diagnostic-state-live")).toHaveCount(1);
+  } finally {
+    await observerPage.close();
+    await teachingPage.close();
+    await server.stop();
+  }
+});
