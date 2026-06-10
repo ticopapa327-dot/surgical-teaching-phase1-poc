@@ -1165,6 +1165,8 @@ test("phase 3 UI sends subscribed videos over WebRTC signaling", async ({ page }
       null,
       { timeout: 15000 }
     );
+    await expect(page.locator(".peer-diagnostic-list")).toContainText("音频 本地1 远端1", { timeout: 15000 });
+    await expect(teachingPage.locator(".peer-diagnostic-list")).toContainText("音频 本地1 远端1", { timeout: 15000 });
 
     await page.getByRole("button", { name: "停止媒体链路" }).click();
     await expectRemoteHealthLiveCount(teachingPage, 0);

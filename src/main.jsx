@@ -1351,6 +1351,12 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     const connectionState = peerConnection?.connectionState || "unknown";
     const iceState = peerConnection?.iceConnectionState || "unknown";
     const signalingState = peerConnection?.signalingState || "unknown";
+    const localAudioTrackCount = (localAudioSenders.current.get(endpointId) || []).filter(
+      (sender) => sender.track?.readyState === "live"
+    ).length;
+    const remoteAudioTrackCount = (mediaRemoteAudioStreams.current[endpointId]?.getAudioTracks?.() || []).filter(
+      (track) => track.readyState === "live"
+    ).length;
     const state =
       connectionState === "connected"
         ? "live"
@@ -1367,7 +1373,9 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       endpointId,
       state,
       label,
-      detail: `${endpointLabelById(endpointId)}：连接 ${connectionState} / ICE ${iceState} / 协商 ${signalingState}`
+      detail: `${endpointLabelById(
+        endpointId
+      )}：连接 ${connectionState} / ICE ${iceState} / 协商 ${signalingState} / 音频 本地${localAudioTrackCount} 远端${remoteAudioTrackCount}`
     };
   }
 
