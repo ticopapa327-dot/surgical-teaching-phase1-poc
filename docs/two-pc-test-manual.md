@@ -94,17 +94,24 @@ New-NetFirewallRule -DisplayName "UST Web 5173" -Direction Inbound -Action Allow
 
 ```powershell
 cd D:\CodeX\UST\phase1-poc
+npm run dev:lan:check
 npm run dev:lan
 ```
 
-该命令会同时启动信令服务和前端页面。正常输出会包含：
+`dev:lan:check` 只检查端口占用并打印可访问地址，不启动服务。确认端口检查通过后再执行 `npm run dev:lan`，该命令会同时启动信令服务和前端页面。正常输出会包含：
 
 ```text
-Signaling: ws://0.0.0.0:7077/signal
-Web:       http://0.0.0.0:5173
-LAN URL:   http://192.168.1.118:5173
-Signal:    ws://192.168.1.118:7077/signal
+UST LAN test service configuration
+Signaling bind: ws://0.0.0.0:7077/signal
+Web bind:       http://0.0.0.0:5173
+Adapter: 以太网 2 (recommended)
+  LAN URL: http://192.168.1.118:5173
+  Signal:  ws://192.168.1.118:7077/signal
+Port check: OK
+Services ready. Keep this terminal open during the two-PC test.
 ```
+
+开发自检时可使用 `npm run dev:lan:smoke`，该命令启动服务并在 ready 探测通过后自动退出；正式双机测试仍使用 `npm run dev:lan` 并保持窗口打开。
 
 如果需要分开启动，也可以在 PC-A 执行：
 

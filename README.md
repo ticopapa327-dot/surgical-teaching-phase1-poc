@@ -91,10 +91,12 @@ npm run server:signaling
 局域网双机测试可直接使用一键启动：
 
 ```powershell
+npm run dev:lan:check
 npm run dev:lan
 ```
 
-该命令会同时启动 `0.0.0.0:7077` 信令服务和 `0.0.0.0:5173` 前端页面，并打印本机局域网访问地址。
+`dev:lan:check` 只检查端口占用并打印网卡名称、局域网访问地址和防火墙放行命令，不启动服务。`dev:lan` 会同时启动 `0.0.0.0:7077` 信令服务和 `0.0.0.0:5173` 前端页面，完成 `/health` 与前端页面探测后输出 `Services ready`。
+开发自检可运行 `npm run dev:lan:smoke`，该命令启动服务并在 ready 探测通过后自动退出。
 
 ## 配置
 
