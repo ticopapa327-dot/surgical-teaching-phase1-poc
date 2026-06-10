@@ -435,12 +435,21 @@ function sessionChannelsForRemoteEndpoint(session, endpointId) {
   return normalizeChannelSelection(session?.subscriptions?.[endpointId]);
 }
 
-function publicationSignatureForSession(session, selfEndpointId) {
+function publicationSignatureForSession(session, selfEndpointId, directory = []) {
   const participantIds = Array.isArray(session?.participantIds) ? session.participantIds : [];
+  const endpointRevisions = new Map(
+    (Array.isArray(directory) ? directory : []).map((endpoint) => [
+      endpoint.endpointId,
+      endpoint.registeredAt || endpoint.address || ""
+    ])
+  );
   return participantIds
     .filter((endpointId) => endpointId && endpointId !== selfEndpointId)
     .sort()
-    .map((endpointId) => `${endpointId}:${sessionChannelsForRemoteEndpoint(session, endpointId).join(",")}`)
+    .map(
+      (endpointId) =>
+        `${endpointId}@${endpointRevisions.get(endpointId) || ""}:${sessionChannelsForRemoteEndpoint(session, endpointId).join(",")}`
+    )
     .join("|");
 }
 
@@ -613,21 +622,25 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     activeSessionRef.current = activeSession;
   }, [activeSession]);
 
-  function shouldAutoRepublishSubscriptions(session = activeSessionRef.current) {
+  function shouldAutoRepublishMedia(session = activeSessionRef.current) {
     if (localEndpointRole !== "operating-room") return false;
     if (session?.source !== "signaling") return false;
     if (webrtcMediaState.state !== "publishing" && webrtcMediaState.state !== "connected") return false;
-    const nextSignature = publicationSignatureForSession(session, signalingEndpointIdRef.current);
+    const nextSignature = publicationSignatureForSession(
+      session,
+      signalingEndpointIdRef.current,
+      signalingDirectoryRef.current
+    );
     return Boolean(publishedSubscriptionSignature.current && publishedSubscriptionSignature.current !== nextSignature);
   }
 
-  function triggerAutoRepublishSubscriptions() {
+  function triggerAutoRepublishMedia() {
     if (autoRepublishInFlight.current) return;
     autoRepublishInFlight.current = true;
     startSubscribedWebRtcMedia({ auto: true }).finally(() => {
       autoRepublishInFlight.current = false;
-      if (shouldAutoRepublishSubscriptions()) {
-        window.setTimeout(triggerAutoRepublishSubscriptions, 0);
+      if (shouldAutoRepublishMedia()) {
+        window.setTimeout(triggerAutoRepublishMedia, 0);
       }
     });
   }
@@ -647,7 +660,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   }, [activeSession?.source, activeSession?.subscribedChannels?.join(",")]);
 
   useEffect(() => {
-    if (shouldAutoRepublishSubscriptions(activeSession)) triggerAutoRepublishSubscriptions();
+    if (shouldAutoRepublishMedia(activeSession)) triggerAutoRepublishMedia();
   }, [activeSession, localEndpointRole, webrtcMediaState.state]);
 
   useEffect(() => {
@@ -1587,14 +1600,15 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       const publishedLabel = Array.from(publishedChannelIds).map(channelLabelById).join("、") || "通道 1";
       publishedSubscriptionSignature.current = publicationSignatureForSession(
         activeSessionRef.current,
-        signalingEndpointIdRef.current
+        signalingEndpointIdRef.current,
+        signalingDirectoryRef.current
       );
       setWebrtcMediaState({
         state: "publishing",
-        label: `${auto ? "已按订阅变化重新发布" : "正在发布"} ${publishedLabel} 至 ${peers.length} 个远端`
+        label: `${auto ? "已按会话变化重新发布" : "正在发布"} ${publishedLabel} 至 ${peers.length} 个远端`
       });
       setStatus(
-        `${publishedLabel} WebRTC 媒体${auto ? "已按订阅变化重新发布" : "发布已发起"}${
+        `${publishedLabel} WebRTC 媒体${auto ? "已按会话变化重新发布" : "发布已发起"}${
           audioAttached ? "，交互音频已随同发布" : ""
         }${audioErrors.length ? `；音频未加入：${Array.from(new Set(audioErrors)).join("；")}` : ""}。`
       );

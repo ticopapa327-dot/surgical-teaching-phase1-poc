@@ -1427,3 +1427,58 @@ test("phase 3 UI keeps remaining media after an observer disconnects", async ({ 
     await server.stop();
   }
 });
+
+test("phase 3 UI republishes media when a subscribed endpoint reconnects", async ({ page }) => {
+  const server = createSignalingServer({ port: 0 });
+  const address = await server.start();
+  const url = `ws://127.0.0.1:${address.port}/signal`;
+  const teachingPage = await page.context().newPage();
+  const replacementPage = await page.context().newPage();
+
+  try {
+    await page.goto("/");
+    await teachingPage.goto("/");
+
+    await page.getByLabel("信令地址").fill(url);
+    await page.getByLabel("本端 ID").fill("or-reconnect-media");
+    await page.getByLabel("本端名称").fill("Reconnect OR");
+    await page.getByLabel("发起模式").selectOption("view");
+    await page.getByRole("button", { name: "连接信令" }).click();
+    await expect(page.getByText("已注册 Reconnect OR")).toBeVisible();
+
+    await teachingPage.getByLabel("信令地址").fill(url);
+    await teachingPage.getByLabel("本端 ID").fill("teach-reconnect-media");
+    await teachingPage.getByLabel("本端名称").fill("Reconnect Teaching A");
+    await teachingPage.getByLabel("本端角色").selectOption("teaching-room");
+    await teachingPage.getByRole("button", { name: "连接信令" }).click();
+    await expect(teachingPage.getByText("已注册 Reconnect Teaching A")).toBeVisible();
+
+    await page.getByLabel("信令目标").selectOption("teach-reconnect-media");
+    await page.getByRole("button", { name: "信令呼叫选中终端" }).click();
+    await expect(teachingPage.getByText("待确认呼叫")).toBeVisible();
+    await teachingPage.getByRole("button", { name: "接受呼叫" }).click();
+    await expect(page.locator(".session-list dd").filter({ hasText: "Reconnect Teaching A" })).toBeVisible();
+
+    await page.getByRole("button", { name: "发布订阅通道媒体" }).click();
+    await expectLiveRemoteVideoCount(teachingPage, 1);
+    await expect(page.locator(".peer-diagnostic-state-live")).toHaveCount(1);
+
+    await replacementPage.goto("/");
+    await replacementPage.getByLabel("信令地址").fill(url);
+    await replacementPage.getByLabel("本端 ID").fill("teach-reconnect-media");
+    await replacementPage.getByLabel("本端名称").fill("Reconnect Teaching B");
+    await replacementPage.getByLabel("本端角色").selectOption("teaching-room");
+    await replacementPage.getByRole("button", { name: "连接信令" }).click();
+    await expect(replacementPage.getByText("已注册 Reconnect Teaching B")).toBeVisible();
+    await expect(replacementPage.locator(".session-list dd").filter({ hasText: "Reconnect OR" })).toBeVisible();
+
+    await expectLiveRemoteVideoCount(replacementPage, 1);
+    await expect(replacementPage.locator(".remote-health-live")).toHaveCount(1);
+    await expect(page.locator(".peer-diagnostic-state-live")).toHaveCount(1);
+    await expect(page.locator(".footer")).toContainText("已按会话变化重新发布");
+  } finally {
+    await replacementPage.close();
+    await teachingPage.close();
+    await server.stop();
+  }
+});
