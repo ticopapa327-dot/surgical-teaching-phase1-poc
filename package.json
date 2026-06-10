@@ -12,7 +12,8 @@
     "build": "vite build",
     "start": "electron .",
     "test": "npm run test:smoke && npm run test:signaling",
-    "verify": "npm run build && npm audit --audit-level=high && npm run test",
+    "verify": "npm run build && npm run audit:high && npm run test",
+    "audit:high": "node scripts/npm-audit-retry.cjs --audit-level=high",
     "test:smoke": "playwright test",
     "test:signaling": "node tests/signaling-contract.mjs"
   },

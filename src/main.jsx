@@ -968,6 +968,52 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     return previewStreams.current[channelId] || null;
   }
 
+  function remoteMediaHealth(channelId) {
+    const remoteStream = activeSession?.source === "signaling" ? mediaRemoteStreams.current[channelId] : null;
+    const fallbackStream = previewStreams.current[channelId] || null;
+    const stream = remoteStream || fallbackStream;
+    const videoTracks = stream?.getVideoTracks?.() || [];
+    const liveVideoTracks = videoTracks.filter((track) => track.readyState === "live");
+
+    if (remoteStream) {
+      if (liveVideoTracks.length > 0) {
+        const mutedTracks = liveVideoTracks.filter((track) => track.muted).length;
+        return {
+          state: mutedTracks === liveVideoTracks.length ? "waiting" : "live",
+          label: mutedTracks === liveVideoTracks.length ? "远端轨道等待" : "真实远端",
+          detail: `${channelLabelById(channelId)}：已收到 ${liveVideoTracks.length} 路 WebRTC 视频轨道`
+        };
+      }
+      return {
+        state: "ended",
+        label: "轨道中断",
+        detail: `${channelLabelById(channelId)}：已收到远端流，但视频轨道不可用`
+      };
+    }
+
+    if (activeSession?.source === "signaling") {
+      return {
+        state: "waiting",
+        label: fallbackStream ? "等待远端" : "未收到",
+        detail: `${channelLabelById(channelId)}：已订阅，尚未收到远端 WebRTC 视频轨道`
+      };
+    }
+
+    if (liveVideoTracks.length > 0) {
+      return {
+        state: "local",
+        label: "本地模拟",
+        detail: `${channelLabelById(channelId)}：当前显示本地预览流`
+      };
+    }
+
+    return {
+      state: "idle",
+      label: "未启动",
+      detail: `${channelLabelById(channelId)}：未建立媒体流`
+    };
+  }
+
   function activeRemoteEndpointIds() {
     const session = activeSessionRef.current;
     const selfId = signalingEndpointIdRef.current;
@@ -2099,6 +2145,10 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
 
   const anyRecording = CHANNELS.some((channel) => activeRecorders.current[channel.id]);
   const remoteChannels = displayedRemoteChannels();
+  const remoteMediaDiagnostics = activeSession?.subscribedChannels.map((channelId) => ({
+    channelId,
+    ...remoteMediaHealth(channelId)
+  })) || [];
   const remoteEndpointIds = activeSession?.participantIds?.filter((id) => id !== signalingEndpointIdRef.current) || [];
   const signalingTargets = signalingDirectory.filter((endpoint) => endpoint.endpointId !== signalingEndpointIdRef.current);
   const joinableSignalingSessions = signalingSessions.filter(
@@ -2594,6 +2644,25 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
           </section>
 
           <section className="panel-block">
+            <h2>媒体诊断</h2>
+            {activeSession ? (
+              <dl className="diagnostic-list">
+                {remoteMediaDiagnostics.map((item) => (
+                  <div key={item.channelId}>
+                    <dt>{channelLabelById(item.channelId)}</dt>
+                    <dd>
+                      <span className={`diagnostic-state diagnostic-state-${item.state}`}>{item.label}</span>
+                      <span>{item.detail}</span>
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            ) : (
+              <p className="hint">建立信令会话后显示各订阅通道的远端媒体状态。</p>
+            )}
+          </section>
+
+          <section className="panel-block">
             <h2>按需拉取与布局</h2>
             <div className="channel-pulls">
               {CHANNELS.map((channel) => (
@@ -2665,6 +2734,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
             {activeSession ? (
               remoteChannels.map((channelId) => {
                 const channel = CHANNELS.find((item) => item.id === channelId);
+                const mediaHealth = remoteMediaHealth(channelId);
                 return (
                   <div className="remote-video-tile" key={channelId}>
                     <video
@@ -2677,6 +2747,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
                     <div className="remote-label">
                       {channel?.label} {channel?.role}
                     </div>
+                    <div className={`remote-health remote-health-${mediaHealth.state}`}>{mediaHealth.label}</div>
                     <button className="popout-button" onClick={() => openRemotePopout(channelId)}>
                       扩展窗口
                     </button>

@@ -116,7 +116,7 @@ npm run verify
 
 ```powershell
 npm run build
-npm audit --audit-level=high
+npm run audit:high
 npm run test:smoke
 npm run test:signaling
 ```

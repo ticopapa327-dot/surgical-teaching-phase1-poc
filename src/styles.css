@@ -254,6 +254,67 @@ input {
   overflow-wrap: anywhere;
 }
 
+.diagnostic-list {
+  margin: 0;
+}
+
+.diagnostic-list div {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid #eef2f6;
+}
+
+.diagnostic-list dt {
+  color: #657281;
+}
+
+.diagnostic-list dd {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.diagnostic-state,
+.remote-health {
+  width: fit-content;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.diagnostic-state {
+  padding: 2px 7px;
+}
+
+.diagnostic-state-live,
+.remote-health-live {
+  background: #e7f7ef;
+  color: #16713c;
+}
+
+.diagnostic-state-waiting,
+.remote-health-waiting,
+.diagnostic-state-idle,
+.remote-health-idle {
+  background: #fff5d6;
+  color: #7a5600;
+}
+
+.diagnostic-state-ended,
+.remote-health-ended {
+  background: #fde7e7;
+  color: #9b1c1c;
+}
+
+.diagnostic-state-local,
+.remote-health-local {
+  background: #e8f1fb;
+  color: #1f5b89;
+}
+
 .section-title-row,
 .remote-head {
   display: flex;
@@ -410,6 +471,13 @@ input {
   background: rgba(0, 0, 0, 0.58);
   color: #ffffff;
   font-size: 13px;
+}
+
+.remote-health {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  padding: 4px 8px;
 }
 
 .popout-button {

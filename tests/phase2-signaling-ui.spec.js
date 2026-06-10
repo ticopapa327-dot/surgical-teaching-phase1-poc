@@ -1045,6 +1045,7 @@ test("phase 3 UI sends subscribed videos over WebRTC signaling", async ({ page }
     await expect(teachingPage.getByLabel("通道 3 腹腔镜")).toBeChecked();
     await teachingPage.getByRole("button", { name: "四画面" }).click();
     await expect(teachingPage.locator(".remote-video-tile")).toHaveCount(3);
+    await expect(teachingPage.locator(".remote-health-waiting")).toHaveCount(3);
     await expect
       .poll(() => server.state.sessions.values().next().value?.subscriptions["teach-media-ui"]?.join(","))
       .toBe("ch1,ch2,ch3");
@@ -1072,6 +1073,8 @@ test("phase 3 UI sends subscribed videos over WebRTC signaling", async ({ page }
       null,
       { timeout: 15000 }
     );
+    await expect(teachingPage.locator(".remote-health-live")).toHaveCount(3);
+    await expect(teachingPage.locator(".diagnostic-state-live")).toHaveCount(3);
     await teachingPage.waitForFunction(
       () => {
         const audio = document.querySelector(".remote-audio-sinks audio");
