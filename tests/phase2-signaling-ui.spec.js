@@ -56,6 +56,19 @@ async function expectPeerDiagnosticLiveCount(page, count) {
   await expect(page.locator(".peer-diagnostic-state-live")).toHaveCount(count, { timeout: 15000 });
 }
 
+async function expectNoRemoteAudioTracks(page) {
+  await expect
+    .poll(async () =>
+      page.evaluate(() =>
+        [...document.querySelectorAll(".remote-audio-sinks audio")].every((audio) => {
+          const stream = audio.srcObject;
+          return !stream?.getAudioTracks?.().some((track) => track.readyState === "live");
+        })
+      )
+    )
+    .toBe(true);
+}
+
 async function expectMediaStatsIncludesVideo(page) {
   const mediaStats = page.locator(".status-list div", { hasText: "媒体统计" }).locator("dd");
   await expect(mediaStats).toContainText("视频", { timeout: 15000 });
@@ -1281,6 +1294,12 @@ test("phase 3 UI publishes each remote endpoint subscription independently", asy
     await expectRemoteHealthLiveCount(teachingPage, 3);
     await expectRemoteHealthLiveCount(observerPage, 2);
     await expectPeerDiagnosticLiveCount(page, 2);
+    await expect(page.locator(".peer-diagnostic-list")).toContainText("音频 本地0 远端0");
+    await expect(teachingPage.locator(".peer-diagnostic-list")).toContainText("音频 本地0 远端0");
+    await expect(observerPage.locator(".peer-diagnostic-list")).toContainText("音频 本地0 远端0");
+    await expectNoRemoteAudioTracks(page);
+    await expectNoRemoteAudioTracks(teachingPage);
+    await expectNoRemoteAudioTracks(observerPage);
 
     await observerPage.getByRole("button", { name: "停止媒体链路" }).click();
     await expectRemoteHealthLiveCount(observerPage, 0);
