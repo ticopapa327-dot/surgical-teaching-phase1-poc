@@ -1,10 +1,11 @@
 const path = require("path");
 
 function sanitizeName(value) {
-  return String(value || "recording")
+  const sanitized = String(value || "recording")
     .replace(/[<>:"/\\|?*\x00-\x1F]/g, "_")
     .replace(/\s+/g, "_")
     .slice(0, 80);
+  return sanitized === "." || sanitized === ".." ? "recording" : sanitized;
 }
 
 function ftpSecureMode(value) {

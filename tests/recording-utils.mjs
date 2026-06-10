@@ -16,12 +16,15 @@ const {
 
 assert.equal(sanitizeName('ch1 <bad> / name?.webm'), "ch1__bad____name_.webm");
 assert.equal(sanitizeName("  spaced   name  "), "_spaced_name_");
+assert.equal(sanitizeName("."), "recording");
+assert.equal(sanitizeName(".."), "recording");
 assert.equal(extensionFromMime("video/mp4"), "mp4");
 assert.equal(extensionFromMime("video/webm;codecs=vp8,opus"), "webm");
 assert.equal(ftpSecureMode("implicit"), "implicit");
 assert.equal(ftpSecureMode("YES"), true);
 assert.equal(ftpSecureMode("off"), false);
 assert.equal(ftpRemoteFileName({ fileName: "bad:name?.webm" }), "bad_name_.webm");
+assert.equal(ftpRemoteFileName({ fileName: ".." }), "recording");
 
 const root = path.resolve("tmp-recording-root");
 const inside = path.join(root, "session", "case.webm");
