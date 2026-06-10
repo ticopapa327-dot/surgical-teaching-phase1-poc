@@ -1583,6 +1583,32 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     cleanupWebRtcMedia(message);
   }
 
+  function requestMediaRefresh() {
+    const session = activeSessionRef.current;
+    const selfId = signalingEndpointIdRef.current;
+    if (!session || session.source !== "signaling") {
+      setStatus("请先建立信令会话，再请求媒体重发。");
+      return;
+    }
+    if (localEndpointRole === "operating-room" || session.ownerEndpointId === selfId) {
+      startSubscribedWebRtcMedia({ auto: true, refreshRequestFrom: selfId });
+      return;
+    }
+    if (!session.ownerEndpointId) {
+      setStatus("当前会话没有手术室 owner，无法请求媒体重发。");
+      return;
+    }
+    sendSignaling("peer.signal", {
+      sessionId: session.id,
+      toEndpointId: session.ownerEndpointId,
+      signal: {
+        kind: "media-refresh-request",
+        channelIds: normalizeChannelSelection(session.subscribedChannels || ["ch1"])
+      }
+    });
+    setStatus("已请求手术室端重新发布订阅媒体。");
+  }
+
   async function startWebRtcMedia(channelId = "ch1") {
     const session = activeSessionRef.current;
     if (!session || session.source !== "signaling") {
@@ -1660,6 +1686,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
 
   async function startSubscribedWebRtcMedia(options = {}) {
     const auto = Boolean(options.auto);
+    const refreshRequestFrom = options.refreshRequestFrom || "";
     const session = activeSessionRef.current;
     if (!session || session.source !== "signaling") {
       setStatus("请先建立信令会话，再发布媒体。");
@@ -1730,10 +1757,18 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       );
       setWebrtcMediaState({
         state: "publishing",
-        label: `${auto ? "已按会话变化重新发布" : "正在发布"} ${publishedLabel} 至 ${peers.length} 个远端`
+        label: `${
+          refreshRequestFrom ? "已按媒体重发请求发布" : auto ? "已按会话变化重新发布" : "正在发布"
+        } ${publishedLabel} 至 ${peers.length} 个远端`
       });
       setStatus(
-        `${publishedLabel} WebRTC 媒体${auto ? "已按会话变化重新发布" : "发布已发起"}${
+        `${publishedLabel} WebRTC 媒体${
+          refreshRequestFrom
+            ? `已按 ${endpointLabelById(refreshRequestFrom)} 请求重新发布`
+            : auto
+              ? "已按会话变化重新发布"
+              : "发布已发起"
+        }${
           audioAttached ? "，交互音频已随同发布" : ""
         }${audioErrors.length ? `；音频未加入：${Array.from(new Set(audioErrors)).join("；")}` : ""}。`
       );
@@ -1752,6 +1787,20 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       const fromEndpointId = payload.fromEndpointId;
       const signal = payload.signal || {};
       if (!fromEndpointId || !signal.kind) return;
+
+      if (signal.kind === "media-refresh-request") {
+        if (localEndpointRole !== "operating-room" || session.ownerEndpointId !== signalingEndpointIdRef.current) {
+          setStatus(`${endpointLabelById(fromEndpointId)} 请求重新发布媒体，但本端不是手术室 owner。`);
+          return;
+        }
+        if (autoRepublishInFlight.current) return;
+        autoRepublishInFlight.current = true;
+        setStatus(`${endpointLabelById(fromEndpointId)} 请求重新发布媒体，正在重新协商。`);
+        startSubscribedWebRtcMedia({ auto: true, refreshRequestFrom: fromEndpointId }).finally(() => {
+          autoRepublishInFlight.current = false;
+        });
+        return;
+      }
 
       if (signal.kind === "media-offer") {
         const channelIds = normalizeChannelSelection(signal.channelIds || signal.channelId || "ch1");
@@ -2953,6 +3002,12 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
                 disabled={webrtcMediaState.state === "idle"}
               >
                 停止媒体链路
+              </button>
+              <button
+                onClick={requestMediaRefresh}
+                disabled={!activeSession || activeSession.source !== "signaling" || localEndpointRole === "operating-room"}
+              >
+                请求重发媒体
               </button>
             </div>
             {overLimitNotice && <p className="notice">{overLimitNotice}</p>}

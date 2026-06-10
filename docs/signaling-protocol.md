@@ -399,6 +399,7 @@ HTTP `/events` 返回最近控制面事件摘要：
 | `media-answer` | 媒体接收端到发布端 | 携带 `channelId`、`channelIds` 和 WebRTC answer description；交互模式下可包含应答端本地音频轨道。 |
 | `ice` | 双向 | 携带 ICE candidate。 |
 | `media-stop` | 双向 | 通知对端清理当前 PoC 媒体链路。 |
+| `media-refresh-request` | 媒体接收端到手术室 owner | 请求手术室端按当前会话订阅重新发布媒体；只触发控制面重协商，不承载媒体数据。 |
 
 目标终端会收到：
 
