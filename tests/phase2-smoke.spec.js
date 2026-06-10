@@ -133,3 +133,58 @@ test("phase 3 audio panel can select a playback device", async ({ page }) => {
   await page.getByLabel("音频输出设备").selectOption("speaker-1");
   await expect(page.locator(".footer")).toContainText("远端音频输出将使用：Teaching Speaker");
 });
+
+test("phase 1 UVC PTZ controls apply video track constraints", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__ptzApplied = [];
+    Object.defineProperty(navigator.mediaDevices, "enumerateDevices", {
+      configurable: true,
+      value: async () => [
+        { kind: "videoinput", deviceId: "ptz-cam", label: "UVC PTZ Camera" },
+        { kind: "audioinput", deviceId: "mic-1", label: "USB Mic" }
+      ]
+    });
+    Object.defineProperty(navigator.mediaDevices, "getUserMedia", {
+      configurable: true,
+      value: async (constraints = {}) => {
+        if (!constraints.video) return new MediaStream();
+        const canvas = document.createElement("canvas");
+        canvas.width = 320;
+        canvas.height = 180;
+        const context = canvas.getContext("2d");
+        context.fillStyle = "#123";
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        const stream = canvas.captureStream(30);
+        const track = stream.getVideoTracks()[0];
+        const settings = { pan: 0, tilt: 0, zoom: 1 };
+        track.getCapabilities = () => ({
+          pan: { min: -10, max: 10, step: 1 },
+          tilt: { min: -5, max: 5, step: 1 },
+          zoom: { min: 1, max: 4, step: 0.5 }
+        });
+        track.getSettings = () => ({ ...settings });
+        track.applyConstraints = async (nextConstraints = {}) => {
+          const next = nextConstraints.advanced?.[0] || {};
+          Object.assign(settings, next);
+          window.__ptzApplied.push(next);
+        };
+        return stream;
+      }
+    });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "授权并刷新设备" }).click();
+  const channel = page.locator(".channel-card").first();
+  await channel.locator("select").first().selectOption("device");
+  await channel.locator("select").nth(1).selectOption("ptz-cam");
+  await channel.getByRole("button", { name: "预览" }).click();
+
+  await page.getByRole("button", { name: "通道 1 云台右" }).click();
+  await expect(page.locator(".footer")).toContainText("通道 1 云台水平已调整至 1");
+  await page.getByRole("button", { name: "通道 1 镜头放大" }).click();
+  await expect(page.locator(".footer")).toContainText("通道 1 镜头变倍已调整至 1.5");
+  await expect
+    .poll(() => page.evaluate(() => window.__ptzApplied))
+    .toEqual([{ pan: 1 }, { zoom: 1.5 }]);
+});

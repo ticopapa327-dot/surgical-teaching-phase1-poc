@@ -59,7 +59,8 @@ test("recording stop reports close failures and clears active state", async ({ p
   });
 
   await page.goto("/");
-  await page.getByRole("button", { name: "启动全部预览" }).click();
+  await page.locator(".channel-controls").first().getByRole("button", { name: "预览" }).click();
+  await expect(page.locator(".footer")).toContainText("通道 1 预览已启动");
   await page.getByRole("button", { name: "录制本通道" }).first().click();
   await expect(page.locator(".footer")).toContainText("正在录制");
 
