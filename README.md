@@ -118,6 +118,7 @@ npm run test:signaling
 - [阶段 2 测试计划](docs/phase2-test-plan.md)
 - [Phase 2 阶段状态与边界](docs/phase2-status.md)
 - [Phase 2 交付交接说明](docs/phase2-handoff.md)
+- [两台电脑手术室与示教室模拟测试使用手册](docs/two-pc-test-manual.md)
 - [Phase 2 信令协议说明](docs/signaling-protocol.md)
 - [阶段 3 患者绑定测试计划](docs/phase3-test-plan.md)
 - [AI 处理接口预留说明](docs/ai-interface.md)
