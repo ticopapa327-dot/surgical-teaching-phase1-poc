@@ -134,6 +134,38 @@ test("phase 3 audio panel can select a playback device", async ({ page }) => {
   await expect(page.locator(".footer")).toContainText("远端音频输出将使用：Teaching Speaker");
 });
 
+test("runtime config normalizes WebRTC ICE servers", async ({ page }) => {
+  await page.route("**/config.json", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        signalingUrl: "ws://127.0.0.1:7077/signal",
+        localEndpoint: {
+          id: "config-or",
+          name: "Config OR",
+          role: "operating-room"
+        },
+        webrtc: {
+          iceServers: [
+            {
+              urls: ["stun:stun.example.test:3478", "stun:stun.example.test:3478", "http://invalid"],
+              username: " ignored-empty-url-check "
+            },
+            { urls: "turn:turn.example.test:3478", username: "turn-user", credential: "turn-pass" },
+            { urls: ["ftp://bad.example.test"] },
+            null
+          ]
+        }
+      })
+    })
+  );
+
+  await page.goto("/");
+  await expect(page.getByLabel("本端 ID")).toHaveValue("config-or");
+  await expect(page.getByLabel("本端名称")).toHaveValue("Config OR");
+  await expect(page.locator(".status-list div").filter({ hasText: "ICE 服务" })).toContainText("2 组");
+});
+
 test("phase 1 UVC PTZ controls apply video track constraints", async ({ page }) => {
   await page.addInitScript(() => {
     window.__ptzApplied = [];
