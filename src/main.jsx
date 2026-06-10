@@ -1575,8 +1575,14 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
         let audioJitterMs = null;
         let rttMs = null;
         let iceRouteLabel = "-→-";
-        let videoBitrateBps = 0;
-        let hasVideoBitrate = false;
+        let outboundVideoBitrateBps = 0;
+        let inboundVideoBitrateBps = 0;
+        let hasOutboundVideoBitrate = false;
+        let hasInboundVideoBitrate = false;
+        let videoPacketsSent = 0;
+        let hasVideoPacketsSent = false;
+        let videoPacketsReceived = 0;
+        let hasVideoPacketsReceived = false;
         let videoPacketsLost = 0;
         let hasVideoPacketsLost = false;
         reports.forEach((report) => {
@@ -1600,8 +1606,21 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
             const bytes = report.type === "outbound-rtp" ? report.bytesSent : report.bytesReceived;
             const bitrate = trackBitrate(endpointId, report, bytes);
             if (Number.isFinite(bitrate)) {
-              videoBitrateBps += bitrate;
-              hasVideoBitrate = true;
+              if (report.type === "outbound-rtp") {
+                outboundVideoBitrateBps += bitrate;
+                hasOutboundVideoBitrate = true;
+              } else {
+                inboundVideoBitrateBps += bitrate;
+                hasInboundVideoBitrate = true;
+              }
+            }
+            if (report.type === "outbound-rtp" && Number.isFinite(report.packetsSent)) {
+              videoPacketsSent += report.packetsSent;
+              hasVideoPacketsSent = true;
+            }
+            if (report.type === "inbound-rtp" && Number.isFinite(report.packetsReceived)) {
+              videoPacketsReceived += report.packetsReceived;
+              hasVideoPacketsReceived = true;
             }
             if (report.type === "inbound-rtp" && Number.isFinite(report.packetsLost)) {
               videoPacketsLost += report.packetsLost;
@@ -1610,9 +1629,13 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
           }
         });
         values.push(
-          `${endpointLabelById(endpointId)}：视频 ${formatBitrate(
-            hasVideoBitrate ? videoBitrateBps : null
-          )} / 丢包 ${hasVideoPacketsLost ? videoPacketsLost : "-"} / 音频缓冲 ${formatMs(audioBufferMs)} / jitter ${formatMs(
+          `${endpointLabelById(endpointId)}：视频 发送 ${formatBitrate(
+            hasOutboundVideoBitrate ? outboundVideoBitrateBps : null
+          )} / 接收 ${formatBitrate(
+            hasInboundVideoBitrate ? inboundVideoBitrateBps : null
+          )} / 包 发${hasVideoPacketsSent ? videoPacketsSent : "-"} 收${
+            hasVideoPacketsReceived ? videoPacketsReceived : "-"
+          } 丢${hasVideoPacketsLost ? videoPacketsLost : "-"} / 音频缓冲 ${formatMs(audioBufferMs)} / jitter ${formatMs(
             audioJitterMs
           )} / RTT ${formatMs(rttMs)} / ICE ${iceRouteLabel}`
         );

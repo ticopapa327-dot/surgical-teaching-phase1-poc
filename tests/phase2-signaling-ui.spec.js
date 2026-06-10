@@ -72,6 +72,9 @@ async function expectNoRemoteAudioTracks(page) {
 async function expectMediaStatsIncludesVideo(page) {
   const mediaStats = page.locator(".status-list div", { hasText: "媒体统计" }).locator("dd");
   await expect(mediaStats).toContainText("视频", { timeout: 15000 });
+  await expect(mediaStats).toContainText("发送", { timeout: 15000 });
+  await expect(mediaStats).toContainText("接收", { timeout: 15000 });
+  await expect(mediaStats).toContainText("包", { timeout: 15000 });
   await expect(mediaStats).toContainText("ICE", { timeout: 15000 });
 }
 
