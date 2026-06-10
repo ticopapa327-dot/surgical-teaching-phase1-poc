@@ -381,6 +381,17 @@ function interactionAudioConstraints(audioDeviceId) {
 function applyLowLatencyAudioSdp(sdp) {
   if (!sdp) return sdp;
   const lines = sdp.split(/\r\n/);
+  const audioLineIndex = lines.findIndex((line) => line.startsWith("m=audio "));
+  const nextMediaLineIndex = lines.findIndex((line, index) => index > audioLineIndex && line.startsWith("m="));
+  const audioSectionEnd = nextMediaLineIndex >= 0 ? nextMediaLineIndex : lines.length;
+  if (audioLineIndex >= 0) {
+    const audioSection = lines.slice(audioLineIndex, audioSectionEnd);
+    const additions = [];
+    if (!audioSection.some((line) => line === "a=ptime:10")) additions.push("a=ptime:10");
+    if (!audioSection.some((line) => line === "a=maxptime:20")) additions.push("a=maxptime:20");
+    if (additions.length) lines.splice(audioLineIndex + 1, 0, ...additions);
+  }
+
   const opusPayloadIds = lines
     .map((line) => line.match(/^a=rtpmap:(\d+) opus\/48000/i)?.[1])
     .filter(Boolean);
@@ -466,6 +477,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   const [annotationVisible, setAnnotationVisible] = useState(false);
   const [audioCall, setAudioCall] = useState({ state: "idle", label: "未建立" });
   const [webrtcMediaState, setWebrtcMediaState] = useState({ state: "idle", label: "未建立" });
+  const [webrtcStatsLabel, setWebrtcStatsLabel] = useState("-");
   const [mediaVersion, setMediaVersion] = useState(0);
   const [overLimitNotice, setOverLimitNotice] = useState("");
 
@@ -487,6 +499,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   const mediaRemoteAudioStreams = useRef({});
   const localAudioSenders = useRef(new Map());
   const pendingMediaIceCandidates = useRef(new Map());
+  const mediaStatsTimer = useRef(null);
 
   const supportedMimeType = useMemo(getSupportedMimeType, []);
 
@@ -984,12 +997,73 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
 
   function tuneAudioReceiver(peerConnection, track) {
     const receiver = peerConnection.getReceivers().find((item) => item.track === track);
-    if (!receiver || !("jitterBufferTarget" in receiver)) return;
+    if (!receiver) return;
+    if ("playoutDelayHint" in receiver) {
+      try {
+        receiver.playoutDelayHint = 0;
+      } catch {
+        // Optional browser optimization.
+      }
+    }
+    if (!("jitterBufferTarget" in receiver)) return;
     try {
       receiver.jitterBufferTarget = 0.02;
     } catch {
       // Optional browser optimization.
     }
+  }
+
+  function formatMs(value) {
+    return Number.isFinite(value) ? `${Math.max(0, Math.round(value))} ms` : "-";
+  }
+
+  async function updateWebRtcStats() {
+    const values = [];
+    for (const [endpointId, peerConnection] of mediaPeerConnections.current.entries()) {
+      if (peerConnection.connectionState === "closed") continue;
+      try {
+        const stats = await peerConnection.getStats();
+        let audioBufferMs = null;
+        let audioJitterMs = null;
+        let rttMs = null;
+        stats.forEach((report) => {
+          if (
+            report.type === "inbound-rtp" &&
+            report.kind === "audio" &&
+            report.jitterBufferDelay != null &&
+            report.jitterBufferEmittedCount
+          ) {
+            audioBufferMs = (report.jitterBufferDelay / report.jitterBufferEmittedCount) * 1000;
+            audioJitterMs = Number.isFinite(report.jitter) ? report.jitter * 1000 : audioJitterMs;
+          }
+          if (report.type === "candidate-pair" && report.state === "succeeded" && report.currentRoundTripTime != null) {
+            rttMs = report.currentRoundTripTime * 1000;
+          }
+        });
+        values.push(
+          `${endpointLabelById(endpointId)}：音频缓冲 ${formatMs(audioBufferMs)} / jitter ${formatMs(
+            audioJitterMs
+          )} / RTT ${formatMs(rttMs)}`
+        );
+      } catch {
+        values.push(`${endpointLabelById(endpointId)}：统计读取失败`);
+      }
+    }
+    setWebrtcStatsLabel(values.length ? values.join("；") : "-");
+  }
+
+  function ensureMediaStatsPolling() {
+    if (mediaStatsTimer.current) return;
+    mediaStatsTimer.current = window.setInterval(updateWebRtcStats, 1000);
+    updateWebRtcStats();
+  }
+
+  function stopMediaStatsPolling() {
+    if (mediaStatsTimer.current) {
+      window.clearInterval(mediaStatsTimer.current);
+      mediaStatsTimer.current = null;
+    }
+    setWebrtcStatsLabel("-");
   }
 
   async function setLowLatencyLocalDescription(peerConnection, description) {
@@ -1042,6 +1116,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
 
     const peerConnection = new RTCPeerConnection({ iceServers: [] });
     mediaPeerConnections.current.set(endpointId, peerConnection);
+    ensureMediaStatsPolling();
 
     peerConnection.onicecandidate = (event) => {
       if (!event.candidate) return;
@@ -1142,6 +1217,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     mediaRemoteAudioStreams.current = {};
     localAudioSenders.current.clear();
     pendingMediaIceCandidates.current.clear();
+    stopMediaStatsPolling();
     setMediaVersion((value) => value + 1);
     setWebrtcMediaState({ state: "idle", label: "未建立" });
     if (!interactionAudioStream.current) {
@@ -2022,6 +2098,10 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
               <div>
                 <dt>媒体链路</dt>
                 <dd>{webrtcMediaState.label}</dd>
+              </div>
+              <div>
+                <dt>媒体统计</dt>
+                <dd>{webrtcStatsLabel}</dd>
               </div>
               <div>
                 <dt>存储目录</dt>
