@@ -137,6 +137,7 @@ function publicEndpoint(endpoint) {
 function publicSession(session) {
   return {
     sessionId: session.sessionId,
+    mediaRoomId: session.mediaRoomId,
     mode: session.mode,
     ownerEndpointId: session.ownerEndpointId,
     participantLimit: session.participantLimit,
@@ -150,6 +151,7 @@ function publicSession(session) {
 function publicSessionSummary(session) {
   return {
     sessionId: session.sessionId,
+    mediaRoomId: session.mediaRoomId,
     mode: session.mode,
     ownerEndpointId: session.ownerEndpointId,
     participantLimit: session.participantLimit,
@@ -597,6 +599,7 @@ function createSignalingServer(options = {}) {
             : call.toEndpointId;
       const session = {
         sessionId: createId("session"),
+        mediaRoomId: createId("media-room"),
         mode: resolveMode(call.requestedMode, normalizeMode(payload.mode)),
         ownerEndpointId,
         participantLimit,
@@ -617,12 +620,14 @@ function createSignalingServer(options = {}) {
       recordEvent("call.accepted", {
         callId: call.callId,
         sessionId: session.sessionId,
+        mediaRoomId: session.mediaRoomId,
         byEndpointId: fromEndpoint.endpointId,
         mode: session.mode,
         participantLimit: session.participantLimit
       });
       recordEvent("session.started", {
         sessionId: session.sessionId,
+        mediaRoomId: session.mediaRoomId,
         mode: session.mode,
         participantLimit: session.participantLimit,
         participants: session.participants

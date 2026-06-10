@@ -252,6 +252,7 @@ async function main() {
   const sessionStarted = await waitFor(teachingClient, "session.started");
   const session = sessionStarted.payload.session;
   assert.equal(session.mode, "interactive");
+  assert.match(session.mediaRoomId, /^media-room-/);
   assert.equal(session.ownerEndpointId, "or-1");
   assert.equal(session.participantLimit, 2);
   assert.deepEqual(session.subscriptions["teach-1"], ["ch1"]);
@@ -262,6 +263,7 @@ async function main() {
   const httpSessions = await getJson(`${httpBase}/sessions`);
   assert.equal(httpSessions.length, 1);
   assert.equal(httpSessions[0].sessionId, session.sessionId);
+  assert.equal(httpSessions[0].mediaRoomId, session.mediaRoomId);
   assert.equal(httpSessions[0].participantCount, 2);
   assert.equal(httpSessions[0].participantLimit, 2);
   assert.deepEqual(httpSessions[0].participants, ["teach-1", "or-1"]);
@@ -276,16 +278,26 @@ async function main() {
         event.type === "call.accepted" &&
         event.callId === requested.payload.call.callId &&
         event.sessionId === session.sessionId &&
+        event.mediaRoomId === session.mediaRoomId &&
         event.byEndpointId === "or-1"
     ),
     true
   );
-  assert.equal(httpEvents.some((event) => event.type === "session.started" && event.sessionId === session.sessionId), true);
+  assert.equal(
+    httpEvents.some(
+      (event) =>
+        event.type === "session.started" &&
+        event.sessionId === session.sessionId &&
+        event.mediaRoomId === session.mediaRoomId
+    ),
+    true
+  );
   debugMark("primary session");
   send(observerClient, "session.list");
   const sessionSnapshot = await waitFor(observerClient, "session.snapshot");
   assert.equal(sessionSnapshot.payload.sessions.length, 1);
   assert.equal(sessionSnapshot.payload.sessions[0].sessionId, session.sessionId);
+  assert.equal(sessionSnapshot.payload.sessions[0].mediaRoomId, session.mediaRoomId);
 
   const malformedClient = await connect(url);
   send(malformedClient, "endpoint.register", {

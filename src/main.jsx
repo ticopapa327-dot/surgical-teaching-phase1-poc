@@ -1359,6 +1359,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     const endpointId = signalingEndpointIdRef.current;
     const nextSession = {
       id: session.sessionId,
+      mediaRoomId: session.mediaRoomId,
       source: "signaling",
       startedAt: session.startedAt,
       mode: session.mode,
@@ -2913,6 +2914,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       session: activeSession
         ? {
             id: activeSession.id,
+            mediaRoomId: activeSession.mediaRoomId || null,
             source: activeSession.source,
             mode: activeSession.mode,
             ownerEndpointId: activeSession.ownerEndpointId,
