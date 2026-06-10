@@ -9,13 +9,14 @@
 1. 复用现有 WebSocket 信令服务的 `peer.signal` 消息透传。
 2. 手术室端点击“发布订阅通道媒体”后，为会话内远端参与方创建 `RTCPeerConnection`。
 3. 手术室端根据每个远端在会话中的 `subscriptions` 加入对应通道的视频轨道；交互模式下同时尝试加入本地麦克风轨道。
-4. 示教室端收到 offer 后创建 answer；交互模式下也尝试加入本地麦克风轨道，并通过同一信令会话回传。
-5. 双方通过 `peer.signal` 交换 ICE candidate。
-6. 示教室端收到远端 video track 后，根据 `peer.signal` 中的 `tracks` 映射将远端显示区对应通道的视频元素切换为真实远端 MediaStream，避免多通道串路。
-7. 双方收到远端 audio track 后，使用独立 audio sink 播放远端音频，避免视频元素 muted 导致无声。
-8. 交互音频启用低延迟采集约束、Opus 低延迟 SDP 参数、`ptime/maxptime`、音频 RTP 高优先级和接收端 playout/jitter buffer 优化。
-9. 前端状态区显示 WebRTC 统计，包括音频缓冲、jitter 和 RTT，用于判断延迟来源。
-10. 断开信令、离会、结束会话或点击“停止媒体链路”时清理 PeerConnection 和远端流状态。
+4. 发布中远端订阅集合变化时，手术室端会自动按新的订阅集合重新协商媒体链路。
+5. 示教室端收到 offer 后创建 answer；交互模式下也尝试加入本地麦克风轨道，并通过同一信令会话回传。
+6. 双方通过 `peer.signal` 交换 ICE candidate。
+7. 示教室端收到远端 video track 后，根据 `peer.signal` 中的 `tracks` 映射将远端显示区对应通道的视频元素切换为真实远端 MediaStream，避免多通道串路。
+8. 双方收到远端 audio track 后，使用独立 audio sink 播放远端音频，避免视频元素 muted 导致无声。
+9. 交互音频启用低延迟采集约束、Opus 低延迟 SDP 参数、`ptime/maxptime`、音频 RTP 高优先级和接收端 playout/jitter buffer 优化。
+10. 前端状态区显示 WebRTC 统计，包括音频缓冲、jitter 和 RTT，用于判断延迟来源。
+11. 断开信令、离会、结束会话或点击“停止媒体链路”时清理 PeerConnection 和远端流状态。
 
 ## 三、当前边界
 
@@ -46,7 +47,7 @@
 npm run verify
 ```
 
-其中 Playwright 烟测包含双页面 WebRTC 用例：启动真实信令服务，模拟手术室端和示教室端完成呼叫、订阅通道 1/2/3、协商、多个远端视频轨道接收和双端远端音频轨道接收。
+其中 Playwright 烟测包含双页面和三页面 WebRTC 用例：启动真实信令服务，模拟手术室端、示教室端和观摩端完成呼叫、差异化订阅、动态追加订阅、协商、多个远端视频轨道接收和双端远端音频轨道接收。
 
 ## 六、下一步建议
 

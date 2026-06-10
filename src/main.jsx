@@ -389,6 +389,15 @@ function sessionChannelsForRemoteEndpoint(session, endpointId) {
   return normalizeChannelSelection(session?.subscriptions?.[endpointId]);
 }
 
+function publicationSignatureForSession(session, selfEndpointId) {
+  const participantIds = Array.isArray(session?.participantIds) ? session.participantIds : [];
+  return participantIds
+    .filter((endpointId) => endpointId && endpointId !== selfEndpointId)
+    .sort()
+    .map((endpointId) => `${endpointId}:${sessionChannelsForRemoteEndpoint(session, endpointId).join(",")}`)
+    .join("|");
+}
+
 function interactionAudioConstraints(audioDeviceId) {
   return {
     ...INTERACTION_AUDIO_CONSTRAINTS,
@@ -514,6 +523,8 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   const mediaPeerConnections = useRef(new Map());
   const mediaPeerChannels = useRef(new Map());
   const mediaPeerTrackMetadata = useRef(new Map());
+  const publishedSubscriptionSignature = useRef("");
+  const autoRepublishInFlight = useRef(false);
   const mediaRemoteStreams = useRef({});
   const mediaRemoteAudioStreams = useRef({});
   const localAudioSenders = useRef(new Map());
@@ -552,6 +563,19 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   useEffect(() => {
     activeSessionRef.current = activeSession;
   }, [activeSession]);
+
+  useEffect(() => {
+    if (localEndpointRole !== "operating-room") return;
+    if (activeSession?.source !== "signaling") return;
+    if (webrtcMediaState.state !== "publishing" && webrtcMediaState.state !== "connected") return;
+    const nextSignature = publicationSignatureForSession(activeSession, signalingEndpointIdRef.current);
+    if (!publishedSubscriptionSignature.current || publishedSubscriptionSignature.current === nextSignature) return;
+    if (autoRepublishInFlight.current) return;
+    autoRepublishInFlight.current = true;
+    startSubscribedWebRtcMedia({ auto: true }).finally(() => {
+      autoRepublishInFlight.current = false;
+    });
+  }, [activeSession, localEndpointRole, webrtcMediaState.state]);
 
   useEffect(() => {
     if (!activeSession) return;
@@ -1290,6 +1314,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     mediaPeerConnections.current.clear();
     mediaPeerChannels.current.clear();
     mediaPeerTrackMetadata.current.clear();
+    publishedSubscriptionSignature.current = "";
     mediaRemoteStreams.current = {};
     mediaRemoteAudioStreams.current = {};
     localAudioSenders.current.clear();
@@ -1392,7 +1417,8 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     }
   }
 
-  async function startSubscribedWebRtcMedia() {
+  async function startSubscribedWebRtcMedia(options = {}) {
+    const auto = Boolean(options.auto);
     const session = activeSessionRef.current;
     if (!session || session.source !== "signaling") {
       setStatus("请先建立信令会话，再发布媒体。");
@@ -1456,12 +1482,16 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       }
 
       const publishedLabel = Array.from(publishedChannelIds).map(channelLabelById).join("、") || "通道 1";
+      publishedSubscriptionSignature.current = publicationSignatureForSession(
+        activeSessionRef.current,
+        signalingEndpointIdRef.current
+      );
       setWebrtcMediaState({
         state: "publishing",
-        label: `正在发布 ${publishedLabel} 至 ${peers.length} 个远端`
+        label: `${auto ? "已按订阅变化重新发布" : "正在发布"} ${publishedLabel} 至 ${peers.length} 个远端`
       });
       setStatus(
-        `${publishedLabel} WebRTC 媒体发布已发起${
+        `${publishedLabel} WebRTC 媒体${auto ? "已按订阅变化重新发布" : "发布已发起"}${
           audioAttached ? "，交互音频已随同发布" : ""
         }${audioErrors.length ? `；音频未加入：${Array.from(new Set(audioErrors)).join("；")}` : ""}。`
       );
@@ -2628,7 +2658,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
                 停止音频
               </button>
               <button
-                onClick={startSubscribedWebRtcMedia}
+                onClick={() => startSubscribedWebRtcMedia()}
                 disabled={!activeSession || activeSession.source !== "signaling" || localEndpointRole !== "operating-room"}
               >
                 发布订阅通道媒体

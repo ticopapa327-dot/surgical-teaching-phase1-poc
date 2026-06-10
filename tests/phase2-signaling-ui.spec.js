@@ -1088,6 +1088,17 @@ test("phase 3 UI sends subscribed videos over WebRTC signaling", async ({ page }
     );
     await expect(teachingPage.locator(".remote-health-live")).toHaveCount(3);
     await expect(teachingPage.locator(".diagnostic-state-live")).toHaveCount(3);
+
+    await teachingPage.getByLabel("通道 4 备用").click();
+    await expect(teachingPage.getByLabel("通道 4 备用")).toBeChecked();
+    await expect(teachingPage.locator(".remote-video-tile")).toHaveCount(4);
+    await expect
+      .poll(() => server.state.sessions.values().next().value?.subscriptions["teach-media-ui"]?.join(","))
+      .toBe("ch1,ch2,ch3,ch4");
+    await expectLiveRemoteVideoCount(teachingPage, 4);
+    await expect(teachingPage.locator(".remote-health-live")).toHaveCount(4);
+    await expect(teachingPage.locator(".diagnostic-state-live")).toHaveCount(4);
+
     await teachingPage.waitForFunction(
       () => {
         const audio = document.querySelector(".remote-audio-sinks audio");
