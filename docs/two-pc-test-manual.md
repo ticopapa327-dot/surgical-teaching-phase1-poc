@@ -387,6 +387,14 @@ Test-NetConnection <PC-A局域网IP> -Port 7077
 
 出现黑屏、音频无声或延迟明显时，两端分别点击“复制诊断快照”，把快照文本保存到测试记录。已连接信令时，复制前会自动尝试刷新最近信令事件。快照用于比对本端 ID、信令连接、会话参与方、通道源模式、预览状态、音频诊断、媒体统计、结构化 WebRTC 指标、PeerConnection 摘要和最近信令事件；快照不包含信令令牌、设备 ID、SDP、ICE candidate 原文、患者信息或媒体数据。
 
+如需把多个快照汇总为 CSV，可将快照保存为 `.json` 文件后执行：
+
+```powershell
+node scripts/summarize-diagnostics.cjs .\pc-a-snapshot.json .\pc-b-snapshot.json > .\diagnostics.csv
+```
+
+输出列包含本端信息、会话 ID、媒体状态、对端 ID、视频发送/接收码率、包发/收/丢、音频缓冲、jitter、RTT 和 ICE 路由。
+
 如果音频能听到但延时明显，先排除以下因素：
 
 1. 不使用蓝牙耳机、蓝牙音箱或电视扬声器，优先使用有线麦克风和有线扬声器。

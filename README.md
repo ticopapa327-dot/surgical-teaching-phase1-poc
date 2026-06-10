@@ -161,6 +161,8 @@ npm run test:signaling
 
 `test:signaling` 启动本地 WebSocket 信令服务器，模拟手术室端、示教室端和观摩端，验证注册、通讯录、会话目录、呼叫、接受、默认通道、订阅、参与上限拒绝、协议错误分支和心跳清理。
 
+现场保存的诊断快照 JSON 可用 `node scripts/summarize-diagnostics.cjs snapshot-a.json snapshot-b.json > diagnostics.csv` 汇总为 CSV。
+
 ## 文档
 
 - [贡献说明](CONTRIBUTING.md)
