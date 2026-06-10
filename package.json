@@ -16,7 +16,7 @@
     "test": "npm run test:scripts && npm run test:smoke && npm run test:signaling",
     "verify": "npm run build && npm run audit:high && npm run test",
     "audit:high": "node scripts/npm-audit-retry.cjs --audit-level=high",
-    "test:scripts": "node tests/lan-dev-script.mjs",
+    "test:scripts": "node --check electron/main.cjs && node --check electron/preload.cjs && node tests/lan-dev-script.mjs && node tests/recording-utils.mjs",
     "test:smoke": "playwright test tests/recording-management.spec.js && playwright test tests/phase2-smoke.spec.js tests/phase3-patient-binding.spec.js && playwright test tests/phase2-signaling-ui.spec.js",
     "test:signaling": "node tests/signaling-contract.mjs"
   },

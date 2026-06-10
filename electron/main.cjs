@@ -3,6 +3,13 @@ const fs = require("fs");
 const path = require("path");
 const { pathToFileURL } = require("url");
 const ftp = require("basic-ftp");
+const {
+  extensionFromMime,
+  ftpRemoteFileName,
+  ftpSecureMode,
+  safeRecordingFilePath,
+  sanitizeName
+} = require("./recording-utils.cjs");
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -44,19 +51,6 @@ function writeIndex(items) {
   fs.writeFileSync(indexPath, JSON.stringify(items, null, 2), "utf8");
 }
 
-function sanitizeName(value) {
-  return String(value || "recording")
-    .replace(/[<>:"/\\|?*\x00-\x1F]/g, "_")
-    .replace(/\s+/g, "_")
-    .slice(0, 80);
-}
-
-function ftpSecureMode(value) {
-  const text = String(value || "").trim().toLowerCase();
-  if (text === "implicit") return "implicit";
-  return ["1", "true", "yes", "on"].includes(text);
-}
-
 function ftpConfigFromEnv() {
   const host = String(process.env.UST_FTP_HOST || "").trim();
   if (!host) return null;
@@ -68,15 +62,6 @@ function ftpConfigFromEnv() {
     secure: ftpSecureMode(process.env.UST_FTP_SECURE),
     remoteDir: String(process.env.UST_FTP_REMOTE_DIR || "").trim()
   };
-}
-
-function ftpRemoteFileName(item) {
-  return sanitizeName(path.basename(item.fileName || item.filePath || `${item.id}.webm`));
-}
-
-function extensionFromMime(mimeType) {
-  if (mimeType && mimeType.includes("mp4")) return "mp4";
-  return "webm";
 }
 
 function attachFileUrls(items) {
@@ -130,11 +115,13 @@ app.whenReady().then(() => {
   protocol.handle("recording", async (request) => {
     const url = new URL(request.url);
     const id = decodeURIComponent(url.hostname);
+    const { recordingsDir } = getDataPaths();
     const item = readIndex().find((entry) => entry.id === id);
-    if (!item || !item.filePath || !fs.existsSync(item.filePath)) {
+    const filePath = safeRecordingFilePath(recordingsDir, item);
+    if (!filePath || !fs.existsSync(filePath)) {
       return new Response("Recording not found", { status: 404 });
     }
-    return net.fetch(pathToFileURL(item.filePath).toString());
+    return net.fetch(pathToFileURL(filePath).toString());
   });
 
   createWindow();
@@ -233,25 +220,31 @@ ipcMain.handle("recording:list", () => {
 });
 
 ipcMain.handle("recording:delete", (_event, id) => {
+  const { recordingsDir } = getDataPaths();
   const index = readIndex();
   const item = index.find((entry) => entry.id === id);
-  if (item && item.filePath && fs.existsSync(item.filePath)) {
-    fs.rmSync(item.filePath, { force: true });
+  const filePath = safeRecordingFilePath(recordingsDir, item);
+  if (filePath && fs.existsSync(filePath)) {
+    fs.rmSync(filePath, { force: true });
   }
   writeIndex(index.filter((entry) => entry.id !== id));
   return { ok: true };
 });
 
 ipcMain.handle("recording:reveal", (_event, id) => {
+  const { recordingsDir } = getDataPaths();
   const item = readIndex().find((entry) => entry.id === id);
-  if (!item || !item.filePath) return { ok: false, reason: "recording_not_found" };
-  shell.showItemInFolder(item.filePath);
+  const filePath = safeRecordingFilePath(recordingsDir, item);
+  if (!filePath || !fs.existsSync(filePath)) return { ok: false, reason: "recording_not_found" };
+  shell.showItemInFolder(filePath);
   return { ok: true };
 });
 
 ipcMain.handle("recording:export", async (_event, id) => {
+  const { recordingsDir } = getDataPaths();
   const item = readIndex().find((entry) => entry.id === id);
-  if (!item || !item.filePath || !fs.existsSync(item.filePath)) {
+  const filePath = safeRecordingFilePath(recordingsDir, item);
+  if (!filePath || !fs.existsSync(filePath)) {
     return { ok: false, reason: "recording_not_found" };
   }
   const result = await dialog.showSaveDialog({
@@ -259,13 +252,15 @@ ipcMain.handle("recording:export", async (_event, id) => {
     defaultPath: item.fileName || path.basename(item.filePath)
   });
   if (result.canceled || !result.filePath) return { ok: false, reason: "canceled" };
-  fs.copyFileSync(item.filePath, result.filePath);
+  fs.copyFileSync(filePath, result.filePath);
   return { ok: true, filePath: result.filePath };
 });
 
 ipcMain.handle("recording:ftp-upload", async (_event, id) => {
+  const { recordingsDir } = getDataPaths();
   const item = readIndex().find((entry) => entry.id === id);
-  if (!item || !item.filePath || !fs.existsSync(item.filePath)) {
+  const filePath = safeRecordingFilePath(recordingsDir, item);
+  if (!filePath || !fs.existsSync(filePath)) {
     return { ok: false, reason: "recording_not_found" };
   }
   const config = ftpConfigFromEnv();
@@ -286,7 +281,7 @@ ipcMain.handle("recording:ftp-upload", async (_event, id) => {
       secure: config.secure
     });
     if (config.remoteDir) await client.ensureDir(config.remoteDir);
-    await client.uploadFrom(item.filePath, remoteName);
+    await client.uploadFrom(filePath, remoteName);
     return {
       ok: true,
       remotePath: config.remoteDir ? path.posix.join(config.remoteDir, remoteName) : remoteName
