@@ -644,7 +644,13 @@ function createSignalingServer(options = {}) {
         send(ws, "error", { code: "session_not_found", message: "session not found" }, requestId);
         return;
       }
-      session.subscriptions[fromEndpoint.endpointId] = normalizeSubscriptionChannels(payload.channels);
+      const channelIds = normalizeSubscriptionChannels(payload.channels);
+      session.subscriptions[fromEndpoint.endpointId] = channelIds;
+      recordEvent("session.subscription.updated", {
+        sessionId: session.sessionId,
+        byEndpointId: fromEndpoint.endpointId,
+        channelIds
+      });
       notifySession(session);
       send(ws, "session.subscribed", { session: publicSession(session) }, requestId);
       return;
@@ -666,6 +672,10 @@ function createSignalingServer(options = {}) {
         updatedByEndpointId: fromEndpoint.endpointId,
         updatedAt: new Date().toISOString()
       };
+      recordEvent("session.annotation.updated", {
+        sessionId: session.sessionId,
+        byEndpointId: fromEndpoint.endpointId
+      });
       notifySession(session);
       send(ws, "session.annotation.updated", { session: publicSession(session) }, requestId);
       return;

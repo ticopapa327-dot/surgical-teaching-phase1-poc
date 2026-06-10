@@ -227,6 +227,7 @@ test("diagnostic snapshot copies operational state without signaling token", asy
   const copiedText = await page.evaluate(() => window.__copiedDiagnosticText);
   const snapshot = JSON.parse(copiedText);
   expect(snapshot.schema).toBe("surgical-teaching-diagnostic-v1");
+  expect(snapshot.diagnostic.eventRefresh).toBe("not_connected");
   expect(snapshot.endpoint).toMatchObject({ id: "diag-or", name: "Diagnostic OR", role: "operating-room" });
   expect(snapshot.signaling.url).toBe("ws://127.0.0.1:7077/signal");
   expect(snapshot.signaling.tokenConfigured).toBe(true);

@@ -19,11 +19,16 @@ function send(ws, type, payload = {}, requestId = crypto.randomUUID()) {
   return requestId;
 }
 
-function waitFor(ws, type, predicate = () => true) {
-  return new Promise((resolve) => {
+function waitFor(ws, type, predicate = () => true, timeoutMs = 5000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      ws.off("message", handler);
+      reject(new Error(`Timed out waiting for ${type}`));
+    }, timeoutMs);
     const handler = (raw) => {
       const message = JSON.parse(raw.toString());
       if (message.type === type && predicate(message)) {
+        clearTimeout(timer);
         ws.off("message", handler);
         resolve(message);
       }
@@ -49,13 +54,20 @@ function assertHealthMetadata(health) {
   assert.ok(health.eventLogLimit >= health.eventLogSize);
 }
 
+function debugMark(label) {
+  if (process.env.DEBUG_SIGNALING_CONTRACT) console.log(label);
+}
+
 async function main() {
+  debugMark("main start");
   const server = createSignalingServer({ port: 0 });
   const address = await server.start();
+  debugMark("main server started");
   const url = `ws://127.0.0.1:${address.port}/signal`;
   const httpBase = `http://127.0.0.1:${address.port}`;
 
   const emptyHealth = await getJson(`${httpBase}/health`);
+  debugMark("empty health fetched");
   assert.equal(emptyHealth.ok, true);
   assert.equal(emptyHealth.endpoints, 0);
   assert.equal(emptyHealth.sessions, 0);
@@ -63,6 +75,7 @@ async function main() {
   assertHealthMetadata(emptyHealth);
   const emptySessions = await getJson(`${httpBase}/sessions`);
   assert.deepEqual(emptySessions, []);
+  debugMark("empty checks");
 
   const orClient = await connect(url);
   const teachingClient = await connect(url);
@@ -98,6 +111,7 @@ async function main() {
   const protocolClientClosed = new Promise((resolve) => protocolErrorClient.once("close", resolve));
   protocolErrorClient.close();
   await protocolClientClosed;
+  debugMark("protocol checks");
 
   send(orClient, "endpoint.register", {
     endpointId: "or-1",
@@ -241,6 +255,7 @@ async function main() {
   assert.equal(httpEvents.some((event) => event.type === "endpoint.registered" && event.endpointId === "or-1"), true);
   assert.equal(httpEvents.some((event) => event.type === "call.requested" && event.callId === requested.payload.call.callId), true);
   assert.equal(httpEvents.some((event) => event.type === "session.started" && event.sessionId === session.sessionId), true);
+  debugMark("primary session");
   send(observerClient, "session.list");
   const sessionSnapshot = await waitFor(observerClient, "session.snapshot");
   assert.equal(sessionSnapshot.payload.sessions.length, 1);
@@ -434,6 +449,7 @@ async function main() {
   assert.ok(refreshEvent);
   assert.deepEqual(refreshEvent.channelIds, ["ch1", "ch4"]);
   assert.equal("signal" in refreshEvent, false);
+  debugMark("peer signal events");
 
   send(teachingClient, "peer.signal", {
     sessionId: session.sessionId,
@@ -509,6 +525,18 @@ async function main() {
   );
   assert.equal(annotated.payload.session.annotation.text, "Key anatomy");
   assert.equal(annotated.payload.session.annotation.updatedByEndpointId, "or-1");
+  const eventsAfterAnnotation = await getJson(`${httpBase}/events`);
+  const subscriptionEvent = eventsAfterAnnotation
+    .filter((event) => event.type === "session.subscription.updated")
+    .at(-1);
+  assert.equal(subscriptionEvent.sessionId, session.sessionId);
+  assert.equal(subscriptionEvent.byEndpointId, "teach-1");
+  assert.deepEqual(subscriptionEvent.channelIds, ["ch4", longChannelId.slice(0, 32), "ch2", "ch3"]);
+  const annotationEvent = eventsAfterAnnotation.find((event) => event.type === "session.annotation.updated");
+  assert.equal(annotationEvent.sessionId, session.sessionId);
+  assert.equal(annotationEvent.byEndpointId, "or-1");
+  assert.equal(JSON.stringify(eventsAfterAnnotation).includes("Key anatomy"), false);
+  debugMark("annotation events");
 
   send(observerClient, "session.join", { sessionId: session.sessionId });
   const limitError = await waitFor(observerClient, "error", (message) => message.payload.code === "participant_limit");
@@ -522,6 +550,7 @@ async function main() {
   assert.equal(server.state.sessions.size, 0);
   const endedHealth = await getJson(`${httpBase}/health`);
   assert.equal(endedHealth.sessions, 0);
+  debugMark("session ended");
 
   send(orClient, "call.request", {
     toEndpointId: "teach-1",
@@ -586,6 +615,7 @@ async function main() {
   await waitFor(busyJoinTeachingClient, "session.ended");
   busyJoinOrClient.close();
   busyJoinTeachingClient.close();
+  debugMark("busy join");
 
   const disconnectObserverClient = await connect(url);
   send(disconnectObserverClient, "endpoint.register", {
@@ -662,6 +692,7 @@ async function main() {
   assert.equal(server.state.sessions.has(ownerLeaveSession.payload.session.sessionId), false);
   ownerLeaveOrClient.close();
   ownerLeaveTeachingClient.close();
+  debugMark("owner leave");
 
   send(teachingClient, "call.request", { toEndpointId: "or-1", mode: "interactive" });
   await waitFor(teachingClient, "call.requested");
@@ -683,10 +714,12 @@ async function main() {
   assert.equal(server.state.sessions.size, 0);
   const disconnectedHealth = await getJson(`${httpBase}/health`);
   assert.equal(disconnectedHealth.sessions, 0);
+  debugMark("disconnect cleanup");
 
   teachingClient.close();
   observerClient.close();
   await server.stop();
+  debugMark("main server stopped");
 
   const timeoutServer = createSignalingServer({ port: 0, callTimeoutMs: 25 });
   const timeoutAddress = await timeoutServer.start();
@@ -721,6 +754,7 @@ async function main() {
   timeoutCaller.close();
   timeoutTarget.close();
   await timeoutServer.stop();
+  debugMark("timeout server");
 
   const heartbeatServer = createSignalingServer({ port: 0, heartbeatMs: 25 });
   const heartbeatAddress = await heartbeatServer.start();
@@ -739,6 +773,7 @@ async function main() {
   const heartbeatHealth = await getJson(`${heartbeatHttpBase}/health`);
   assert.equal(heartbeatHealth.endpoints, 0);
   await heartbeatServer.stop();
+  debugMark("heartbeat server");
 
   const authServer = createSignalingServer({ port: 0, authToken: "shared-secret" });
   const authAddress = await authServer.start();
@@ -791,6 +826,7 @@ async function main() {
   assert.equal(JSON.stringify(authorizedEvents).includes("wrong-secret"), false);
   authClient.close();
   await authServer.stop();
+  debugMark("auth server");
 
   console.log("signaling contract test passed");
 }

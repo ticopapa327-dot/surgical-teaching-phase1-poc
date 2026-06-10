@@ -82,6 +82,19 @@ test("phase 2 UI connects to signaling server and enters accepted session", asyn
     });
     await waitFor(teachingClient, "endpoint.registered");
 
+    await page.addInitScript(() => {
+      window.__copiedDiagnosticText = "";
+      Object.defineProperty(Navigator.prototype, "clipboard", {
+        configurable: true,
+        get() {
+          return {
+            writeText: async (text) => {
+              window.__copiedDiagnosticText = text;
+            }
+          };
+        }
+      });
+    });
     await page.goto("/");
     await page.getByLabel("信令地址").fill(url);
     await page.getByLabel("本端 ID").fill("or-ui");
@@ -149,6 +162,16 @@ test("phase 2 UI connects to signaling server and enters accepted session", asyn
     const annotation = await annotationUpdate;
     assert.equal(annotation.payload.session.annotation.text, "Needle entry");
     assert.equal(annotation.payload.session.annotation.updatedByEndpointId, "or-ui");
+
+    await page.getByRole("button", { name: "复制诊断快照" }).click();
+    await expect(page.locator(".footer")).toContainText("诊断快照已复制");
+    const copiedText = await page.evaluate(() => window.__copiedDiagnosticText);
+    const snapshot = JSON.parse(copiedText);
+    assert.equal(snapshot.diagnostic.eventRefresh, "ok");
+    assert.equal(snapshot.session.id, annotation.payload.session.sessionId);
+    assert(snapshot.recentEvents.some((event) => event.type === "session.started"));
+    assert(snapshot.recentEvents.some((event) => event.type === "session.subscription.updated"));
+    assert(snapshot.recentEvents.some((event) => event.type === "session.annotation.updated"));
 
     const endedByUi = waitFor(teachingClient, "session.ended");
     await page.getByRole("button", { name: "结束连接" }).click();

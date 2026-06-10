@@ -2438,12 +2438,13 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     }
   }
 
-  async function refreshSignalingEvents() {
+  async function loadSignalingEvents({ updateFooter = true } = {}) {
     const nextUrl = signalingUrl.trim() || defaultSignalingUrlForPage();
     if (!isValidWebSocketUrl(nextUrl)) {
       setSignalingEventsStatus("地址无效");
-      setStatus("信令地址无效：必须使用 ws:// 或 wss:// 地址。");
-      return;
+      const error = new Error("信令地址无效：必须使用 ws:// 或 wss:// 地址");
+      if (updateFooter) setStatus(`${error.message}。`);
+      return { events: signalingEvents, error };
     }
     try {
       const headers = signalingToken.trim() ? { Authorization: `Bearer ${signalingToken.trim()}` } : {};
@@ -2454,11 +2455,17 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       const visibleEvents = events.slice(-10).reverse();
       setSignalingEvents(visibleEvents);
       setSignalingEventsStatus(`${events.length} 条，显示 ${visibleEvents.length} 条`);
-      setStatus(`已读取 ${events.length} 条信令事件。`);
+      if (updateFooter) setStatus(`已读取 ${events.length} 条信令事件。`);
+      return { events: visibleEvents, total: events.length, error: null };
     } catch (error) {
       setSignalingEventsStatus("读取失败");
-      setStatus(`信令事件读取失败：${error.message}`);
+      if (updateFooter) setStatus(`信令事件读取失败：${error.message}`);
+      return { events: signalingEvents, error };
     }
+  }
+
+  async function refreshSignalingEvents() {
+    await loadSignalingEvents({ updateFooter: true });
   }
 
   function joinSignalingSession() {
@@ -2815,10 +2822,14 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     audioOutputDeviceId ? `回放 ${audioOutputLabel(audioOutputDeviceId)}` : "系统回放"
   ].join(" / ");
 
-  function buildDiagnosticSnapshot() {
+  function buildDiagnosticSnapshot(options = {}) {
+    const snapshotEvents = options.signalingEvents || signalingEvents;
     return {
       schema: "surgical-teaching-diagnostic-v1",
       generatedAt: new Date().toISOString(),
+      diagnostic: {
+        eventRefresh: options.eventRefresh || "not_connected"
+      },
       app: {
         name: appInfo?.appName || "unknown",
         version: appInfo?.appVersion || "unknown",
@@ -2883,16 +2894,27 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
         audioOutputs: audioOutputDevices.length
       },
       channels: CHANNELS.map(channelDiagnosticSummary),
-      recentEvents: signalingEvents.slice(0, 10).map(diagnosticEventSummary)
+      recentEvents: snapshotEvents.slice(0, 10).map(diagnosticEventSummary)
     };
   }
 
   async function copyDiagnosticSnapshot() {
-    const snapshotText = JSON.stringify(buildDiagnosticSnapshot(), null, 2);
+    let snapshotEvents = signalingEvents;
+    let eventRefresh = signalingState.connected ? "failed" : "not_connected";
+    let eventRefreshError = null;
+    if (signalingState.connected) {
+      const result = await loadSignalingEvents({ updateFooter: false });
+      snapshotEvents = result.events;
+      eventRefreshError = result.error;
+      eventRefresh = result.error ? "failed" : "ok";
+    }
+
+    const snapshotText = JSON.stringify(buildDiagnosticSnapshot({ signalingEvents: snapshotEvents, eventRefresh }), null, 2);
     setDiagnosticSnapshot(snapshotText);
     try {
       await writeClipboardText(snapshotText);
-      setStatus(`诊断快照已复制，${snapshotText.length} 字符。`);
+      const refreshNote = eventRefreshError ? `；事件刷新失败：${eventRefreshError.message}` : "";
+      setStatus(`诊断快照已复制，${snapshotText.length} 字符${refreshNote}。`);
     } catch (error) {
       setStatus(`诊断快照已生成，但复制失败：${error.message}`);
     }
