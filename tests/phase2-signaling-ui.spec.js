@@ -1092,6 +1092,8 @@ test("phase 3 UI sends subscribed videos over WebRTC signaling", async ({ page }
     await expect(teachingPage.locator(".diagnostic-state-live")).toHaveCount(3);
     await expect(page.locator(".peer-diagnostic-state-live")).toHaveCount(1);
     await expect(teachingPage.locator(".peer-diagnostic-state-live")).toHaveCount(1);
+    await page.getByRole("button", { name: "刷新事件" }).click();
+    await expect(page.locator(".signal-event").filter({ hasText: "peer.signal.forwarded" }).first()).toBeVisible();
 
     await teachingPage.getByLabel("通道 4 备用").click();
     await expect(teachingPage.getByLabel("通道 4 备用")).toBeChecked();
