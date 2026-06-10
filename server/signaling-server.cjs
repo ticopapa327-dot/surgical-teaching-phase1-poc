@@ -92,6 +92,35 @@ function normalizeSubscriptionChannels(channels) {
   return normalized.length ? normalized : ["ch1"];
 }
 
+function normalizeSignalChannels(signal) {
+  const candidates = Array.isArray(signal.channelIds)
+    ? signal.channelIds
+    : typeof signal.channelId === "string"
+      ? [signal.channelId]
+      : [];
+  const normalized = [];
+  for (const channel of candidates) {
+    const channelId = normalizeText(channel, "", 32);
+    if (!channelId || normalized.includes(channelId)) continue;
+    normalized.push(channelId);
+    if (normalized.length >= 4) break;
+  }
+  return normalized;
+}
+
+function signalEventSummary(signal) {
+  const summary = {
+    signalKind: normalizeText(signal.kind || signal.type, "unknown", 64)
+  };
+  const channelIds = normalizeSignalChannels(signal);
+  if (channelIds.length) summary.channelIds = channelIds;
+  if (Array.isArray(signal.tracks)) summary.trackCount = signal.tracks.length;
+  if (signal.description && typeof signal.description === "object") {
+    summary.descriptionType = normalizeText(signal.description.type, "", 24) || undefined;
+  }
+  return summary;
+}
+
 function publicEndpoint(endpoint) {
   return {
     endpointId: endpoint.endpointId,
@@ -651,6 +680,12 @@ function createSignalingServer(options = {}) {
         sessionId: session.sessionId,
         fromEndpointId: fromEndpoint.endpointId,
         signal
+      });
+      recordEvent("peer.signal.forwarded", {
+        sessionId: session.sessionId,
+        fromEndpointId: fromEndpoint.endpointId,
+        toEndpointId: payload.toEndpointId,
+        ...signalEventSummary(signal)
       });
       send(ws, "peer.signal.sent", { sessionId: session.sessionId, toEndpointId: payload.toEndpointId }, requestId);
       return;

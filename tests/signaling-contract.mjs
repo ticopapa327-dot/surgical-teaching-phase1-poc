@@ -383,6 +383,18 @@ async function main() {
   assert.equal(relayedOffer.payload.signal.type, "offer");
   const signalSent = await waitFor(teachingClient, "peer.signal.sent");
   assert.equal(signalSent.payload.toEndpointId, "or-1");
+  const signalEvents = await getJson(`${httpBase}/events`);
+  const peerSignalEvent = signalEvents.find(
+    (event) =>
+      event.type === "peer.signal.forwarded" &&
+      event.sessionId === session.sessionId &&
+      event.fromEndpointId === "teach-1" &&
+      event.toEndpointId === "or-1"
+  );
+  assert.ok(peerSignalEvent);
+  assert.equal(peerSignalEvent.signalKind, "offer");
+  assert.equal("signal" in peerSignalEvent, false);
+  assert.equal("sdp" in peerSignalEvent, false);
 
   send(teachingClient, "peer.signal", {
     sessionId: session.sessionId,

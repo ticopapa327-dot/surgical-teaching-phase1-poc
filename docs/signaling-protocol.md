@@ -18,7 +18,7 @@
 
 服务端口可通过 `SIGNALING_PORT` 环境变量覆盖。
 如设置 `SIGNALING_AUTH_TOKEN`，客户端注册时必须在 `endpoint.register.payload.authToken` 中提交相同令牌。HTTP `/directory`、`/sessions` 和 `/events` 也必须通过 `Authorization: Bearer <token>` 或 `?authToken=<token>` 提交令牌；`/health` 保持公开，只返回计数。该令牌只作为 PoC 共享入口门禁，不替代 TLS、用户身份、权限模型或审计。
-事件日志为内存环形日志，默认保留最近 200 条，可通过 `SIGNALING_EVENT_LOG_LIMIT` 调整到 20 至 1000 条之间。事件只记录控制面摘要，不记录令牌、患者信息、标注正文或媒体数据。
+事件日志为内存环形日志，默认保留最近 200 条，可通过 `SIGNALING_EVENT_LOG_LIMIT` 调整到 20 至 1000 条之间。事件只记录控制面摘要，不记录令牌、患者信息、标注正文、SDP、ICE candidate 或媒体数据。
 服务端会按 `SIGNALING_HEARTBEAT_MS` 周期向 WebSocket 客户端发送 ping，默认 30000 ms；客户端未响应 pong 时服务端会终止连接，并按断线清理在线目录、待处理呼叫和会话。将该值设为 `0` 可关闭 PoC 心跳。
 
 `/health` 返回 `ok`、`endpoints`、`sessions` 和 `pendingCalls`，用于基础运行状态检查。
@@ -174,6 +174,7 @@ HTTP `/events` 返回最近控制面事件摘要：
 ```
 
 当前事件日志只用于 PoC 调试和验收追踪，不提供不可抵赖审计、持久化、签名、防篡改或权限分级。
+`peer.signal.forwarded` 事件仅记录 `signalKind`、`channelIds`、`trackCount`、`descriptionType` 等摘要字段，用于判断媒体协商消息是否到达服务端，不记录原始 `signal` 负载。
 
 ## 五、呼叫流程
 
