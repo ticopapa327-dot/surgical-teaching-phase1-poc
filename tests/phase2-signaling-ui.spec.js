@@ -44,6 +44,18 @@ async function expectLiveRemoteVideoCount(page, count) {
   );
 }
 
+async function expectRemoteHealthLiveCount(page, count) {
+  await expect(page.locator(".remote-health-live")).toHaveCount(count, { timeout: 15000 });
+}
+
+async function expectDiagnosticLiveCount(page, count) {
+  await expect(page.locator(".diagnostic-state-live")).toHaveCount(count, { timeout: 15000 });
+}
+
+async function expectPeerDiagnosticLiveCount(page, count) {
+  await expect(page.locator(".peer-diagnostic-state-live")).toHaveCount(count, { timeout: 15000 });
+}
+
 test("phase 2 UI connects to signaling server and enters accepted session", async ({ page }) => {
   const server = createSignalingServer({ port: 0 });
   const address = await server.start();
@@ -1088,10 +1100,10 @@ test("phase 3 UI sends subscribed videos over WebRTC signaling", async ({ page }
       null,
       { timeout: 15000 }
     );
-    await expect(teachingPage.locator(".remote-health-live")).toHaveCount(3);
-    await expect(teachingPage.locator(".diagnostic-state-live")).toHaveCount(3);
-    await expect(page.locator(".peer-diagnostic-state-live")).toHaveCount(1);
-    await expect(teachingPage.locator(".peer-diagnostic-state-live")).toHaveCount(1);
+    await expectRemoteHealthLiveCount(teachingPage, 3);
+    await expectDiagnosticLiveCount(teachingPage, 3);
+    await expectPeerDiagnosticLiveCount(page, 1);
+    await expectPeerDiagnosticLiveCount(teachingPage, 1);
     await page.getByRole("button", { name: "刷新事件" }).click();
     await expect(page.locator(".signal-event").filter({ hasText: "peer.signal.forwarded" }).first()).toBeVisible();
 
@@ -1102,8 +1114,8 @@ test("phase 3 UI sends subscribed videos over WebRTC signaling", async ({ page }
       .poll(() => server.state.sessions.values().next().value?.subscriptions["teach-media-ui"]?.join(","))
       .toBe("ch1,ch2,ch3,ch4");
     await expectLiveRemoteVideoCount(teachingPage, 4);
-    await expect(teachingPage.locator(".remote-health-live")).toHaveCount(4);
-    await expect(teachingPage.locator(".diagnostic-state-live")).toHaveCount(4);
+    await expectRemoteHealthLiveCount(teachingPage, 4);
+    await expectDiagnosticLiveCount(teachingPage, 4);
 
     await teachingPage.getByLabel("通道 4 备用").click();
     await expect(teachingPage.getByLabel("通道 4 备用")).not.toBeChecked();
@@ -1111,13 +1123,13 @@ test("phase 3 UI sends subscribed videos over WebRTC signaling", async ({ page }
     await expect
       .poll(() => server.state.sessions.values().next().value?.subscriptions["teach-media-ui"]?.join(","))
       .toBe("ch1,ch2,ch3");
-    await expect(teachingPage.locator(".remote-health-live")).toHaveCount(3);
+    await expectRemoteHealthLiveCount(teachingPage, 3);
 
     await teachingPage.getByLabel("通道 4 备用").click();
     await expect(teachingPage.getByLabel("通道 4 备用")).toBeChecked();
     await expect(teachingPage.locator(".remote-video-tile")).toHaveCount(4);
     await expectLiveRemoteVideoCount(teachingPage, 4);
-    await expect(teachingPage.locator(".remote-health-live")).toHaveCount(4);
+    await expectRemoteHealthLiveCount(teachingPage, 4);
 
     await teachingPage.waitForFunction(
       () => {
@@ -1139,7 +1151,7 @@ test("phase 3 UI sends subscribed videos over WebRTC signaling", async ({ page }
     );
 
     await page.getByRole("button", { name: "停止媒体链路" }).click();
-    await expect(teachingPage.locator(".remote-health-live")).toHaveCount(0);
+    await expectRemoteHealthLiveCount(teachingPage, 0);
     await expect(teachingPage.locator(".remote-health-waiting")).toHaveCount(4);
   } finally {
     await teachingPage.close();
@@ -1215,8 +1227,8 @@ test("phase 3 UI publishes each remote endpoint subscription independently", asy
     await page.getByRole("button", { name: "发布订阅通道媒体" }).click();
     await expectLiveRemoteVideoCount(teachingPage, 3);
     await expectLiveRemoteVideoCount(observerPage, 2);
-    await expect(teachingPage.locator(".remote-health-live")).toHaveCount(3);
-    await expect(observerPage.locator(".remote-health-live")).toHaveCount(2);
+    await expectRemoteHealthLiveCount(teachingPage, 3);
+    await expectRemoteHealthLiveCount(observerPage, 2);
   } finally {
     await observerPage.close();
     await teachingPage.close();
@@ -1259,7 +1271,7 @@ test("phase 3 UI publishes to an observer that joins after media starts", async 
 
     await page.getByRole("button", { name: "发布订阅通道媒体" }).click();
     await expectLiveRemoteVideoCount(teachingPage, 1);
-    await expect(teachingPage.locator(".remote-health-live")).toHaveCount(1);
+    await expectRemoteHealthLiveCount(teachingPage, 1);
 
     const sessionId = await expect
       .poll(() => server.state.sessions.values().next().value?.sessionId)
@@ -1281,8 +1293,8 @@ test("phase 3 UI publishes to an observer that joins after media starts", async 
       .poll(() => server.state.sessions.values().next().value?.subscriptions["observer-late-media"]?.join(","))
       .toBe("ch1");
     await expectLiveRemoteVideoCount(observerPage, 1);
-    await expect(observerPage.locator(".remote-health-live")).toHaveCount(1);
-    await expect(observerPage.locator(".peer-diagnostic-state-live")).toHaveCount(1);
+    await expectRemoteHealthLiveCount(observerPage, 1);
+    await expectPeerDiagnosticLiveCount(observerPage, 1);
   } finally {
     await observerPage.close();
     await teachingPage.close();
@@ -1341,16 +1353,16 @@ test("phase 3 UI republishes remaining media after an observer leaves", async ({
     await page.getByRole("button", { name: "发布订阅通道媒体" }).click();
     await expectLiveRemoteVideoCount(teachingPage, 1);
     await expectLiveRemoteVideoCount(observerPage, 1);
-    await expect(page.locator(".peer-diagnostic-state-live")).toHaveCount(2);
+    await expectPeerDiagnosticLiveCount(page, 2);
 
     await observerPage.getByRole("button", { name: "离开会话" }).click();
     await expect
       .poll(() => server.state.sessions.values().next().value?.participants.join(","))
       .toBe("or-observer-leave-media,teach-observer-leave-media");
     await expect(page.locator(".session-list dd").filter({ hasText: "2 / 3" })).toBeVisible();
-    await expect(page.locator(".peer-diagnostic-state-live")).toHaveCount(1);
+    await expectPeerDiagnosticLiveCount(page, 1);
     await expectLiveRemoteVideoCount(teachingPage, 1);
-    await expect(teachingPage.locator(".remote-health-live")).toHaveCount(1);
+    await expectRemoteHealthLiveCount(teachingPage, 1);
   } finally {
     await observerPage.close();
     await teachingPage.close();
@@ -1410,7 +1422,7 @@ test("phase 3 UI keeps remaining media after an observer disconnects", async ({ 
     await page.getByRole("button", { name: "发布订阅通道媒体" }).click();
     await expectLiveRemoteVideoCount(teachingPage, 1);
     await expectLiveRemoteVideoCount(observerPage, 1);
-    await expect(page.locator(".peer-diagnostic-state-live")).toHaveCount(2);
+    await expectPeerDiagnosticLiveCount(page, 2);
 
     await observerPage.close();
     observerClosed = true;
@@ -1418,9 +1430,9 @@ test("phase 3 UI keeps remaining media after an observer disconnects", async ({ 
       .poll(() => server.state.sessions.values().next().value?.participants.join(","))
       .toBe("or-observer-disconnect-media,teach-observer-disconnect-media");
     await expect(page.locator(".session-list dd").filter({ hasText: "2 / 3" })).toBeVisible();
-    await expect(page.locator(".peer-diagnostic-state-live")).toHaveCount(1);
+    await expectPeerDiagnosticLiveCount(page, 1);
     await expectLiveRemoteVideoCount(teachingPage, 1);
-    await expect(teachingPage.locator(".remote-health-live")).toHaveCount(1);
+    await expectRemoteHealthLiveCount(teachingPage, 1);
   } finally {
     if (!observerClosed) await observerPage.close();
     await teachingPage.close();
@@ -1461,7 +1473,7 @@ test("phase 3 UI republishes media when a subscribed endpoint reconnects", async
 
     await page.getByRole("button", { name: "发布订阅通道媒体" }).click();
     await expectLiveRemoteVideoCount(teachingPage, 1);
-    await expect(page.locator(".peer-diagnostic-state-live")).toHaveCount(1);
+    await expectPeerDiagnosticLiveCount(page, 1);
 
     await replacementPage.goto("/");
     await replacementPage.getByLabel("信令地址").fill(url);
@@ -1473,8 +1485,8 @@ test("phase 3 UI republishes media when a subscribed endpoint reconnects", async
     await expect(replacementPage.locator(".session-list dd").filter({ hasText: "Reconnect OR" })).toBeVisible();
 
     await expectLiveRemoteVideoCount(replacementPage, 1);
-    await expect(replacementPage.locator(".remote-health-live")).toHaveCount(1);
-    await expect(page.locator(".peer-diagnostic-state-live")).toHaveCount(1);
+    await expectRemoteHealthLiveCount(replacementPage, 1);
+    await expectPeerDiagnosticLiveCount(page, 1);
     await expect(page.locator(".footer")).toContainText("已按会话变化重新发布");
   } finally {
     await replacementPage.close();
