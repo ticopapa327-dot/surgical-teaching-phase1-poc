@@ -613,17 +613,41 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     activeSessionRef.current = activeSession;
   }, [activeSession]);
 
-  useEffect(() => {
-    if (localEndpointRole !== "operating-room") return;
-    if (activeSession?.source !== "signaling") return;
-    if (webrtcMediaState.state !== "publishing" && webrtcMediaState.state !== "connected") return;
-    const nextSignature = publicationSignatureForSession(activeSession, signalingEndpointIdRef.current);
-    if (!publishedSubscriptionSignature.current || publishedSubscriptionSignature.current === nextSignature) return;
+  function shouldAutoRepublishSubscriptions(session = activeSessionRef.current) {
+    if (localEndpointRole !== "operating-room") return false;
+    if (session?.source !== "signaling") return false;
+    if (webrtcMediaState.state !== "publishing" && webrtcMediaState.state !== "connected") return false;
+    const nextSignature = publicationSignatureForSession(session, signalingEndpointIdRef.current);
+    return Boolean(publishedSubscriptionSignature.current && publishedSubscriptionSignature.current !== nextSignature);
+  }
+
+  function triggerAutoRepublishSubscriptions() {
     if (autoRepublishInFlight.current) return;
     autoRepublishInFlight.current = true;
     startSubscribedWebRtcMedia({ auto: true }).finally(() => {
       autoRepublishInFlight.current = false;
+      if (shouldAutoRepublishSubscriptions()) {
+        window.setTimeout(triggerAutoRepublishSubscriptions, 0);
+      }
     });
+  }
+
+  useEffect(() => {
+    if (activeSession?.source !== "signaling") return;
+    const subscribedChannels = new Set(activeSession.subscribedChannels || []);
+    let changed = false;
+    for (const channelId of Object.keys(mediaRemoteStreams.current)) {
+      if (subscribedChannels.has(channelId)) continue;
+      delete mediaRemoteStreams.current[channelId];
+      const video = remoteVideoRefs.current[channelId];
+      if (video) video.srcObject = null;
+      changed = true;
+    }
+    if (changed) setMediaVersion((value) => value + 1);
+  }, [activeSession?.source, activeSession?.subscribedChannels?.join(",")]);
+
+  useEffect(() => {
+    if (shouldAutoRepublishSubscriptions(activeSession)) triggerAutoRepublishSubscriptions();
   }, [activeSession, localEndpointRole, webrtcMediaState.state]);
 
   useEffect(() => {
