@@ -97,6 +97,7 @@ npm run server:signaling
 - `SIGNALING_CALL_TIMEOUT_MS`：待处理呼叫超时时间，默认 `60000`。
 - `SIGNALING_HEARTBEAT_MS`：WebSocket 心跳间隔，默认 `30000`；设置为 `0` 可关闭心跳。
 - `SIGNALING_EVENT_LOG_LIMIT`：内存事件日志保留条数，默认 `200`，范围 `20` 到 `1000`。
+- `SIGNALING_MAX_PAYLOAD_BYTES`：单条 WebSocket 消息最大字节数，默认 `1048576`，范围 `1024` 到 `8388608`。
 
 Electron 客户端支持以下 FTP 上传环境变量；未设置 `UST_FTP_HOST` 时点击“上传FTP”会明确提示 `ftp_not_configured`：
 

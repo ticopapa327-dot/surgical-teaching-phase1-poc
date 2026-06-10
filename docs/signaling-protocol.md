@@ -21,8 +21,9 @@
 事件日志为内存环形日志，默认保留最近 200 条，可通过 `SIGNALING_EVENT_LOG_LIMIT` 调整到 20 至 1000 条之间。事件只记录控制面摘要，包括注册、呼叫请求、呼叫接受、会话开始、订阅变化、标注变化、离会、结束和 `peer.signal` 摘要；不记录令牌、患者信息、标注正文、SDP、ICE candidate 或媒体数据。
 `/events` 可选 `limit` 查询参数，例如 `/events?limit=10` 只返回最近 10 条事件；不传 `limit` 时返回当前内存环形日志中的全部事件。
 服务端会按 `SIGNALING_HEARTBEAT_MS` 周期向 WebSocket 客户端发送 ping，默认 30000 ms；客户端未响应 pong 时服务端会终止连接，并按断线规则清理在线目录、待处理呼叫和相关会话参与状态。将该值设为 `0` 可关闭 PoC 心跳。
+单条 WebSocket 消息默认限制为 1048576 字节，可通过 `SIGNALING_MAX_PAYLOAD_BYTES` 调整，允许范围为 1024 至 8388608 字节；超出上限的连接会被关闭，避免异常客户端提交过大的信令负载。
 
-`/health` 返回 `ok`、`endpoints`、`sessions`、`pendingCalls`、`startedAt`、`uptimeSeconds`、`eventLogSize` 和 `eventLogLimit`，用于基础运行状态检查、判断服务是否刚重启以及事件日志是否接近覆盖上限。
+`/health` 返回 `ok`、`endpoints`、`sessions`、`pendingCalls`、`startedAt`、`uptimeSeconds`、`eventLogSize`、`eventLogLimit` 和 `maxPayloadBytes`，用于基础运行状态检查、判断服务是否刚重启、事件日志是否接近覆盖上限以及当前 WebSocket 消息上限。
 `/sessions` 返回当前在线信令会话摘要，只包含会话 ID、模式、参与上限、参与端 ID、参与人数和开始时间，不包含标注内容、通道订阅详情、患者信息或媒体房间数据。
 
 HTTP 调试接口返回 CORS 头，允许前端工作台从 Vite 或 Electron 页面跨端口读取。

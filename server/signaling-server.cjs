@@ -197,6 +197,12 @@ function normalizeEventLogLimit(value) {
   return Math.max(20, Math.min(1000, Math.trunc(numericValue)));
 }
 
+function normalizeMaxPayloadBytes(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue) || numericValue <= 0) return 1024 * 1024;
+  return Math.max(1024, Math.min(8 * 1024 * 1024, Math.trunc(numericValue)));
+}
+
 function normalizeEventQueryLimit(value, maxLimit) {
   if (value == null || value === "") return null;
   const numericValue = Number(value);
@@ -218,6 +224,7 @@ function createSignalingServer(options = {}) {
   const heartbeatMs = normalizeHeartbeatMs(options.heartbeatMs ?? process.env.SIGNALING_HEARTBEAT_MS);
   const authToken = normalizeText(options.authToken ?? process.env.SIGNALING_AUTH_TOKEN, "", 256);
   const eventLogLimit = normalizeEventLogLimit(options.eventLogLimit ?? process.env.SIGNALING_EVENT_LOG_LIMIT);
+  const maxPayloadBytes = normalizeMaxPayloadBytes(options.maxPayloadBytes ?? process.env.SIGNALING_MAX_PAYLOAD_BYTES);
   const endpoints = new Map();
   const sockets = new Map();
   const pendingCalls = new Map();
@@ -277,7 +284,8 @@ function createSignalingServer(options = {}) {
           startedAt: serverStartedAt.toISOString(),
           uptimeSeconds: Math.max(0, Math.floor((Date.now() - serverStartedAt.getTime()) / 1000)),
           eventLogSize: eventLog.length,
-          eventLogLimit
+          eventLogLimit,
+          maxPayloadBytes
         })
       );
       return;
@@ -314,7 +322,7 @@ function createSignalingServer(options = {}) {
     res.end(JSON.stringify({ error: "not_found" }));
   });
 
-  const wss = new WebSocketServer({ server: httpServer, path: "/signal" });
+  const wss = new WebSocketServer({ server: httpServer, path: "/signal", maxPayload: maxPayloadBytes });
 
   function broadcast(type, payload) {
     for (const ws of sockets.values()) send(ws, type, payload);
@@ -802,6 +810,7 @@ function createSignalingServer(options = {}) {
   wss.on("connection", (ws, req) => {
     ws.isAlive = true;
     ws.remoteAddress = normalizeRemoteAddress(req.socket.remoteAddress);
+    ws.on("error", () => {});
     ws.on("pong", () => {
       ws.isAlive = true;
     });

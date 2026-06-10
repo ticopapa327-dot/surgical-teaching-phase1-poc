@@ -37,6 +37,20 @@ function waitFor(ws, type, predicate = () => true, timeoutMs = 5000) {
   });
 }
 
+function waitForClose(ws, timeoutMs = 5000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      ws.off("close", handler);
+      reject(new Error("Timed out waiting for WebSocket close"));
+    }, timeoutMs);
+    const handler = (code, reason) => {
+      clearTimeout(timer);
+      resolve({ code, reason: reason.toString() });
+    };
+    ws.once("close", handler);
+  });
+}
+
 async function getJson(url) {
   const response = await fetch(url);
   assert.equal(response.ok, true);
@@ -52,6 +66,8 @@ function assertHealthMetadata(health) {
   assert.ok(health.eventLogSize >= 0);
   assert.equal(typeof health.eventLogLimit, "number");
   assert.ok(health.eventLogLimit >= health.eventLogSize);
+  assert.equal(typeof health.maxPayloadBytes, "number");
+  assert.ok(health.maxPayloadBytes >= 1024);
 }
 
 function debugMark(label) {
@@ -805,6 +821,19 @@ async function main() {
   await stoppedClientClosed;
   assert.equal(stopServer.wss.clients.size, 0);
   debugMark("stop server");
+
+  const payloadServer = createSignalingServer({ port: 0, maxPayloadBytes: 1024 });
+  const payloadAddress = await payloadServer.start();
+  const payloadHttpBase = `http://127.0.0.1:${payloadAddress.port}`;
+  const payloadHealth = await getJson(`${payloadHttpBase}/health`);
+  assert.equal(payloadHealth.maxPayloadBytes, 1024);
+  const payloadClient = await connect(`ws://127.0.0.1:${payloadAddress.port}/signal`);
+  const payloadClosed = waitForClose(payloadClient);
+  payloadClient.send("x".repeat(2048));
+  const payloadClose = await payloadClosed;
+  assert.equal(payloadClose.code, 1009);
+  await payloadServer.stop();
+  debugMark("payload server");
 
   const authServer = createSignalingServer({ port: 0, authToken: "shared-secret" });
   const authAddress = await authServer.start();
