@@ -40,7 +40,7 @@
 - 前端可调用信令 `/health` 显示终端、会话和待处理呼叫数量。
 - 提供模拟 HIS 查询与患者绑定面板，新录像可写入患者元数据。
 - 录像可加入本地模拟 AI 处理队列，为后续识别服务预留任务接口。
-- 录像索引支持定位、导出和删除；Electron 模式下导出为文件复制，浏览器测试模式下导出为 Blob 下载。
+- 录像索引支持定位、导出、FTP 上传和删除；Electron 模式下导出为文件复制并可按环境变量上传 FTP，浏览器测试模式下导出为 Blob 下载且 FTP 上传不可用。
 - 远端画面支持打开独立扩展窗口；Electron 模式下可读取 Windows 显示器清单并将弹窗定位到指定显示器，浏览器模式下回退为默认弹窗。
 
 ### 阶段 3：按订阅 WebRTC 媒体 PoC
@@ -90,6 +90,16 @@ npm run server:signaling
 - `SIGNALING_CALL_TIMEOUT_MS`：待处理呼叫超时时间，默认 `60000`。
 - `SIGNALING_HEARTBEAT_MS`：WebSocket 心跳间隔，默认 `30000`；设置为 `0` 可关闭心跳。
 - `SIGNALING_EVENT_LOG_LIMIT`：内存事件日志保留条数，默认 `200`，范围 `20` 到 `1000`。
+
+Electron 客户端支持以下 FTP 上传环境变量；未设置 `UST_FTP_HOST` 时点击“上传FTP”会明确提示 `ftp_not_configured`：
+
+- `UST_FTP_HOST`：FTP 服务器地址。
+- `UST_FTP_PORT`：FTP 端口，默认 `21`。
+- `UST_FTP_USER`：用户名，默认 `anonymous`。
+- `UST_FTP_PASSWORD`：密码，默认 `anonymous@`。
+- `UST_FTP_SECURE`：可选，`true`/`1`/`yes` 启用 FTPS，`implicit` 使用隐式 FTPS。
+- `UST_FTP_REMOTE_DIR`：可选远端目录。
+- `UST_FTP_VERBOSE`：设置为 `1` 时输出 FTP 客户端调试日志。
 
 局域网双机测试可直接使用一键启动：
 
@@ -152,4 +162,4 @@ npm run test:signaling
 - 音频回声消除当前只能验证浏览器侧约束，实际双端效果必须现场复测。
 - 阶段 3 当前只验证少量浏览器 P2P 按订阅多路视频和基础音频，不包含真实 SFU、远端网络抖动、TURN 中继和 Android 平板端原生能力。
 - 信令服务器当前只做控制面验证；可选共享令牌和内存事件日志不等同于生产级鉴权或审计，仍不做用户级权限、持久化、TLS、合规审计和媒体转发。
-- 真实 HIS 联网、FTP、云台控制和手机直播仍属于后续阶段或专项扩展验证项。
+- 真实 HIS 联网、生产级录像归档策略、云台控制和手机直播仍属于后续阶段或专项扩展验证项；当前 FTP 上传仅为 Electron 客户端环境变量配置的 PoC 能力。

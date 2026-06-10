@@ -133,6 +133,7 @@ const api = window.surgicalApi || {
       link.click();
       return { ok: true };
     },
+    uploadFtp: async () => ({ ok: false, reason: "ftp_not_available_in_browser" }),
     openRoot: async () => ({ ok: true })
   }
 };
@@ -1080,6 +1081,24 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       setStatus(result?.reason === "canceled" ? "已取消导出录像。" : `录像导出失败：${result?.reason || "未知错误"}`);
     } catch (error) {
       setStatus(`录像导出失败：${error.message}`);
+    }
+  }
+
+  async function uploadRecordingToFtp(recording) {
+    if (!recording) return;
+    if (!api.recordings.uploadFtp) {
+      setStatus("FTP 上传失败：当前客户端未提供上传接口。");
+      return;
+    }
+    try {
+      const result = await api.recordings.uploadFtp(recording.id);
+      if (result?.ok) {
+        setStatus(`录像已上传 FTP：${result.remotePath || recordingDisplayName(recording)}`);
+        return;
+      }
+      setStatus(`FTP 上传失败：${result?.reason || "未知错误"}`);
+    } catch (error) {
+      setStatus(`FTP 上传失败：${error.message}`);
     }
   }
 
@@ -2762,6 +2781,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
                   <div className="recording-actions">
                     <button onClick={() => revealRecording(item)}>定位</button>
                     <button onClick={() => exportRecording(item)}>导出</button>
+                    <button onClick={() => uploadRecordingToFtp(item)}>上传FTP</button>
                     <button className="danger" onClick={() => deleteRecording(item)}>
                       删除
                     </button>

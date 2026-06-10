@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, protocol, shell, session, net, dialog, scre
 const fs = require("fs");
 const path = require("path");
 const { pathToFileURL } = require("url");
+const ftp = require("basic-ftp");
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -48,6 +49,29 @@ function sanitizeName(value) {
     .replace(/[<>:"/\\|?*\x00-\x1F]/g, "_")
     .replace(/\s+/g, "_")
     .slice(0, 80);
+}
+
+function ftpSecureMode(value) {
+  const text = String(value || "").trim().toLowerCase();
+  if (text === "implicit") return "implicit";
+  return ["1", "true", "yes", "on"].includes(text);
+}
+
+function ftpConfigFromEnv() {
+  const host = String(process.env.UST_FTP_HOST || "").trim();
+  if (!host) return null;
+  return {
+    host,
+    port: Number(process.env.UST_FTP_PORT || 21),
+    user: process.env.UST_FTP_USER || "anonymous",
+    password: process.env.UST_FTP_PASSWORD || "anonymous@",
+    secure: ftpSecureMode(process.env.UST_FTP_SECURE),
+    remoteDir: String(process.env.UST_FTP_REMOTE_DIR || "").trim()
+  };
+}
+
+function ftpRemoteFileName(item) {
+  return sanitizeName(path.basename(item.fileName || item.filePath || `${item.id}.webm`));
 }
 
 function extensionFromMime(mimeType) {
@@ -237,6 +261,41 @@ ipcMain.handle("recording:export", async (_event, id) => {
   if (result.canceled || !result.filePath) return { ok: false, reason: "canceled" };
   fs.copyFileSync(item.filePath, result.filePath);
   return { ok: true, filePath: result.filePath };
+});
+
+ipcMain.handle("recording:ftp-upload", async (_event, id) => {
+  const item = readIndex().find((entry) => entry.id === id);
+  if (!item || !item.filePath || !fs.existsSync(item.filePath)) {
+    return { ok: false, reason: "recording_not_found" };
+  }
+  const config = ftpConfigFromEnv();
+  if (!config) return { ok: false, reason: "ftp_not_configured" };
+  if (!Number.isInteger(config.port) || config.port <= 0 || config.port > 65535) {
+    return { ok: false, reason: "ftp_bad_port" };
+  }
+
+  const client = new ftp.Client(30000);
+  client.ftp.verbose = process.env.UST_FTP_VERBOSE === "1";
+  const remoteName = ftpRemoteFileName(item);
+  try {
+    await client.access({
+      host: config.host,
+      port: config.port,
+      user: config.user,
+      password: config.password,
+      secure: config.secure
+    });
+    if (config.remoteDir) await client.ensureDir(config.remoteDir);
+    await client.uploadFrom(item.filePath, remoteName);
+    return {
+      ok: true,
+      remotePath: config.remoteDir ? path.posix.join(config.remoteDir, remoteName) : remoteName
+    };
+  } catch (error) {
+    return { ok: false, reason: error.code || error.message || "ftp_upload_failed" };
+  } finally {
+    client.close();
+  }
 });
 
 ipcMain.handle("recording:open-root", () => {

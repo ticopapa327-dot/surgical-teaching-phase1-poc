@@ -18,6 +18,9 @@ test("recording list supports deleting a completed recording", async ({ page }) 
   expect(download.suggestedFilename()).toContain(".webm");
   await expect(page.locator(".footer")).toContainText("录像已导出");
 
+  await page.locator(".recording-actions").getByRole("button", { name: "上传FTP" }).click();
+  await expect(page.locator(".footer")).toContainText("FTP 上传失败：ftp_not_available_in_browser");
+
   await page.locator(".recording-actions").getByRole("button", { name: "删除" }).click();
   await expect(page.locator(".recording-item")).toHaveCount(0);
   await expect(page.locator(".footer")).toContainText("录像已删除");

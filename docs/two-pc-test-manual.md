@@ -137,6 +137,17 @@ $env:SIGNALING_AUTH_TOKEN = "test-token"
 
 启用令牌后，两台前端都必须填写同一个信令令牌。
 
+如需在 PC-A 手术室端验证 FTP 上传，应使用 Electron 客户端并在启动前设置 FTP 环境变量。浏览器模式、`npm run dev:web` 和 `npm run dev:lan` 只能验证按钮提示，不能直接上传本地录像文件。
+
+```powershell
+$env:UST_FTP_HOST = "192.168.1.10"
+$env:UST_FTP_PORT = "21"
+$env:UST_FTP_USER = "ftp-user"
+$env:UST_FTP_PASSWORD = "ftp-password"
+$env:UST_FTP_REMOTE_DIR = "/ust-recordings"
+npm run dev
+```
+
 ### 2. 在 PC-A 启动手术室端前端
 
 如果已使用 `npm run dev:lan`，本步骤跳过。分开启动时，在 PC-A 新开一个 PowerShell 窗口：
@@ -455,10 +466,11 @@ Test-NetConnection <PC-A局域网IP> -Port 7077
 1. 录像索引生成新记录。
 2. 记录显示患者名称和 HIS ID。
 3. 可执行定位、导出、删除和加入 AI 队列。
+4. Electron 客户端配置 FTP 环境变量后，可点击“上传FTP”并看到上传成功的远端路径；未配置时应显示明确失败原因。
 
 边界说明：
 
-当前 HIS 为本地模拟数据，不连接医院真实 HIS。
+当前 HIS 为本地模拟数据，不连接医院真实 HIS。FTP 上传为 PoC 级文件发送能力，不包含断点续传、队列重试、归档生命周期、上传审计和医院文件服务权限模型。
 
 ## 八、验收记录建议
 
