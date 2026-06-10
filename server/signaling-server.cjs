@@ -22,6 +22,26 @@ function normalizeText(value, fallback = "", maxLength = 80) {
   return text ? text.slice(0, maxLength) : fallback;
 }
 
+function normalizeRemoteAddress(value) {
+  const address = normalizeText(value, "", 120);
+  if (!address) return "";
+  if (address.startsWith("::ffff:")) return address.slice(7);
+  if (address === "::1") return "127.0.0.1";
+  return address;
+}
+
+function isLoopbackAddress(value) {
+  const address = normalizeRemoteAddress(value).toLowerCase();
+  return address === "localhost" || address === "::1" || address.startsWith("127.");
+}
+
+function endpointAddress(payloadAddress, ws) {
+  const providedAddress = normalizeText(payloadAddress, "", 120);
+  const remoteAddress = normalizeRemoteAddress(ws.remoteAddress);
+  if (providedAddress && !isLoopbackAddress(providedAddress)) return providedAddress;
+  return remoteAddress || providedAddress;
+}
+
 function normalizeRole(role) {
   return VALID_ENDPOINT_ROLES.has(role) ? role : "observer";
 }
@@ -389,7 +409,7 @@ function createSignalingServer(options = {}) {
         endpointId,
         role: normalizeRole(payload.role),
         name: normalizeText(payload.name, endpointId, 80),
-        address: normalizeText(payload.address, "", 120),
+        address: endpointAddress(payload.address, ws),
         capabilities: normalizeCapabilities(payload.capabilities),
         channels: normalizeChannels(payload.channels),
         registeredAt: new Date().toISOString()
@@ -694,8 +714,9 @@ function createSignalingServer(options = {}) {
     send(ws, "error", { code: "unknown_type", message: `unsupported message type: ${type}` }, requestId);
   }
 
-  wss.on("connection", (ws) => {
+  wss.on("connection", (ws, req) => {
     ws.isAlive = true;
+    ws.remoteAddress = normalizeRemoteAddress(req.socket.remoteAddress);
     ws.on("pong", () => {
       ws.isAlive = true;
     });

@@ -124,6 +124,7 @@ async function main() {
   const directory = await waitFor(teachingClient, "directory.snapshot");
   assert.equal(directory.payload.endpoints.length, 3);
   const orEndpoint = directory.payload.endpoints.find((endpoint) => endpoint.endpointId === "or-1");
+  assert.equal(orEndpoint.address, "192.168.10.21");
   assert.equal(orEndpoint.channels.length, 4);
   assert.equal(orEndpoint.channels[1].label, "Surgical Field");
   const httpDirectory = await getJson(`${httpBase}/directory`);
@@ -254,7 +255,7 @@ async function main() {
   assert.match(malformedRegistration.payload.endpoint.endpointId, /^endpoint-/);
   assert.equal(malformedRegistration.payload.endpoint.role, "observer");
   assert.equal(malformedRegistration.payload.endpoint.name, malformedRegistration.payload.endpoint.endpointId);
-  assert.equal(malformedRegistration.payload.endpoint.address, "");
+  assert.equal(malformedRegistration.payload.endpoint.address, "127.0.0.1");
   assert.deepEqual(malformedRegistration.payload.endpoint.capabilities, ["subscribe-video"]);
   assert.equal(malformedRegistration.payload.endpoint.channels.length, 2);
   assert.equal(malformedRegistration.payload.endpoint.channels[0].id, "ch1");
