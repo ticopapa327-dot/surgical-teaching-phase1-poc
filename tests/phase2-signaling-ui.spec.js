@@ -1251,6 +1251,13 @@ test("phase 3 UI publishes each remote endpoint subscription independently", asy
     await expectPeerDiagnosticLiveCount(page, 1);
     await expectLiveRemoteVideoCount(teachingPage, 3);
     await expectRemoteHealthLiveCount(teachingPage, 3);
+
+    await observerPage.getByRole("button", { name: "请求重发媒体" }).click();
+    await expectLiveRemoteVideoCount(observerPage, 2);
+    await expectRemoteHealthLiveCount(observerPage, 2);
+    await expectPeerDiagnosticLiveCount(page, 2);
+    await expectLiveRemoteVideoCount(teachingPage, 3);
+    await expectRemoteHealthLiveCount(teachingPage, 3);
   } finally {
     await observerPage.close();
     await teachingPage.close();
