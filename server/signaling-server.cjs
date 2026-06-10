@@ -847,7 +847,7 @@ function createSignalingServer(options = {}) {
         if (call.timeoutHandle) clearTimeout(call.timeoutHandle);
       }
       pendingCalls.clear();
-      for (const ws of wss.clients) ws.close();
+      for (const ws of wss.clients) ws.terminate();
       wss.close(() => httpServer.close(resolve));
     });
   }

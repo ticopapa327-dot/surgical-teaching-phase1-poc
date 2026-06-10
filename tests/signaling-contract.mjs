@@ -781,6 +781,21 @@ async function main() {
   await heartbeatServer.stop();
   debugMark("heartbeat server");
 
+  const stopServer = createSignalingServer({ port: 0 });
+  const stopAddress = await stopServer.start();
+  const stopClient = await connect(`ws://127.0.0.1:${stopAddress.port}/signal`);
+  send(stopClient, "endpoint.register", {
+    endpointId: "stop-client",
+    role: "observer",
+    name: "Stop Client"
+  });
+  await waitFor(stopClient, "endpoint.registered");
+  const stoppedClientClosed = new Promise((resolve) => stopClient.once("close", resolve));
+  await stopServer.stop();
+  await stoppedClientClosed;
+  assert.equal(stopServer.wss.clients.size, 0);
+  debugMark("stop server");
+
   const authServer = createSignalingServer({ port: 0, authToken: "shared-secret" });
   const authAddress = await authServer.start();
   const authUrl = `ws://127.0.0.1:${authAddress.port}/signal`;
