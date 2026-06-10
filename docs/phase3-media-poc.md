@@ -16,7 +16,8 @@
 8. 双方收到远端 audio track 后，使用独立 audio sink 播放远端音频，避免视频元素 muted 导致无声。
 9. 交互音频启用低延迟采集约束、Opus 低延迟 SDP 参数、`ptime/maxptime`、音频 RTP 高优先级和接收端 playout/jitter buffer 优化。
 10. 前端状态区显示 WebRTC 统计，包括音频缓冲、jitter 和 RTT，用于判断延迟来源。
-11. 断开信令、离会、结束会话或点击“停止媒体链路”时清理 PeerConnection 和远端流状态。
+11. 媒体诊断区显示每路远端媒体状态，以及每个远端 PeerConnection 的连接、ICE 和协商状态。
+12. 断开信令、离会、结束会话或点击“停止媒体链路”时清理 PeerConnection 和远端流状态。
 
 ## 三、当前边界
 

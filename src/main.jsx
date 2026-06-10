@@ -1087,6 +1087,30 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     };
   }
 
+  function peerConnectionHealth(endpointId, peerConnection) {
+    const connectionState = peerConnection?.connectionState || "unknown";
+    const iceState = peerConnection?.iceConnectionState || "unknown";
+    const signalingState = peerConnection?.signalingState || "unknown";
+    const state =
+      connectionState === "connected"
+        ? "live"
+        : connectionState === "failed" || connectionState === "disconnected" || connectionState === "closed"
+          ? "ended"
+          : "waiting";
+    const label =
+      state === "live"
+        ? "已连接"
+        : state === "ended"
+          ? "连接异常"
+          : "协商中";
+    return {
+      endpointId,
+      state,
+      label,
+      detail: `${endpointLabelById(endpointId)}：连接 ${connectionState} / ICE ${iceState} / 协商 ${signalingState}`
+    };
+  }
+
   function activeRemoteEndpointIds() {
     const session = activeSessionRef.current;
     const selfId = signalingEndpointIdRef.current;
@@ -1306,6 +1330,8 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       setMediaVersion((value) => value + 1);
     };
 
+    const refreshPeerDiagnostics = () => setMediaVersion((value) => value + 1);
+
     peerConnection.onconnectionstatechange = () => {
       const state = peerConnection.connectionState;
       if (state === "failed" || state === "disconnected") {
@@ -1318,7 +1344,11 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
             : { state: "connected", label: `已连接 ${endpointLabelById(endpointId)}` }
         );
       }
+      refreshPeerDiagnostics();
     };
+    peerConnection.oniceconnectionstatechange = refreshPeerDiagnostics;
+    peerConnection.onicegatheringstatechange = refreshPeerDiagnostics;
+    peerConnection.onsignalingstatechange = refreshPeerDiagnostics;
 
     return peerConnection;
   }
@@ -2254,6 +2284,9 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     channelId,
     ...remoteMediaHealth(channelId)
   })) || [];
+  const peerConnectionDiagnostics = Array.from(mediaPeerConnections.current.entries())
+    .filter(([, peerConnection]) => peerConnection.connectionState !== "closed")
+    .map(([endpointId, peerConnection]) => peerConnectionHealth(endpointId, peerConnection));
   const remoteEndpointIds = activeSession?.participantIds?.filter((id) => id !== signalingEndpointIdRef.current) || [];
   const signalingTargets = signalingDirectory.filter((endpoint) => endpoint.endpointId !== signalingEndpointIdRef.current);
   const joinableSignalingSessions = signalingSessions.filter(
@@ -2772,17 +2805,37 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
           <section className="panel-block">
             <h2>媒体诊断</h2>
             {activeSession ? (
-              <dl className="diagnostic-list">
-                {remoteMediaDiagnostics.map((item) => (
-                  <div key={item.channelId}>
-                    <dt>{channelLabelById(item.channelId)}</dt>
-                    <dd>
-                      <span className={`diagnostic-state diagnostic-state-${item.state}`}>{item.label}</span>
-                      <span>{item.detail}</span>
-                    </dd>
-                  </div>
-                ))}
-              </dl>
+              <>
+                <dl className="diagnostic-list">
+                  {remoteMediaDiagnostics.map((item) => (
+                    <div key={item.channelId}>
+                      <dt>{channelLabelById(item.channelId)}</dt>
+                      <dd>
+                        <span className={`diagnostic-state diagnostic-state-${item.state}`}>{item.label}</span>
+                        <span>{item.detail}</span>
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+                <h3 className="subhead">连接诊断</h3>
+                {peerConnectionDiagnostics.length ? (
+                  <dl className="diagnostic-list peer-diagnostic-list">
+                    {peerConnectionDiagnostics.map((item) => (
+                      <div key={item.endpointId}>
+                        <dt>{endpointLabelById(item.endpointId)}</dt>
+                        <dd>
+                          <span className={`diagnostic-state peer-diagnostic-state peer-diagnostic-state-${item.state}`}>
+                            {item.label}
+                          </span>
+                          <span>{item.detail}</span>
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                ) : (
+                  <p className="hint">尚未建立 WebRTC PeerConnection。</p>
+                )}
+              </>
             ) : (
               <p className="hint">建立信令会话后显示各订阅通道的远端媒体状态。</p>
             )}

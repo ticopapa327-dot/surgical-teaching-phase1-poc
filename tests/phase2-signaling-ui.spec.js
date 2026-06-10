@@ -1090,6 +1090,8 @@ test("phase 3 UI sends subscribed videos over WebRTC signaling", async ({ page }
     );
     await expect(teachingPage.locator(".remote-health-live")).toHaveCount(3);
     await expect(teachingPage.locator(".diagnostic-state-live")).toHaveCount(3);
+    await expect(page.locator(".peer-diagnostic-state-live")).toHaveCount(1);
+    await expect(teachingPage.locator(".peer-diagnostic-state-live")).toHaveCount(1);
 
     await teachingPage.getByLabel("通道 4 备用").click();
     await expect(teachingPage.getByLabel("通道 4 备用")).toBeChecked();

@@ -283,6 +283,12 @@ input {
   margin: 0;
 }
 
+.subhead {
+  margin: 12px 0 6px;
+  font-size: 13px;
+  color: #435160;
+}
+
 .diagnostic-list div {
   display: grid;
   grid-template-columns: 110px minmax(0, 1fr);
@@ -315,7 +321,8 @@ input {
 }
 
 .diagnostic-state-live,
-.remote-health-live {
+.remote-health-live,
+.peer-diagnostic-state-live {
   background: #e7f7ef;
   color: #16713c;
 }
@@ -323,13 +330,15 @@ input {
 .diagnostic-state-waiting,
 .remote-health-waiting,
 .diagnostic-state-idle,
-.remote-health-idle {
+.remote-health-idle,
+.peer-diagnostic-state-waiting {
   background: #fff5d6;
   color: #7a5600;
 }
 
 .diagnostic-state-ended,
-.remote-health-ended {
+.remote-health-ended,
+.peer-diagnostic-state-ended {
   background: #fde7e7;
   color: #9b1c1c;
 }
