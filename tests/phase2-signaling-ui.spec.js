@@ -1117,6 +1117,10 @@ test("phase 3 UI sends subscribed videos over WebRTC signaling", async ({ page }
       null,
       { timeout: 15000 }
     );
+
+    await page.getByRole("button", { name: "停止媒体链路" }).click();
+    await expect(teachingPage.locator(".remote-health-live")).toHaveCount(0);
+    await expect(teachingPage.locator(".remote-health-waiting")).toHaveCount(4);
   } finally {
     await teachingPage.close();
     await server.stop();
