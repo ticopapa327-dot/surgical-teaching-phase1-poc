@@ -322,6 +322,10 @@ function formatBytes(bytes) {
   return `${size.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
+function clampValue(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
 function formatDuration(ms) {
   if (!ms) return "-";
   const seconds = Math.round(ms / 1000);
@@ -880,6 +884,38 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     if (video) video.srcObject = null;
     setPreviewVersion((value) => value + 1);
     setStatus(`${channel.label} 预览已停止。`);
+  }
+
+  async function adjustCameraControl(channel, control, direction) {
+    const stream = previewStreams.current[channel.id];
+    const track = stream?.getVideoTracks?.()[0];
+    const config = channelConfig[channel.id];
+    const labels = { pan: "云台水平", tilt: "云台垂直", zoom: "镜头变倍" };
+    if (config.sourceMode !== "device" || !track) {
+      setStatus(`${channel.label} 请先切换为 USB/摄像头设备并启动预览，再控制云台或镜头。`);
+      return;
+    }
+    if (!track.getCapabilities || !track.applyConstraints) {
+      setStatus(`${channel.label} 当前浏览器或设备不支持 UVC 云台/镜头控制。`);
+      return;
+    }
+    const capabilities = track.getCapabilities();
+    const capability = capabilities?.[control];
+    if (!capability || !Number.isFinite(capability.min) || !Number.isFinite(capability.max)) {
+      setStatus(`${channel.label} 当前设备不支持${labels[control]}控制。`);
+      return;
+    }
+    const settings = track.getSettings?.() || {};
+    const current = Number.isFinite(settings[control]) ? settings[control] : (capability.min + capability.max) / 2;
+    const step =
+      Number.isFinite(capability.step) && capability.step > 0 ? capability.step : (capability.max - capability.min) / 20;
+    const nextValue = clampValue(current + step * direction, capability.min, capability.max);
+    try {
+      await track.applyConstraints({ advanced: [{ [control]: nextValue }] });
+      setStatus(`${channel.label} ${labels[control]}已调整至 ${Math.round(nextValue * 100) / 100}。`);
+    } catch (error) {
+      setStatus(`${channel.label} ${labels[control]}控制失败：${error.message}`);
+    }
   }
 
   async function getAudioTracksForRecording() {
@@ -2649,6 +2685,26 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
                 ) : (
                   <button onClick={() => startRecording(channel)}>录制本通道</button>
                 )}
+              </div>
+              <div className="ptz-controls" aria-label={`${channel.label} 云台镜头控制`}>
+                <button aria-label={`${channel.label} 云台左`} onClick={() => adjustCameraControl(channel, "pan", -1)}>
+                  ←
+                </button>
+                <button aria-label={`${channel.label} 云台上`} onClick={() => adjustCameraControl(channel, "tilt", 1)}>
+                  ↑
+                </button>
+                <button aria-label={`${channel.label} 云台下`} onClick={() => adjustCameraControl(channel, "tilt", -1)}>
+                  ↓
+                </button>
+                <button aria-label={`${channel.label} 云台右`} onClick={() => adjustCameraControl(channel, "pan", 1)}>
+                  →
+                </button>
+                <button aria-label={`${channel.label} 镜头缩小`} onClick={() => adjustCameraControl(channel, "zoom", -1)}>
+                  −
+                </button>
+                <button aria-label={`${channel.label} 镜头放大`} onClick={() => adjustCameraControl(channel, "zoom", 1)}>
+                  +
+                </button>
               </div>
             </article>
           ))}

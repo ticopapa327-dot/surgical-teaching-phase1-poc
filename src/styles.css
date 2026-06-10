@@ -195,6 +195,19 @@ input {
   align-items: center;
 }
 
+.ptz-controls {
+  display: grid;
+  grid-template-columns: repeat(6, 34px);
+  gap: 6px;
+  margin-top: 8px;
+  align-items: center;
+}
+
+.ptz-controls button {
+  min-width: 34px;
+  padding: 6px 0;
+}
+
 .side-panel {
   display: flex;
   flex-direction: column;
