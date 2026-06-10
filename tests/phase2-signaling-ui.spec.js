@@ -169,6 +169,7 @@ test("phase 2 UI connects to signaling server and enters accepted session", asyn
     const snapshot = JSON.parse(copiedText);
     assert.equal(snapshot.diagnostic.eventRefresh, "ok");
     assert.equal(snapshot.session.id, annotation.payload.session.sessionId);
+    assert(snapshot.recentEvents.some((event) => event.type === "call.accepted"));
     assert(snapshot.recentEvents.some((event) => event.type === "session.started"));
     assert(snapshot.recentEvents.some((event) => event.type === "session.subscription.updated"));
     assert(snapshot.recentEvents.some((event) => event.type === "session.annotation.updated"));

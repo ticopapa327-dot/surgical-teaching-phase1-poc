@@ -606,6 +606,13 @@ function createSignalingServer(options = {}) {
         startedAt: new Date().toISOString()
       };
       sessions.set(session.sessionId, session);
+      recordEvent("call.accepted", {
+        callId: call.callId,
+        sessionId: session.sessionId,
+        byEndpointId: fromEndpoint.endpointId,
+        mode: session.mode,
+        participantLimit: session.participantLimit
+      });
       recordEvent("session.started", {
         sessionId: session.sessionId,
         mode: session.mode,

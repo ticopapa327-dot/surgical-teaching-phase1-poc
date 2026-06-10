@@ -18,7 +18,7 @@
 
 服务端口可通过 `SIGNALING_PORT` 环境变量覆盖。
 如设置 `SIGNALING_AUTH_TOKEN`，客户端注册时必须在 `endpoint.register.payload.authToken` 中提交相同令牌。HTTP `/directory`、`/sessions` 和 `/events` 也必须通过 `Authorization: Bearer <token>` 或 `?authToken=<token>` 提交令牌；`/health` 保持公开，只返回运行状态摘要。该令牌只作为 PoC 共享入口门禁，不替代 TLS、用户身份、权限模型或审计。
-事件日志为内存环形日志，默认保留最近 200 条，可通过 `SIGNALING_EVENT_LOG_LIMIT` 调整到 20 至 1000 条之间。事件只记录控制面摘要，包括注册、呼叫、会话开始、订阅变化、标注变化、离会、结束和 `peer.signal` 摘要；不记录令牌、患者信息、标注正文、SDP、ICE candidate 或媒体数据。
+事件日志为内存环形日志，默认保留最近 200 条，可通过 `SIGNALING_EVENT_LOG_LIMIT` 调整到 20 至 1000 条之间。事件只记录控制面摘要，包括注册、呼叫请求、呼叫接受、会话开始、订阅变化、标注变化、离会、结束和 `peer.signal` 摘要；不记录令牌、患者信息、标注正文、SDP、ICE candidate 或媒体数据。
 `/events` 可选 `limit` 查询参数，例如 `/events?limit=10` 只返回最近 10 条事件；不传 `limit` 时返回当前内存环形日志中的全部事件。
 服务端会按 `SIGNALING_HEARTBEAT_MS` 周期向 WebSocket 客户端发送 ping，默认 30000 ms；客户端未响应 pong 时服务端会终止连接，并按断线规则清理在线目录、待处理呼叫和相关会话参与状态。将该值设为 `0` 可关闭 PoC 心跳。
 
@@ -233,7 +233,7 @@ HTTP `/events` 返回最近控制面事件摘要：
 | `view` | `interactive` | `view` |
 | `view` | `view` | `view` |
 
-服务端向双方发送 `session.started`。默认订阅通道为 `ch1`。
+服务端向双方发送 `session.started`。事件日志会记录 `call.accepted` 和 `session.started`，其中 `call.accepted` 只包含呼叫 ID、会话 ID、接受端、最终模式和参与上限摘要。默认订阅通道为 `ch1`。
 会话 `ownerEndpointId` 优先指向手术室端，用于表达会议参与上限和后续控制权归属；如果双方都不是手术室端，则回退为接收方。
 
 ### 3. 拒绝呼叫

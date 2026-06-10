@@ -254,6 +254,16 @@ async function main() {
   const httpEvents = await getJson(`${httpBase}/events`);
   assert.equal(httpEvents.some((event) => event.type === "endpoint.registered" && event.endpointId === "or-1"), true);
   assert.equal(httpEvents.some((event) => event.type === "call.requested" && event.callId === requested.payload.call.callId), true);
+  assert.equal(
+    httpEvents.some(
+      (event) =>
+        event.type === "call.accepted" &&
+        event.callId === requested.payload.call.callId &&
+        event.sessionId === session.sessionId &&
+        event.byEndpointId === "or-1"
+    ),
+    true
+  );
   assert.equal(httpEvents.some((event) => event.type === "session.started" && event.sessionId === session.sessionId), true);
   debugMark("primary session");
   send(observerClient, "session.list");
