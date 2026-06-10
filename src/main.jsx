@@ -43,6 +43,9 @@ const DEFAULT_APP_CONFIG = {
     id: "or-local",
     name: "手术室端本机",
     role: "operating-room"
+  },
+  webrtc: {
+    iceServers: []
   }
 };
 
@@ -176,6 +179,35 @@ function stableEndpointId(configuredId) {
   }
 }
 
+function normalizeIceServerUrls(urls) {
+  const values = Array.isArray(urls) ? urls : [urls];
+  return values
+    .filter((url) => typeof url === "string")
+    .map((url) => url.trim())
+    .filter((url, index, all) => /^(stun|turns?):/i.test(url) && all.indexOf(url) === index)
+    .slice(0, 8);
+}
+
+function normalizeIceServers(iceServers) {
+  if (!Array.isArray(iceServers)) return [];
+  return iceServers
+    .map((server) => {
+      if (!server || typeof server !== "object") return null;
+      const urls = normalizeIceServerUrls(server.urls);
+      if (!urls.length) return null;
+      const normalized = { urls: urls.length === 1 ? urls[0] : urls };
+      if (typeof server.username === "string" && server.username.trim()) {
+        normalized.username = server.username.trim();
+      }
+      if (typeof server.credential === "string" && server.credential) {
+        normalized.credential = server.credential;
+      }
+      return normalized;
+    })
+    .filter(Boolean)
+    .slice(0, 8);
+}
+
 function normalizeRuntimeConfig(config = {}) {
   const merged = {
     ...DEFAULT_APP_CONFIG,
@@ -183,12 +215,17 @@ function normalizeRuntimeConfig(config = {}) {
     localEndpoint: {
       ...DEFAULT_APP_CONFIG.localEndpoint,
       ...(config.localEndpoint || {})
+    },
+    webrtc: {
+      ...DEFAULT_APP_CONFIG.webrtc,
+      ...(config.webrtc || {})
     }
   };
   if (!merged.signalingUrl || (!isLoopbackHost(window.location.hostname) && isLoopbackSignalingUrl(merged.signalingUrl))) {
     merged.signalingUrl = defaultSignalingUrlForPage();
   }
   merged.localEndpoint.id = stableEndpointId(merged.localEndpoint.id);
+  merged.webrtc.iceServers = normalizeIceServers(merged.webrtc.iceServers);
   return merged;
 }
 
@@ -473,6 +510,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   const [currentPatient, setCurrentPatient] = useState(null);
   const [patientStatus, setPatientStatus] = useState("未绑定患者");
   const [aiJobs, setAiJobs] = useState([]);
+  const webrtcIceServers = initialConfig.webrtc?.iceServers || [];
 
   const [signalingUrl, setSignalingUrl] = useState(initialConfig.signalingUrl);
   const [localEndpointId, setLocalEndpointId] = useState(initialConfig.localEndpoint?.id || DEFAULT_APP_CONFIG.localEndpoint.id);
@@ -1207,7 +1245,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       throw new Error("当前环境不支持 RTCPeerConnection");
     }
 
-    const peerConnection = new RTCPeerConnection({ iceServers: [] });
+    const peerConnection = new RTCPeerConnection({ iceServers: webrtcIceServers });
     mediaPeerConnections.current.set(endpointId, peerConnection);
     ensureMediaStatsPolling();
 
@@ -2320,6 +2358,10 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
               <div>
                 <dt>媒体统计</dt>
                 <dd>{webrtcStatsLabel}</dd>
+              </div>
+              <div>
+                <dt>ICE 服务</dt>
+                <dd>{webrtcIceServers.length ? `${webrtcIceServers.length} 组` : "未配置"}</dd>
               </div>
               <div>
                 <dt>存储目录</dt>

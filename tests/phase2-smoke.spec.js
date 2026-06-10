@@ -7,6 +7,7 @@ test("phase 2 call workflow renders and reaches active interaction state", async
   await expect(page.locator(".channel-card")).toHaveCount(4);
   await expect(page.getByLabel("信令地址")).toHaveValue("ws://127.0.0.1:7077/signal");
   await expect(page.getByLabel("本端 ID")).toHaveValue(/^ust-[a-f0-9-]+$/);
+  await expect(page.locator(".status-list div").filter({ hasText: "ICE 服务" })).toContainText("未配置");
 
   await page.getByRole("button", { name: "启动全部预览" }).click();
   await page.getByRole("button", { name: "模拟 HIS 查询" }).click();

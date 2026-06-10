@@ -5,5 +5,8 @@
     "id": "or-local",
     "name": "手术室端本机",
     "role": "operating-room"
+  },
+  "webrtc": {
+    "iceServers": []
   }
 }

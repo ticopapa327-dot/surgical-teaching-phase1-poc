@@ -108,6 +108,7 @@ npm run dev:lan
 - `localEndpoint.id`：本端终端 ID。默认占位值会自动替换为浏览器本地保存的唯一 ID，避免两台电脑使用同一 `endpointId` 互相顶号。
 - `localEndpoint.name`：本端显示名称。
 - `localEndpoint.role`：本端角色，支持 `operating-room`、`teaching-room`、`observer`。
+- `webrtc.iceServers`：可选 STUN/TURN 配置数组，默认空数组，适合同一局域网 P2P 测试；跨网段联调时可填入 `{ "urls": "turn:host:3478", "username": "...", "credential": "..." }`。
 
 ## 验证
 
