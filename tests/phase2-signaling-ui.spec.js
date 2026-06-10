@@ -943,7 +943,7 @@ test("phase 2 UI clears signaling session when the user disconnects signaling", 
 
     await page.getByRole("button", { name: "断开" }).click();
     await expect(page.getByText("尚未建立互动连接")).toBeVisible();
-    await expect(page.locator(".status-list dd").filter({ hasText: "未建立" })).toBeVisible();
+    await expect(page.locator(".status-list div", { hasText: "交互音频" }).locator("dd")).toHaveText("未建立");
     await expect(page.locator(".status-list.compact dd").filter({ hasText: "未连接" })).toBeVisible();
     await expect(page.locator(".footer")).toContainText("已清理信令会话状态");
   } finally {
@@ -996,7 +996,7 @@ test("phase 2 UI clears signaling session when server disconnects", async ({ pag
     await server.stop();
     stopped = true;
     await expect(page.getByText("尚未建立互动连接")).toBeVisible();
-    await expect(page.locator(".status-list dd").filter({ hasText: "未建立" })).toBeVisible();
+    await expect(page.locator(".status-list div", { hasText: "交互音频" }).locator("dd")).toHaveText("未建立");
     await expect(page.locator(".status-list.compact dd").filter({ hasText: "0 个终端" })).toBeVisible();
     await expect(healthMetric).toHaveText("-");
     await expect(page.getByLabel("信令目标")).toBeDisabled();
@@ -1004,5 +1004,56 @@ test("phase 2 UI clears signaling session when server disconnects", async ({ pag
   } finally {
     teachingClient.close();
     if (!stopped) await server.stop();
+  }
+});
+
+test("phase 3 UI sends channel 1 video over WebRTC signaling", async ({ page }) => {
+  const server = createSignalingServer({ port: 0 });
+  const address = await server.start();
+  const url = `ws://127.0.0.1:${address.port}/signal`;
+  const teachingPage = await page.context().newPage();
+
+  try {
+    await page.goto("/");
+    await teachingPage.goto("/");
+
+    await page.getByLabel("信令地址").fill(url);
+    await page.getByLabel("本端 ID").fill("or-media-ui");
+    await page.getByLabel("本端名称").fill("Media OR");
+    await page.getByRole("button", { name: "连接信令" }).click();
+    await expect(page.getByText("已注册 Media OR")).toBeVisible();
+
+    await teachingPage.getByLabel("信令地址").fill(url);
+    await teachingPage.getByLabel("本端 ID").fill("teach-media-ui");
+    await teachingPage.getByLabel("本端名称").fill("Media Teaching");
+    await teachingPage.getByLabel("本端角色").selectOption("teaching-room");
+    await teachingPage.getByRole("button", { name: "连接信令" }).click();
+    await expect(teachingPage.getByText("已注册 Media Teaching")).toBeVisible();
+    await expect(page.locator("option[value='teach-media-ui']")).toHaveCount(1);
+
+    await page.getByLabel("信令目标").selectOption("teach-media-ui");
+    await page.getByRole("button", { name: "信令呼叫选中终端" }).click();
+    await expect(teachingPage.getByText("待确认呼叫")).toBeVisible();
+    await teachingPage.getByRole("button", { name: "接受呼叫" }).click();
+
+    await expect(page.locator(".session-list dd").filter({ hasText: "Media Teaching" })).toBeVisible();
+    await expect(teachingPage.locator(".session-list dd").filter({ hasText: "Media OR" })).toBeVisible();
+
+    await page.getByRole("button", { name: "发布通道 1 媒体" }).click();
+    await expect(teachingPage.locator(".status-list dd").filter({ hasText: /收到 Media OR|正在接收 Media OR/ })).toBeVisible({
+      timeout: 15000
+    });
+    await teachingPage.waitForFunction(
+      () => {
+        const video = document.querySelector(".remote-video-tile video");
+        const stream = video?.srcObject;
+        return Boolean(stream?.getVideoTracks?.().some((track) => track.readyState === "live"));
+      },
+      null,
+      { timeout: 15000 }
+    );
+  } finally {
+    await teachingPage.close();
+    await server.stop();
   }
 });

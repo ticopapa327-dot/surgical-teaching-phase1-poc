@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 test("phase 2 call workflow renders and reaches active interaction state", async ({ page }) => {
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: "手术示教 Phase 2 PoC" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "手术示教 Phase 3 PoC" })).toBeVisible();
   await expect(page.locator(".channel-card")).toHaveCount(4);
   await expect(page.getByLabel("信令地址")).toHaveValue("ws://127.0.0.1:7077/signal");
   await expect(page.getByLabel("本端 ID")).toHaveValue("or-local");

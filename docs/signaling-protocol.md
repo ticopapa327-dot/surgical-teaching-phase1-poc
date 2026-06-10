@@ -368,7 +368,7 @@ HTTP `/events` 返回最近控制面事件摘要：
 
 ## 七、WebRTC 协商透传
 
-会话参与方可以发送 `peer.signal`，用于在会话内透传 WebRTC offer、answer 或 ICE candidate。
+会话参与方可以发送 `peer.signal`，用于在会话内透传 WebRTC offer、answer、ICE candidate 或轻量媒体控制消息。
 
 ```json
 {
@@ -377,14 +377,27 @@ HTTP `/events` 返回最近控制面事件摘要：
     "sessionId": "session-...",
     "toEndpointId": "or-1",
     "signal": {
-      "type": "offer",
-      "sdp": "v=0"
+      "kind": "media-offer",
+      "channelId": "ch1",
+      "description": {
+        "type": "offer",
+        "sdp": "v=0"
+      }
     }
   }
 }
 ```
 
 服务端只做会话参与方校验和消息转发，不解析 SDP，不创建 PeerConnection，不转发媒体流。
+
+当前前端使用的 `signal.kind` 约定如下：
+
+| kind | 方向 | 说明 |
+|---|---|---|
+| `media-offer` | 媒体发布端到接收端 | 携带 `channelId` 和 WebRTC offer description。 |
+| `media-answer` | 媒体接收端到发布端 | 携带 `channelId` 和 WebRTC answer description。 |
+| `ice` | 双向 | 携带 ICE candidate。 |
+| `media-stop` | 双向 | 通知对端清理当前 PoC 媒体链路。 |
 
 目标终端会收到：
 
@@ -395,8 +408,12 @@ HTTP `/events` 返回最近控制面事件摘要：
     "sessionId": "session-...",
     "fromEndpointId": "teach-1",
     "signal": {
-      "type": "offer",
-      "sdp": "v=0"
+      "kind": "media-offer",
+      "channelId": "ch1",
+      "description": {
+        "type": "offer",
+        "sdp": "v=0"
+      }
     }
   }
 }

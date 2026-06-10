@@ -346,6 +346,8 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   const [annotationText, setAnnotationText] = useState("请关注术野关键区域");
   const [annotationVisible, setAnnotationVisible] = useState(false);
   const [audioCall, setAudioCall] = useState({ state: "idle", label: "未建立" });
+  const [webrtcMediaState, setWebrtcMediaState] = useState({ state: "idle", label: "未建立" });
+  const [mediaVersion, setMediaVersion] = useState(0);
   const [overLimitNotice, setOverLimitNotice] = useState("");
 
   const videoRefs = useRef({});
@@ -359,6 +361,10 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   const signalingDirectoryRef = useRef([]);
   const activeSessionRef = useRef(null);
   const signalingCloseMessageRef = useRef("");
+  const mediaPeerConnections = useRef(new Map());
+  const mediaPeerChannels = useRef(new Map());
+  const mediaRemoteStreams = useRef({});
+  const pendingMediaIceCandidates = useRef(new Map());
 
   const supportedMimeType = useMemo(getSupportedMimeType, []);
 
@@ -369,6 +375,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     return () => {
       Object.values(previewStreams.current).forEach(stopStream);
       stopStream(interactionAudioStream.current);
+      for (const peerConnection of mediaPeerConnections.current.values()) peerConnection.close();
       signalingSocket.current?.close();
     };
   }, []);
@@ -396,13 +403,13 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     if (!activeSession) return;
     for (const channelId of activeSession.subscribedChannels) {
       const video = remoteVideoRefs.current[channelId];
-      const stream = previewStreams.current[channelId];
+      const stream = remoteStreamForChannel(channelId);
       if (video && video.srcObject !== stream) {
         video.srcObject = stream || null;
         if (stream) video.play().catch(() => {});
       }
     }
-  }, [activeSession, previewVersion, layoutMode]);
+  }, [activeSession, previewVersion, layoutMode, mediaVersion]);
 
   async function refreshRecordings() {
     const items = await api.recordings.list();
@@ -746,6 +753,260 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     setOverLimitNotice("");
   }
 
+  function channelLabelById(channelId) {
+    const channel = CHANNELS.find((item) => item.id === channelId);
+    return channel ? `${channel.label} ${channel.role}` : channelId;
+  }
+
+  function remoteStreamForChannel(channelId) {
+    if (activeSession?.source === "signaling" && mediaRemoteStreams.current[channelId]) {
+      return mediaRemoteStreams.current[channelId];
+    }
+    return previewStreams.current[channelId] || null;
+  }
+
+  function activeRemoteEndpointIds() {
+    const session = activeSessionRef.current;
+    const selfId = signalingEndpointIdRef.current;
+    if (!session?.participantIds) return [];
+    return session.participantIds.filter((endpointId) => endpointId && endpointId !== selfId);
+  }
+
+  function createMediaPeerConnection(endpointId) {
+    const existing = mediaPeerConnections.current.get(endpointId);
+    if (existing && existing.connectionState !== "closed") return existing;
+
+    if (!window.RTCPeerConnection) {
+      throw new Error("当前环境不支持 RTCPeerConnection");
+    }
+
+    const peerConnection = new RTCPeerConnection({ iceServers: [] });
+    mediaPeerConnections.current.set(endpointId, peerConnection);
+
+    peerConnection.onicecandidate = (event) => {
+      if (!event.candidate) return;
+      const session = activeSessionRef.current;
+      if (!session?.id) return;
+      sendSignaling("peer.signal", {
+        sessionId: session.id,
+        toEndpointId: endpointId,
+        signal: {
+          kind: "ice",
+          candidate: event.candidate.toJSON ? event.candidate.toJSON() : event.candidate
+        }
+      });
+    };
+
+    peerConnection.ontrack = (event) => {
+      const stream = event.streams?.[0];
+      if (!stream) return;
+      const channelId = mediaPeerChannels.current.get(endpointId) || "ch1";
+      mediaRemoteStreams.current[channelId] = stream;
+      setMediaVersion((value) => value + 1);
+      setWebrtcMediaState({
+        state: "receiving",
+        label: `收到 ${endpointLabelById(endpointId)} 的 ${channelLabelById(channelId)}`
+      });
+    };
+
+    peerConnection.onconnectionstatechange = () => {
+      const state = peerConnection.connectionState;
+      if (state === "failed" || state === "disconnected") {
+        setWebrtcMediaState({ state: "error", label: `媒体链路${state}` });
+      }
+      if (state === "connected") {
+        setWebrtcMediaState((current) =>
+          current.state === "publishing" || current.state === "receiving"
+            ? current
+            : { state: "connected", label: `已连接 ${endpointLabelById(endpointId)}` }
+        );
+      }
+    };
+
+    return peerConnection;
+  }
+
+  function queueMediaIceCandidate(endpointId, candidate) {
+    const queued = pendingMediaIceCandidates.current.get(endpointId) || [];
+    queued.push(candidate);
+    pendingMediaIceCandidates.current.set(endpointId, queued);
+  }
+
+  function closeMediaPeerConnection(endpointId) {
+    const existing = mediaPeerConnections.current.get(endpointId);
+    if (existing) existing.close();
+    mediaPeerConnections.current.delete(endpointId);
+    mediaPeerChannels.current.delete(endpointId);
+    pendingMediaIceCandidates.current.delete(endpointId);
+  }
+
+  async function addMediaIceCandidate(endpointId, candidate) {
+    if (!candidate) return;
+    const peerConnection = mediaPeerConnections.current.get(endpointId);
+    if (!peerConnection || !peerConnection.remoteDescription) {
+      queueMediaIceCandidate(endpointId, candidate);
+      return;
+    }
+    await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+  }
+
+  async function flushQueuedMediaIceCandidates(endpointId, peerConnection) {
+    const queued = pendingMediaIceCandidates.current.get(endpointId) || [];
+    pendingMediaIceCandidates.current.delete(endpointId);
+    for (const candidate of queued) {
+      await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+    }
+  }
+
+  function cleanupWebRtcMedia(message) {
+    for (const peerConnection of mediaPeerConnections.current.values()) peerConnection.close();
+    mediaPeerConnections.current.clear();
+    mediaPeerChannels.current.clear();
+    mediaRemoteStreams.current = {};
+    pendingMediaIceCandidates.current.clear();
+    setMediaVersion((value) => value + 1);
+    setWebrtcMediaState({ state: "idle", label: "未建立" });
+    if (message) setStatus(message);
+  }
+
+  function stopWebRtcMedia(message = "WebRTC 媒体链路已停止。") {
+    const session = activeSessionRef.current;
+    if (session?.source === "signaling") {
+      for (const endpointId of activeRemoteEndpointIds()) {
+        sendSignaling("peer.signal", {
+          sessionId: session.id,
+          toEndpointId: endpointId,
+          signal: { kind: "media-stop" }
+        });
+      }
+    }
+    cleanupWebRtcMedia(message);
+  }
+
+  async function startWebRtcMedia(channelId = "ch1") {
+    const session = activeSessionRef.current;
+    if (!session || session.source !== "signaling") {
+      setStatus("请先建立信令会话，再发布媒体。");
+      return;
+    }
+    if (localEndpointRole !== "operating-room") {
+      setStatus("当前 PoC 只允许手术室端发布媒体。");
+      return;
+    }
+    const peers = activeRemoteEndpointIds();
+    if (peers.length === 0) {
+      setStatus("当前会话没有可发布媒体的远端参与方。");
+      return;
+    }
+
+    const channel = CHANNELS.find((item) => item.id === channelId);
+    if (!channel) {
+      setStatus(`媒体通道不存在：${channelId}`);
+      return;
+    }
+
+    try {
+      cleanupWebRtcMedia();
+      if (!previewStreams.current[channelId]) {
+        await startPreview(channel);
+      }
+      const stream = previewStreams.current[channelId];
+      if (!stream?.getVideoTracks().length) {
+        throw new Error(`${channelLabelById(channelId)} 没有可发布的视频轨道`);
+      }
+
+      for (const endpointId of peers) {
+        mediaPeerChannels.current.set(endpointId, channelId);
+        const peerConnection = createMediaPeerConnection(endpointId);
+        for (const track of stream.getTracks()) {
+          peerConnection.addTrack(track, stream);
+        }
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+        sendSignaling("peer.signal", {
+          sessionId: session.id,
+          toEndpointId: endpointId,
+          signal: {
+            kind: "media-offer",
+            channelId,
+            description: peerConnection.localDescription
+          }
+        });
+      }
+
+      setWebrtcMediaState({
+        state: "publishing",
+        label: `正在发布 ${channelLabelById(channelId)} 至 ${peers.length} 个远端`
+      });
+      setStatus(`${channelLabelById(channelId)} WebRTC 媒体发布已发起。`);
+    } catch (error) {
+      cleanupWebRtcMedia();
+      setWebrtcMediaState({ state: "error", label: error.message });
+      setStatus(`WebRTC 媒体发布失败：${error.message}`);
+    }
+  }
+
+  async function handlePeerSignal(payload = {}) {
+    try {
+      const session = activeSessionRef.current;
+      if (!session || session.source !== "signaling") return;
+      if (payload.sessionId && payload.sessionId !== session.id) return;
+      const fromEndpointId = payload.fromEndpointId;
+      const signal = payload.signal || {};
+      if (!fromEndpointId || !signal.kind) return;
+
+      if (signal.kind === "media-offer") {
+        const channelId = signal.channelId || "ch1";
+        mediaPeerChannels.current.set(fromEndpointId, channelId);
+        closeMediaPeerConnection(fromEndpointId);
+        mediaPeerChannels.current.set(fromEndpointId, channelId);
+        const peerConnection = createMediaPeerConnection(fromEndpointId);
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(signal.description));
+        await flushQueuedMediaIceCandidates(fromEndpointId, peerConnection);
+        const answer = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answer);
+        sendSignaling("peer.signal", {
+          sessionId: session.id,
+          toEndpointId: fromEndpointId,
+          signal: {
+            kind: "media-answer",
+            channelId,
+            description: peerConnection.localDescription
+          }
+        });
+        setWebrtcMediaState({
+          state: "receiving",
+          label: `正在接收 ${endpointLabelById(fromEndpointId)} 的 ${channelLabelById(channelId)}`
+        });
+        return;
+      }
+
+      if (signal.kind === "media-answer") {
+        const peerConnection = mediaPeerConnections.current.get(fromEndpointId);
+        if (!peerConnection) return;
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(signal.description));
+        await flushQueuedMediaIceCandidates(fromEndpointId, peerConnection);
+        setWebrtcMediaState({
+          state: "publishing",
+          label: `媒体链路已协商：${endpointLabelById(fromEndpointId)}`
+        });
+        return;
+      }
+
+      if (signal.kind === "ice") {
+        await addMediaIceCandidate(fromEndpointId, signal.candidate);
+        return;
+      }
+
+      if (signal.kind === "media-stop") {
+        cleanupWebRtcMedia(`${endpointLabelById(fromEndpointId)} 已停止媒体链路。`);
+      }
+    } catch (error) {
+      setWebrtcMediaState({ state: "error", label: error.message });
+      setStatus(`WebRTC 协商失败：${error.message}`);
+    }
+  }
+
   function handleSignalingMessage(message) {
     const { type, payload = {} } = message;
     if (type === "endpoint.registered") {
@@ -831,6 +1092,11 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
 
     if (type === "session.updated" || type === "session.subscribed" || type === "session.annotation.updated") {
       applySignalingSession(payload.session);
+      return;
+    }
+
+    if (type === "peer.signal") {
+      handlePeerSignal(payload);
       return;
     }
 
@@ -947,7 +1213,10 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
         signalingSocket.current = null;
         setPendingCall(null);
         activeSessionRef.current = null;
-        if (sessionWasSignaling) stopInteractionAudio();
+        if (sessionWasSignaling) {
+          stopInteractionAudio();
+          cleanupWebRtcMedia();
+        }
         setActiveSession((session) => (session?.source === "signaling" ? null : session));
         setOverLimitNotice("");
         setSignalingDirectory([]);
@@ -967,7 +1236,10 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     signalingCloseMessageRef.current = "";
     setPendingCall(null);
     activeSessionRef.current = null;
-    if (sessionWasSignaling) stopInteractionAudio();
+    if (sessionWasSignaling) {
+      stopInteractionAudio();
+      cleanupWebRtcMedia();
+    }
     setActiveSession((session) => (session?.source === "signaling" ? null : session));
     setOverLimitNotice("");
     setSignalingDirectory([]);
@@ -1049,10 +1321,10 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     if (!activeSession) return;
     const channel = CHANNELS.find((item) => item.id === channelId);
     if (!channel) return;
-    if (!previewStreams.current[channelId]) {
+    if (!remoteStreamForChannel(channelId)) {
       await startPreview(channel);
     }
-    const stream = previewStreams.current[channelId];
+    const stream = remoteStreamForChannel(channelId);
     const targetDisplay = displayTargets.find((display) => String(display.id) === selectedDisplayId);
     const targetArea = targetDisplay?.workArea || targetDisplay?.bounds;
     const width = targetArea?.width ? Math.max(640, Math.min(1280, Math.trunc(targetArea.width))) : 960;
@@ -1182,6 +1454,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
 
   function clearLocalSession(message = "互动连接已结束。") {
     stopInteractionAudio();
+    cleanupWebRtcMedia();
     activeSessionRef.current = null;
     setActiveSession(null);
     setAnnotationVisible(false);
@@ -1318,8 +1591,8 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     <div className="app-shell">
       <header className="topbar">
         <div>
-          <h1>手术示教 Phase 2 PoC</h1>
-          <p>4 路采集录制稳定性已通过，当前验证呼叫、互动、按需拉流、布局和会议上限。</p>
+          <h1>手术示教 Phase 3 PoC</h1>
+          <p>4 路采集录制和信令控制已通过，当前验证单路 WebRTC 远端视频链路。</p>
         </div>
         <div className="top-actions">
           <button onClick={requestDevicePermissionAndRefresh}>授权并刷新设备</button>
@@ -1416,7 +1689,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
                 </option>
               ))}
             </select>
-            <p className="hint">阶段 2 的音频通话使用本地音频采集验证回声消除约束，真实远端通话需接入媒体服务后复测。</p>
+            <p className="hint">当前阶段已接入单路 WebRTC 视频 PoC；音频通话仍使用本地采集验证回声消除约束。</p>
           </section>
 
           <section className="panel-block">
@@ -1433,6 +1706,10 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
               <div>
                 <dt>交互音频</dt>
                 <dd>{audioCall.label}</dd>
+              </div>
+              <div>
+                <dt>媒体链路</dt>
+                <dd>{webrtcMediaState.label}</dd>
               </div>
               <div>
                 <dt>存储目录</dt>
@@ -1651,7 +1928,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
                 加入信令会话
               </button>
             </div>
-            <p className="hint">该面板只验证 C/S 控制面，音视频媒体仍由本地预览流模拟。</p>
+            <p className="hint">该面板负责 C/S 控制面；真实媒体当前只验证通道 1 的浏览器 WebRTC P2P 链路。</p>
           </section>
 
           <section className="panel-block">
@@ -1769,6 +2046,18 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
               </button>
               <button onClick={stopInteractionAudio} disabled={audioCall.state !== "connected"}>
                 停止音频
+              </button>
+              <button
+                onClick={() => startWebRtcMedia("ch1")}
+                disabled={!activeSession || activeSession.source !== "signaling" || localEndpointRole !== "operating-room"}
+              >
+                发布通道 1 媒体
+              </button>
+              <button
+                onClick={() => stopWebRtcMedia()}
+                disabled={webrtcMediaState.state === "idle"}
+              >
+                停止媒体链路
               </button>
             </div>
             {overLimitNotice && <p className="notice">{overLimitNotice}</p>}
