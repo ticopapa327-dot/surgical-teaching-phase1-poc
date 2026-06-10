@@ -1,5 +1,7 @@
 # 手术示教软件 PoC
 
+[![CI](https://github.com/ticopapa327-dot/surgical-teaching-phase1-poc/actions/workflows/ci.yml/badge.svg)](https://github.com/ticopapa327-dot/surgical-teaching-phase1-poc/actions/workflows/ci.yml)
+
 这是手术示教软件的 Windows 桌面 PoC 工程，当前覆盖阶段 1、阶段 2 与阶段 3 初步媒体链路的核心验证内容。
 
 ## 当前能力
