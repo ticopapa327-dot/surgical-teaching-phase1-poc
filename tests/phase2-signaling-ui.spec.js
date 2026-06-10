@@ -1162,6 +1162,19 @@ test("phase 3 UI sends subscribed videos over WebRTC signaling", async ({ page }
     await expectPeerDiagnosticLiveCount(page, 1);
     await expectPeerDiagnosticLiveCount(teachingPage, 1);
     await expectMediaStatsIncludesVideo(teachingPage);
+    await teachingPage.getByRole("button", { name: "复制诊断快照" }).click();
+    const teachingSnapshot = JSON.parse(await teachingPage.getByLabel("诊断快照").inputValue());
+    const mediaMetric = teachingSnapshot.media.statsMetrics.find((item) => item.endpointId === "or-media-ui");
+    expect(mediaMetric).toBeTruthy();
+    expect(Object.keys(mediaMetric.video).sort()).toEqual([
+      "packetsLost",
+      "packetsReceived",
+      "packetsSent",
+      "receiveBitrateBps",
+      "sendBitrateBps"
+    ]);
+    expect(Object.keys(mediaMetric.audio).sort()).toEqual(["bufferMs", "jitterMs"]);
+    expect(Object.keys(mediaMetric.network).sort()).toEqual(["iceRoute", "rttMs"]);
     await page.getByRole("button", { name: "刷新事件" }).click();
     await expect(page.locator(".signal-event").filter({ hasText: "peer.signal.forwarded" }).first()).toBeVisible();
 

@@ -232,6 +232,7 @@ test("diagnostic snapshot copies operational state without signaling token", asy
   expect(snapshot.signaling.url).toBe("ws://127.0.0.1:7077/signal");
   expect(snapshot.signaling.tokenConfigured).toBe(true);
   expect(snapshot.media.iceServerCount).toBe(1);
+  expect(snapshot.media.statsMetrics).toEqual([]);
   expect(snapshot.status).toBeUndefined();
   expect(snapshot.channels).toHaveLength(4);
   expect(snapshot.channels[0]).toMatchObject({

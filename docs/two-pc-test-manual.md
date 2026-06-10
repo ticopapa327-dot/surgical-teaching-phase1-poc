@@ -377,7 +377,7 @@ Test-NetConnection <PC-A局域网IP> -Port 7077
 
 如果 PC-B 直接打开 `http://192.168.1.118:5173`，浏览器可能因为非安全 HTTP 来源禁止采集 PC-B 本地麦克风，此时 PC-B 可以接收手术室端音频，但不一定能向手术室端发言。需要双端发言时，PC-B 应本机运行前端并用 `http://127.0.0.1:5173` 打开，或改用 HTTPS / Electron 客户端。
 
-出现黑屏、音频无声或延迟明显时，两端分别点击“复制诊断快照”，把快照文本保存到测试记录。已连接信令时，复制前会自动尝试刷新最近信令事件。快照用于比对本端 ID、信令连接、会话参与方、通道源模式、预览状态、音频诊断、媒体统计、PeerConnection 摘要和最近信令事件；快照不包含信令令牌、设备 ID、SDP、ICE candidate 原文、患者信息或媒体数据。
+出现黑屏、音频无声或延迟明显时，两端分别点击“复制诊断快照”，把快照文本保存到测试记录。已连接信令时，复制前会自动尝试刷新最近信令事件。快照用于比对本端 ID、信令连接、会话参与方、通道源模式、预览状态、音频诊断、媒体统计、结构化 WebRTC 指标、PeerConnection 摘要和最近信令事件；快照不包含信令令牌、设备 ID、SDP、ICE candidate 原文、患者信息或媒体数据。
 
 如果音频能听到但延时明显，先排除以下因素：
 
@@ -582,7 +582,7 @@ http://<PC-A局域网IP>:7077/events?limit=10
 5. PC-A 点击“刷新事件”，确认存在从 PC-A 到 PC-B 的 `peer.signal.forwarded` / `media-offer`，并且摘要里有订阅通道和轨道数；再确认有 PC-B 到 PC-A 的 `media-answer`。如果只有呼叫事件，没有 `media-offer`，优先检查 PC-A 是否点击了“发布订阅通道媒体”以及本端角色是否为手术室端。
 6. 两台电脑是否在同一局域网；当前 PoC 默认未配置 STUN/TURN，不保证跨 NAT、VPN 或复杂路由可用。如需跨网段联调，应先在 `public/config.json` 配置 `webrtc.iceServers`。
 7. 浏览器控制台是否出现 `WebRTC 协商失败`、`ICE` 或 `RTCPeerConnection` 相关错误。
-8. 两端分别点击“复制诊断快照”，确认 PC-A 快照的 `media.peerConnections` 有 PC-B，PC-B 快照的 `media.stats` 有视频码率或 ICE 路由，`recentEvents` 中存在 `media-offer`、`media-answer` 和 `ice` 摘要。
+8. 两端分别点击“复制诊断快照”，确认 PC-A 快照的 `media.peerConnections` 有 PC-B，PC-B 快照的 `media.stats` 和 `media.statsMetrics` 有视频码率、包计数或 ICE 路由，`recentEvents` 中存在 `media-offer`、`media-answer` 和 `ice` 摘要。
 
 如果发布中继续勾选通道 2 至通道 4 后仍看不到真实远端画面，优先检查 PC-B“媒体诊断”是否仍停留在“等待远端”，以及“连接诊断”里的连接、ICE 和协商状态；正常情况下 PC-A 不需要再次点击“发布订阅通道媒体”。
 

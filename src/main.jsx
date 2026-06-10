@@ -640,6 +640,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   const [audioCall, setAudioCall] = useState({ state: "idle", label: "未建立" });
   const [webrtcMediaState, setWebrtcMediaState] = useState({ state: "idle", label: "未建立" });
   const [webrtcStatsLabel, setWebrtcStatsLabel] = useState("-");
+  const [webrtcStatsMetrics, setWebrtcStatsMetrics] = useState([]);
   const [mediaVersion, setMediaVersion] = useState(0);
   const [overLimitNotice, setOverLimitNotice] = useState("");
   const [diagnosticSnapshot, setDiagnosticSnapshot] = useState("");
@@ -1545,6 +1546,10 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     return `${Math.round(value)} bps`;
   }
 
+  function metricNumber(value) {
+    return Number.isFinite(value) ? Math.max(0, Math.round(value)) : null;
+  }
+
   function candidateTypeLabel(candidate) {
     return typeof candidate?.candidateType === "string" && candidate.candidateType ? candidate.candidateType : "-";
   }
@@ -1564,6 +1569,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
 
   async function updateWebRtcStats() {
     const values = [];
+    const metrics = [];
     for (const [endpointId, peerConnection] of mediaPeerConnections.current.entries()) {
       if (peerConnection.connectionState === "closed") continue;
       try {
@@ -1628,6 +1634,25 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
             }
           }
         });
+        metrics.push({
+          endpointId,
+          endpointName: endpointLabelById(endpointId),
+          video: {
+            sendBitrateBps: metricNumber(hasOutboundVideoBitrate ? outboundVideoBitrateBps : null),
+            receiveBitrateBps: metricNumber(hasInboundVideoBitrate ? inboundVideoBitrateBps : null),
+            packetsSent: hasVideoPacketsSent ? videoPacketsSent : null,
+            packetsReceived: hasVideoPacketsReceived ? videoPacketsReceived : null,
+            packetsLost: hasVideoPacketsLost ? videoPacketsLost : null
+          },
+          audio: {
+            bufferMs: metricNumber(audioBufferMs),
+            jitterMs: metricNumber(audioJitterMs)
+          },
+          network: {
+            rttMs: metricNumber(rttMs),
+            iceRoute: iceRouteLabel
+          }
+        });
         values.push(
           `${endpointLabelById(endpointId)}：视频 发送 ${formatBitrate(
             hasOutboundVideoBitrate ? outboundVideoBitrateBps : null
@@ -1640,10 +1665,16 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
           )} / RTT ${formatMs(rttMs)} / ICE ${iceRouteLabel}`
         );
       } catch {
+        metrics.push({
+          endpointId,
+          endpointName: endpointLabelById(endpointId),
+          error: "统计读取失败"
+        });
         values.push(`${endpointLabelById(endpointId)}：统计读取失败`);
       }
     }
     setWebrtcStatsLabel(values.length ? values.join("；") : "-");
+    setWebrtcStatsMetrics(metrics);
   }
 
   function ensureMediaStatsPolling() {
@@ -1658,6 +1689,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       mediaStatsTimer.current = null;
     }
     setWebrtcStatsLabel("-");
+    setWebrtcStatsMetrics([]);
   }
 
   async function setLowLatencyLocalDescription(peerConnection, description) {
@@ -2894,6 +2926,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
         state: webrtcMediaState.state,
         label: webrtcMediaState.label,
         stats: webrtcStatsLabel,
+        statsMetrics: webrtcStatsMetrics,
         iceServerCount: webrtcIceServers.length,
         diagnostics: remoteMediaDiagnostics.map((item) => ({
           channelId: item.channelId,
