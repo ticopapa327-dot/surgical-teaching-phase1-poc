@@ -31,9 +31,9 @@ function close(server) {
   });
 }
 
-function runLanDevCheck(env) {
+function runLanDev(args, env) {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, ["scripts/start-lan-dev.cjs", "--check"], {
+    const child = spawn(process.execPath, ["scripts/start-lan-dev.cjs", ...args], {
       cwd: rootDir,
       env: { ...process.env, ...env },
       stdio: ["ignore", "pipe", "pipe"]
@@ -54,7 +54,7 @@ function runLanDevCheck(env) {
 
 const signalingPort = await getFreePort();
 const webPort = await getFreePort();
-const success = await runLanDevCheck({
+const success = await runLanDev(["--check"], {
   SIGNALING_HOST: "127.0.0.1",
   SIGNALING_PORT: String(signalingPort),
   UST_WEB_HOST: "127.0.0.1",
@@ -69,12 +69,26 @@ assert.match(success.stdout, new RegExp(`http://127\\.0\\.0\\.1:${webPort}`));
 assert.match(success.stdout, /Preferred adapter filter: wired-test-adapter/);
 assert.match(success.stdout, /Port check: OK/);
 
+const smokeSignalingPort = await getFreePort();
+const smokeWebPort = await getFreePort();
+const smoke = await runLanDev(["--smoke"], {
+  SIGNALING_HOST: "127.0.0.1",
+  SIGNALING_PORT: String(smokeSignalingPort),
+  UST_WEB_HOST: "127.0.0.1",
+  UST_WEB_PORT: String(smokeWebPort)
+});
+
+assert.equal(smoke.code, 0, `${smoke.stdout}\n${smoke.stderr}`);
+assert.match(smoke.stdout, /Services ready/);
+assert.match(smoke.stdout, new RegExp(`ws://127\\.0\\.0\\.1:${smokeSignalingPort}/signal`));
+assert.match(smoke.stdout, new RegExp(`http://127\\.0\\.0\\.1:${smokeWebPort}`));
+
 const occupiedPort = await getFreePort();
 const occupiedServer = net.createServer();
 await listen(occupiedServer, occupiedPort);
 try {
   const freeWebPort = await getFreePort();
-  const failure = await runLanDevCheck({
+  const failure = await runLanDev(["--check"], {
     SIGNALING_HOST: "127.0.0.1",
     SIGNALING_PORT: String(occupiedPort),
     UST_WEB_HOST: "127.0.0.1",
