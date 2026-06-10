@@ -10,6 +10,7 @@ const signalingHost = process.env.SIGNALING_HOST || "0.0.0.0";
 const signalingPort = Number(process.env.SIGNALING_PORT || 7077);
 const webHost = process.env.UST_WEB_HOST || "0.0.0.0";
 const webPort = Number(process.env.UST_WEB_PORT || 5173);
+const preferredAdapterName = String(process.env.UST_PREFERRED_ADAPTER || "").trim();
 const viteBin = path.join(path.dirname(require.resolve("vite/package.json")), "bin", "vite.js");
 
 let shuttingDown = false;
@@ -38,8 +39,13 @@ function isLikelyVirtualAdapter(name) {
   return /virtual|vethernet|vmware|hyper-v|wsl|vpn|cmy/i.test(name);
 }
 
+function isPreferredAdapter(name) {
+  return Boolean(preferredAdapterName) && name.toLowerCase().includes(preferredAdapterName.toLowerCase());
+}
+
 function addressPriority(item) {
   let score = 0;
+  if (preferredAdapterName) score += isPreferredAdapter(item.name) ? -50 : 50;
   if (!isPrivateIPv4(item.address)) score += 20;
   if (isLikelyVirtualAdapter(item.name)) score += 10;
   return score;
@@ -96,12 +102,14 @@ function printAccessInfo(addresses) {
   console.log("UST LAN test service configuration");
   console.log(`Signaling bind: ws://${signalingHost}:${signalingPort}/signal`);
   console.log(`Web bind:       http://${webHost}:${webPort}`);
+  if (preferredAdapterName) console.log(`Preferred adapter filter: ${preferredAdapterName}`);
   console.log("");
   if (!addresses.length) {
     console.log("No non-loopback IPv4 address detected. Check the active LAN adapter.");
   }
   for (const [index, item] of addresses.entries()) {
-    console.log(`Adapter: ${item.name}${index === 0 ? " (recommended)" : ""}`);
+    const labels = [index === 0 ? "recommended" : "", isPreferredAdapter(item.name) ? "preferred" : ""].filter(Boolean);
+    console.log(`Adapter: ${item.name}${labels.length ? ` (${labels.join(", ")})` : ""}`);
     console.log(`  LAN URL: http://${item.address}:${webPort}`);
     console.log(`  Signal:  ws://${item.address}:${signalingPort}/signal`);
   }

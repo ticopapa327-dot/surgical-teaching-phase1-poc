@@ -58,13 +58,15 @@ const success = await runLanDevCheck({
   SIGNALING_HOST: "127.0.0.1",
   SIGNALING_PORT: String(signalingPort),
   UST_WEB_HOST: "127.0.0.1",
-  UST_WEB_PORT: String(webPort)
+  UST_WEB_PORT: String(webPort),
+  UST_PREFERRED_ADAPTER: "wired-test-adapter"
 });
 
 assert.equal(success.code, 0, `${success.stdout}\n${success.stderr}`);
 assert.match(success.stdout, /UST LAN test service configuration/);
 assert.match(success.stdout, new RegExp(`ws://127\\.0\\.0\\.1:${signalingPort}/signal`));
 assert.match(success.stdout, new RegExp(`http://127\\.0\\.0\\.1:${webPort}`));
+assert.match(success.stdout, /Preferred adapter filter: wired-test-adapter/);
 assert.match(success.stdout, /Port check: OK/);
 
 const occupiedPort = await getFreePort();

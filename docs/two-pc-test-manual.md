@@ -112,6 +112,16 @@ Port check: OK
 Services ready. Keep this terminal open during the two-PC test.
 ```
 
+如果 PC-A 有多块网卡，可用网卡名称片段优先推荐有线网卡，例如：
+
+```powershell
+$env:UST_PREFERRED_ADAPTER="以太网"
+npm run dev:lan:check
+npm run dev:lan
+```
+
+该设置只影响输出中推荐地址的排序；服务仍默认绑定 `0.0.0.0`，不会限制其他网卡访问。
+
 开发自检时可使用 `npm run dev:lan:smoke`，该命令启动服务并在 ready 探测通过后自动退出；正式双机测试仍使用 `npm run dev:lan` 并保持窗口打开。
 
 如果需要分开启动，也可以在 PC-A 执行：
