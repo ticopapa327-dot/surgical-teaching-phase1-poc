@@ -408,6 +408,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
 
   const videoRefs = useRef({});
   const remoteVideoRefs = useRef({});
+  const remoteAudioRefs = useRef({});
   const previewStreams = useRef({});
   const activeRecorders = useRef({});
   const pendingWrites = useRef({});
@@ -420,6 +421,8 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   const mediaPeerConnections = useRef(new Map());
   const mediaPeerChannels = useRef(new Map());
   const mediaRemoteStreams = useRef({});
+  const mediaRemoteAudioStreams = useRef({});
+  const localAudioSenders = useRef(new Map());
   const pendingMediaIceCandidates = useRef(new Map());
 
   const supportedMimeType = useMemo(getSupportedMimeType, []);
@@ -466,6 +469,19 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       }
     }
   }, [activeSession, previewVersion, layoutMode, mediaVersion]);
+
+  useEffect(() => {
+    if (!activeSession?.participantIds) return;
+    const selfId = signalingEndpointIdRef.current;
+    for (const endpointId of activeSession.participantIds.filter((id) => id !== selfId)) {
+      const audio = remoteAudioRefs.current[endpointId];
+      const stream = mediaRemoteAudioStreams.current[endpointId];
+      if (audio && audio.srcObject !== stream) {
+        audio.srcObject = stream || null;
+        if (stream) audio.play().catch(() => {});
+      }
+    }
+  }, [activeSession, mediaVersion]);
 
   async function refreshRecordings() {
     const items = await api.recordings.list();
@@ -863,6 +879,64 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     return session.participantIds.filter((endpointId) => endpointId && endpointId !== selfId);
   }
 
+  async function ensureInteractionAudioStream() {
+    if (interactionAudioStream.current?.getAudioTracks().some((track) => track.readyState === "live")) {
+      return interactionAudioStream.current;
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error("当前页面不支持麦克风采集");
+    }
+    if (!window.isSecureContext) {
+      throw new Error("当前页面不是安全上下文，不能采集本地麦克风；示教室端如需发言请使用本机 127.0.0.1 或 HTTPS");
+    }
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: false,
+      audio: {
+        deviceId: audioDeviceId ? { exact: audioDeviceId } : undefined,
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      }
+    });
+    interactionAudioStream.current = stream;
+    setAudioCall({
+      state: "connected",
+      label: `本地音频已建立，轨道 ${stream.getAudioTracks().length} 路`
+    });
+    return stream;
+  }
+
+  async function addInteractionAudioToPeerConnection(peerConnection, endpointId) {
+    if (activeSessionRef.current?.mode !== "interactive") return false;
+    const stream = await ensureInteractionAudioStream();
+    const senders = localAudioSenders.current.get(endpointId) || [];
+    const existingTracks = new Set(peerConnection.getSenders().map((sender) => sender.track).filter(Boolean));
+    for (const track of stream.getAudioTracks()) {
+      if (existingTracks.has(track)) continue;
+      senders.push(peerConnection.addTrack(track, stream));
+    }
+    localAudioSenders.current.set(endpointId, senders);
+    return stream.getAudioTracks().length > 0;
+  }
+
+  async function renegotiatePeerConnection(endpointId, channelId = "ch1") {
+    const session = activeSessionRef.current;
+    const peerConnection = mediaPeerConnections.current.get(endpointId);
+    if (!session?.id || !peerConnection) return;
+    const offer = await peerConnection.createOffer();
+    await peerConnection.setLocalDescription(offer);
+    sendSignaling("peer.signal", {
+      sessionId: session.id,
+      toEndpointId: endpointId,
+      signal: {
+        kind: "media-offer",
+        channelId,
+        description: peerConnection.localDescription
+      }
+    });
+  }
+
   function createMediaPeerConnection(endpointId) {
     const existing = mediaPeerConnections.current.get(endpointId);
     if (existing && existing.connectionState !== "closed") return existing;
@@ -892,12 +966,25 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       const stream = event.streams?.[0];
       if (!stream) return;
       const channelId = mediaPeerChannels.current.get(endpointId) || "ch1";
-      mediaRemoteStreams.current[channelId] = stream;
+      if (event.track.kind === "video") {
+        mediaRemoteStreams.current[channelId] = stream;
+        setWebrtcMediaState({
+          state: "receiving",
+          label: `收到 ${endpointLabelById(endpointId)} 的 ${channelLabelById(channelId)}`
+        });
+      }
+      if (event.track.kind === "audio") {
+        const audioStream = mediaRemoteAudioStreams.current[endpointId] || new MediaStream();
+        if (!audioStream.getTracks().includes(event.track)) {
+          audioStream.addTrack(event.track);
+        }
+        mediaRemoteAudioStreams.current[endpointId] = audioStream;
+        setAudioCall({
+          state: "connected",
+          label: `已接收 ${endpointLabelById(endpointId)} 的远端音频`
+        });
+      }
       setMediaVersion((value) => value + 1);
-      setWebrtcMediaState({
-        state: "receiving",
-        label: `收到 ${endpointLabelById(endpointId)} 的 ${channelLabelById(channelId)}`
-      });
     };
 
     peerConnection.onconnectionstatechange = () => {
@@ -928,6 +1015,8 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     if (existing) existing.close();
     mediaPeerConnections.current.delete(endpointId);
     mediaPeerChannels.current.delete(endpointId);
+    localAudioSenders.current.delete(endpointId);
+    delete mediaRemoteAudioStreams.current[endpointId];
     pendingMediaIceCandidates.current.delete(endpointId);
   }
 
@@ -954,9 +1043,14 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     mediaPeerConnections.current.clear();
     mediaPeerChannels.current.clear();
     mediaRemoteStreams.current = {};
+    mediaRemoteAudioStreams.current = {};
+    localAudioSenders.current.clear();
     pendingMediaIceCandidates.current.clear();
     setMediaVersion((value) => value + 1);
     setWebrtcMediaState({ state: "idle", label: "未建立" });
+    if (!interactionAudioStream.current) {
+      setAudioCall({ state: "idle", label: "未建立" });
+    }
     if (message) setStatus(message);
   }
 
@@ -1006,30 +1100,34 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
         throw new Error(`${channelLabelById(channelId)} 没有可发布的视频轨道`);
       }
 
+      let audioAttached = false;
+      const audioErrors = [];
       for (const endpointId of peers) {
         mediaPeerChannels.current.set(endpointId, channelId);
         const peerConnection = createMediaPeerConnection(endpointId);
         for (const track of stream.getTracks()) {
           peerConnection.addTrack(track, stream);
         }
-        const offer = await peerConnection.createOffer();
-        await peerConnection.setLocalDescription(offer);
-        sendSignaling("peer.signal", {
-          sessionId: session.id,
-          toEndpointId: endpointId,
-          signal: {
-            kind: "media-offer",
-            channelId,
-            description: peerConnection.localDescription
+        if (session.mode === "interactive") {
+          try {
+            audioAttached = (await addInteractionAudioToPeerConnection(peerConnection, endpointId)) || audioAttached;
+          } catch (error) {
+            audioErrors.push(error.message);
+            setAudioCall({ state: "error", label: error.message });
           }
-        });
+        }
+        await renegotiatePeerConnection(endpointId, channelId);
       }
 
       setWebrtcMediaState({
         state: "publishing",
         label: `正在发布 ${channelLabelById(channelId)} 至 ${peers.length} 个远端`
       });
-      setStatus(`${channelLabelById(channelId)} WebRTC 媒体发布已发起。`);
+      setStatus(
+        `${channelLabelById(channelId)} WebRTC 媒体发布已发起${
+          audioAttached ? "，交互音频已随同发布" : ""
+        }${audioErrors.length ? `；音频未加入：${Array.from(new Set(audioErrors)).join("；")}` : ""}。`
+      );
     } catch (error) {
       cleanupWebRtcMedia();
       setWebrtcMediaState({ state: "error", label: error.message });
@@ -1054,6 +1152,14 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
         const peerConnection = createMediaPeerConnection(fromEndpointId);
         await peerConnection.setRemoteDescription(new RTCSessionDescription(signal.description));
         await flushQueuedMediaIceCandidates(fromEndpointId, peerConnection);
+        if (session.mode === "interactive") {
+          try {
+            await addInteractionAudioToPeerConnection(peerConnection, fromEndpointId);
+          } catch (error) {
+            setAudioCall({ state: "error", label: error.message });
+            setStatus(`本地麦克风未加入 WebRTC 音频：${error.message}`);
+          }
+        }
         const answer = await peerConnection.createAnswer();
         await peerConnection.setLocalDescription(answer);
         sendSignaling("peer.signal", {
@@ -1604,23 +1710,29 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       setStatus("当前不是交互模式，不能建立双向音频。");
       return;
     }
-    stopInteractionAudio();
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: false,
-        audio: {
-          deviceId: audioDeviceId ? { exact: audioDeviceId } : undefined,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
+      const stream = await ensureInteractionAudioStream();
+      const renegotiatedPeers = [];
+      if (activeSession.source === "signaling") {
+        for (const endpointId of activeRemoteEndpointIds()) {
+          const peerConnection = mediaPeerConnections.current.get(endpointId);
+          if (!peerConnection) continue;
+          await addInteractionAudioToPeerConnection(peerConnection, endpointId);
+          await renegotiatePeerConnection(endpointId, mediaPeerChannels.current.get(endpointId) || "ch1");
+          renegotiatedPeers.push(endpointId);
         }
-      });
-      interactionAudioStream.current = stream;
+      }
       setAudioCall({
         state: "connected",
-        label: `已建立，本地音频轨道 ${stream.getAudioTracks().length} 路`
+        label: `已建立，本地音频轨道 ${stream.getAudioTracks().length} 路${
+          renegotiatedPeers.length ? "，已加入 WebRTC" : ""
+        }`
       });
-      setStatus("交互音频已建立，已启用回声消除、噪声抑制和自动增益约束。");
+      setStatus(
+        renegotiatedPeers.length
+          ? `交互音频已加入 ${renegotiatedPeers.length} 条 WebRTC 媒体链路。`
+          : "交互音频已建立，已启用回声消除、噪声抑制和自动增益约束；当前尚无 WebRTC 媒体链路。"
+      );
     } catch (error) {
       setAudioCall({ state: "error", label: error.message });
       setStatus(`交互音频建立失败：${error.message}`);
@@ -1628,6 +1740,18 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   }
 
   function stopInteractionAudio() {
+    for (const [endpointId, senders] of localAudioSenders.current.entries()) {
+      const peerConnection = mediaPeerConnections.current.get(endpointId);
+      if (!peerConnection) continue;
+      for (const sender of senders) {
+        try {
+          peerConnection.removeTrack(sender);
+        } catch {
+          // Ignore already-removed senders during cleanup.
+        }
+      }
+    }
+    localAudioSenders.current.clear();
     stopStream(interactionAudioStream.current);
     interactionAudioStream.current = null;
     setAudioCall({ state: "idle", label: "未建立" });
@@ -1665,6 +1789,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
 
   const anyRecording = CHANNELS.some((channel) => activeRecorders.current[channel.id]);
   const remoteChannels = displayedRemoteChannels();
+  const remoteEndpointIds = activeSession?.participantIds?.filter((id) => id !== signalingEndpointIdRef.current) || [];
   const signalingTargets = signalingDirectory.filter((endpoint) => endpoint.endpointId !== signalingEndpointIdRef.current);
   const joinableSignalingSessions = signalingSessions.filter(
     (session) => !session.participants?.includes(signalingEndpointIdRef.current)
@@ -2269,6 +2394,19 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       <footer className="footer">
         <span>{status}</span>
       </footer>
+
+      <div className="remote-audio-sinks" aria-hidden="true">
+        {remoteEndpointIds.map((endpointId) => (
+          <audio
+            autoPlay
+            playsInline
+            key={endpointId}
+            ref={(node) => {
+              remoteAudioRefs.current[endpointId] = node;
+            }}
+          />
+        ))}
+      </div>
     </div>
   );
 }

@@ -482,3 +482,12 @@ input {
   background: #ffffff;
   color: #435160;
 }
+
+.remote-audio-sinks {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}

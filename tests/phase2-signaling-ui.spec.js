@@ -1052,6 +1052,24 @@ test("phase 3 UI sends channel 1 video over WebRTC signaling", async ({ page }) 
       null,
       { timeout: 15000 }
     );
+    await teachingPage.waitForFunction(
+      () => {
+        const audio = document.querySelector(".remote-audio-sinks audio");
+        const stream = audio?.srcObject;
+        return Boolean(stream?.getAudioTracks?.().some((track) => track.readyState === "live"));
+      },
+      null,
+      { timeout: 15000 }
+    );
+    await page.waitForFunction(
+      () => {
+        const audio = document.querySelector(".remote-audio-sinks audio");
+        const stream = audio?.srcObject;
+        return Boolean(stream?.getAudioTracks?.().some((track) => track.readyState === "live"));
+      },
+      null,
+      { timeout: 15000 }
+    );
   } finally {
     await teachingPage.close();
     await server.stop();

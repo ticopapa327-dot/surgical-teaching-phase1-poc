@@ -394,8 +394,8 @@ HTTP `/events` 返回最近控制面事件摘要：
 
 | kind | 方向 | 说明 |
 |---|---|---|
-| `media-offer` | 媒体发布端到接收端 | 携带 `channelId` 和 WebRTC offer description。 |
-| `media-answer` | 媒体接收端到发布端 | 携带 `channelId` 和 WebRTC answer description。 |
+| `media-offer` | 媒体发布端到接收端 | 携带 `channelId` 和 WebRTC offer description；当前可包含通道 1 视频轨道和交互音频轨道。 |
+| `media-answer` | 媒体接收端到发布端 | 携带 `channelId` 和 WebRTC answer description；交互模式下可包含应答端本地音频轨道。 |
 | `ice` | 双向 | 携带 ICE candidate。 |
 | `media-stop` | 双向 | 通知对端清理当前 PoC 媒体链路。 |
 
