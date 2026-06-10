@@ -148,10 +148,14 @@ npm run build
 npm run audit:high
 npm run test:scripts
 npm run test:smoke
+npm run test:media
+npm run test:media:repeat
 npm run test:signaling
 ```
 
 `test:smoke` 使用系统 Chrome 打开 Vite 页面，验证页面渲染、模拟预览、呼叫确认、多路拉取、布局切换、标注、参与上限提示、前端连接真实 WebSocket 信令服务器后进入已接受会话，以及双页面/三页面 WebRTC 按订阅多路视频和音频链路。
+
+`test:media` 只运行 Phase 3 WebRTC 媒体用例；`test:media:repeat` 对这些用例执行 `--repeat-each=2`，用于提交前或现场复现后做媒体链路稳定性复测。
 
 `test:signaling` 启动本地 WebSocket 信令服务器，模拟手术室端、示教室端和观摩端，验证注册、通讯录、会话目录、呼叫、接受、默认通道、订阅、参与上限拒绝、协议错误分支和心跳清理。
 
