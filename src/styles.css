@@ -264,6 +264,14 @@ input {
 }
 
 .signal-event strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.signal-event small {
+  display: block;
+  margin-top: 2px;
+  color: #657281;
   overflow-wrap: anywhere;
 }
 

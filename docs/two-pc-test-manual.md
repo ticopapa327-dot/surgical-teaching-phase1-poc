@@ -516,7 +516,7 @@ http://<PC-A局域网IP>:7077/events
 ```
 
 如果启用了 `SIGNALING_AUTH_TOKEN`，`/directory`、`/sessions` 和 `/events` 需要携带令牌。
-前端“信令控制面”也提供“刷新事件”按钮，可直接查看最近 5 条控制面事件。
+前端“信令控制面”也提供“刷新事件”按钮，可直接查看最近 5 条控制面事件。事件条目会显示来源、目标、信号类型、SDP 类型、通道和轨道数等摘要字段；这些字段只用于判断控制面是否转发到位，不包含原始 SDP、ICE candidate、令牌、患者信息或媒体数据。
 
 ## 九、常见问题处理
 
@@ -560,8 +560,9 @@ http://<PC-A局域网IP>:7077/events
 2. PC-A 本端角色是否为“手术室端”；示教室端不能发布媒体。
 3. PC-A 被订阅通道是否能本地预览。
 4. PC-B “状态 / 媒体链路”是否显示正在接收或已收到手术室端媒体。
-5. 两台电脑是否在同一局域网；当前 PoC 默认未配置 STUN/TURN，不保证跨 NAT、VPN 或复杂路由可用。如需跨网段联调，应先在 `public/config.json` 配置 `webrtc.iceServers`。
-6. 浏览器控制台是否出现 `WebRTC 协商失败`、`ICE` 或 `RTCPeerConnection` 相关错误。
+5. PC-A 点击“刷新事件”，确认存在从 PC-A 到 PC-B 的 `peer.signal.forwarded` / `media-offer`，并且摘要里有订阅通道和轨道数；再确认有 PC-B 到 PC-A 的 `media-answer`。如果只有呼叫事件，没有 `media-offer`，优先检查 PC-A 是否点击了“发布订阅通道媒体”以及本端角色是否为手术室端。
+6. 两台电脑是否在同一局域网；当前 PoC 默认未配置 STUN/TURN，不保证跨 NAT、VPN 或复杂路由可用。如需跨网段联调，应先在 `public/config.json` 配置 `webrtc.iceServers`。
+7. 浏览器控制台是否出现 `WebRTC 协商失败`、`ICE` 或 `RTCPeerConnection` 相关错误。
 
 如果发布中继续勾选通道 2 至通道 4 后仍看不到真实远端画面，优先检查 PC-B“媒体诊断”是否仍停留在“等待远端”，以及“连接诊断”里的连接、ICE 和协商状态；正常情况下 PC-A 不需要再次点击“发布订阅通道媒体”。
 

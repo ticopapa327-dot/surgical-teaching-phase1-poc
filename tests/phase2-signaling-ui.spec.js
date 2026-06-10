@@ -106,6 +106,15 @@ test("phase 2 UI connects to signaling server and enters accepted session", asyn
     const incoming = await incomingCall;
     assert.equal(incoming.payload.call.toEndpointId, "teach-remote");
     assert.equal(incoming.payload.call.requestedMode, "interactive");
+    await page.getByRole("button", { name: "刷新事件" }).click();
+    await expect(
+      page
+        .locator(".signal-event")
+        .filter({ hasText: "call.requested" })
+        .filter({ hasText: "or-ui -> teach-remote" })
+        .filter({ hasText: "请求 interactive" })
+        .first()
+    ).toBeVisible();
 
     send(teachingClient, "call.accept", {
       callId: incoming.payload.call.callId,

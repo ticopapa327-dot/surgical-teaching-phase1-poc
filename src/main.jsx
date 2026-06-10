@@ -404,6 +404,27 @@ function signalingEventLabel(event) {
   return `${event.type || "event"}${id ? ` / ${id}` : ""}`;
 }
 
+function signalingEventDetails(event) {
+  const details = [];
+  if (event.fromEndpointId || event.toEndpointId) {
+    details.push(`${event.fromEndpointId || "-"} -> ${event.toEndpointId || "-"}`);
+  }
+  if (event.byEndpointId) details.push(`处理端 ${event.byEndpointId}`);
+  if (event.endedByEndpointId) details.push(`结束端 ${event.endedByEndpointId}`);
+  if (event.role) details.push(`角色 ${event.role}`);
+  if (event.mode) details.push(`模式 ${event.mode}`);
+  if (event.requestedMode) details.push(`请求 ${event.requestedMode}`);
+  if (event.participantLimit) details.push(`上限 ${event.participantLimit}`);
+  if (event.signalKind) details.push(`信号 ${event.signalKind}`);
+  if (event.descriptionType) details.push(`SDP ${event.descriptionType}`);
+  if (Array.isArray(event.channelIds) && event.channelIds.length) {
+    details.push(`通道 ${event.channelIds.join(",")}`);
+  }
+  if (Number.isFinite(event.trackCount)) details.push(`轨道 ${event.trackCount}`);
+  if (event.reason) details.push(`原因 ${event.reason}`);
+  return details.join(" / ");
+}
+
 function endpointLabel(endpoint) {
   if (!endpoint) return "未知终端";
   return `${endpoint.name || endpoint.endpointId}${endpoint.address ? ` (${endpoint.address})` : ""}`;
@@ -3060,12 +3081,18 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
               {signalingEvents.length === 0 ? (
                 <p className="hint">暂无信令事件。</p>
               ) : (
-                signalingEvents.map((event) => (
-                  <div className="signal-event" key={event.eventId || `${event.type}-${event.at}`}>
-                    <span>{event.at ? new Date(event.at).toLocaleTimeString() : "-"}</span>
-                    <strong>{signalingEventLabel(event)}</strong>
-                  </div>
-                ))
+                signalingEvents.map((event) => {
+                  const details = signalingEventDetails(event);
+                  return (
+                    <div className="signal-event" key={event.eventId || `${event.type}-${event.at}`}>
+                      <span>{event.at ? new Date(event.at).toLocaleTimeString() : "-"}</span>
+                      <div>
+                        <strong>{signalingEventLabel(event)}</strong>
+                        {details ? <small>{details}</small> : null}
+                      </div>
+                    </div>
+                  );
+                })
               )}
             </div>
             <p className="hint">该面板负责 C/S 控制面；真实媒体当前验证通道 1 至通道 4 的浏览器 WebRTC P2P 按订阅链路。</p>
