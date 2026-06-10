@@ -2354,8 +2354,9 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const events = await response.json();
       if (!Array.isArray(events)) throw new Error("事件日志格式无效");
-      setSignalingEvents(events.slice(-5).reverse());
-      setSignalingEventsStatus(`${events.length} 条`);
+      const visibleEvents = events.slice(-10).reverse();
+      setSignalingEvents(visibleEvents);
+      setSignalingEventsStatus(`${events.length} 条，显示 ${visibleEvents.length} 条`);
       setStatus(`已读取 ${events.length} 条信令事件。`);
     } catch (error) {
       setSignalingEventsStatus("读取失败");
