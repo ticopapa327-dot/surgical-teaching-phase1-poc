@@ -126,11 +126,17 @@ test("phase 3 audio panel can select a playback device", async ({ page }) => {
   });
 
   await page.goto("/");
+  const audioDiagnostics = page.locator(".status-list div", { hasText: "音频诊断" }).locator("dd");
   await expect(page.getByLabel("音频输出设备")).toBeVisible();
+  await expect(audioDiagnostics).toContainText("支持采集");
+  await expect(audioDiagnostics).toContainText("安全上下文");
   await page.getByRole("button", { name: "授权并刷新设备" }).click();
   await expect(page.locator(".footer")).toContainText("1 个音频输出");
+  await expect(audioDiagnostics).toContainText("输入 1");
+  await expect(audioDiagnostics).toContainText("输出 1");
   await expect(page.getByLabel("音频输出设备")).toContainText("Teaching Speaker");
   await page.getByLabel("音频输出设备").selectOption("speaker-1");
+  await expect(audioDiagnostics).toContainText("回放 Teaching Speaker");
   await expect(page.locator(".footer")).toContainText("远端音频输出将使用：Teaching Speaker");
 });
 

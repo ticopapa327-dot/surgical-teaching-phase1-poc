@@ -1078,6 +1078,12 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     return device?.label || "";
   }
 
+  function audioInputLabel(deviceId) {
+    if (!deviceId) return "未选麦克风";
+    const device = audioDevices.find((item) => item.deviceId === deviceId);
+    return device?.label || "已选麦克风";
+  }
+
   function queryMockPatient() {
     const key = patientQuery.trim().toUpperCase();
     const patient = MOCK_PATIENTS.find((item) => item.hisId === key);
@@ -2685,6 +2691,17 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   const selectedSignalingTarget = signalingTargets.find((endpoint) => endpoint.endpointId === signalingTargetId);
   const selectedTargetChannels =
     selectedSignalingTarget?.channels?.map((channel) => `${channel.id} ${channel.label}`).join("、") || "-";
+  const audioDiagnostics = [
+    navigator.mediaDevices?.getUserMedia ? "支持采集" : "不支持采集",
+    window.isSecureContext ? "安全上下文" : "非安全上下文",
+    `输入 ${audioDevices.length}`,
+    `输出 ${audioOutputDevices.length}`,
+    typeof HTMLMediaElement !== "undefined" && typeof HTMLMediaElement.prototype.setSinkId === "function"
+      ? "可选输出"
+      : "系统默认输出",
+    audioDeviceId ? `麦克风 ${audioInputLabel(audioDeviceId)}` : "未选麦克风",
+    audioOutputDeviceId ? `回放 ${audioOutputLabel(audioOutputDeviceId)}` : "系统回放"
+  ].join(" / ");
 
   return (
     <div className="app-shell">
@@ -2839,6 +2856,10 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
               <div>
                 <dt>交互音频</dt>
                 <dd>{audioCall.label}</dd>
+              </div>
+              <div>
+                <dt>音频诊断</dt>
+                <dd>{audioDiagnostics}</dd>
               </div>
               <div>
                 <dt>媒体链路</dt>
