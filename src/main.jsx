@@ -51,6 +51,22 @@ const MIME_CANDIDATES = [
   "video/webm;codecs=vp8,opus",
   "video/webm"
 ];
+const INTERACTION_AUDIO_CONSTRAINTS = {
+  echoCancellation: true,
+  noiseSuppression: true,
+  autoGainControl: true,
+  channelCount: { ideal: 1 },
+  sampleRate: { ideal: 48000 },
+  latency: { ideal: 0.02, max: 0.08 }
+};
+const LOW_LATENCY_OPUS_PARAMETERS = {
+  minptime: "10",
+  useinbandfec: "1",
+  usedtx: "1",
+  maxaveragebitrate: "32000",
+  stereo: "0",
+  "sprop-stereo": "0"
+};
 
 const browserRecordingStore = {
   active: new Map(),
@@ -353,6 +369,53 @@ function capabilitiesForRole(role) {
 function sessionChannelsForEndpoint(session, endpointId) {
   const channels = session.subscriptions?.[endpointId];
   return Array.isArray(channels) && channels.length ? channels : ["ch1"];
+}
+
+function interactionAudioConstraints(audioDeviceId) {
+  return {
+    ...INTERACTION_AUDIO_CONSTRAINTS,
+    deviceId: audioDeviceId ? { exact: audioDeviceId } : undefined
+  };
+}
+
+function applyLowLatencyAudioSdp(sdp) {
+  if (!sdp) return sdp;
+  const lines = sdp.split(/\r\n/);
+  const opusPayloadIds = lines
+    .map((line) => line.match(/^a=rtpmap:(\d+) opus\/48000/i)?.[1])
+    .filter(Boolean);
+
+  for (const payloadId of opusPayloadIds) {
+    const fmtpPattern = new RegExp(`^a=fmtp:${payloadId}\\s+`);
+    const fmtpIndex = lines.findIndex((line) => fmtpPattern.test(line));
+    if (fmtpIndex >= 0) {
+      const existing = new Set(
+        lines[fmtpIndex]
+          .replace(fmtpPattern, "")
+          .split(";")
+          .map((item) => item.trim().split("=")[0])
+          .filter(Boolean)
+      );
+      const additions = Object.entries(LOW_LATENCY_OPUS_PARAMETERS)
+        .filter(([key]) => !existing.has(key))
+        .map(([key, value]) => `${key}=${value}`);
+      if (additions.length) lines[fmtpIndex] = `${lines[fmtpIndex]};${additions.join(";")}`;
+      continue;
+    }
+
+    const rtpmapIndex = lines.findIndex((line) => line.startsWith(`a=rtpmap:${payloadId} `));
+    if (rtpmapIndex >= 0) {
+      lines.splice(
+        rtpmapIndex + 1,
+        0,
+        `a=fmtp:${payloadId} ${Object.entries(LOW_LATENCY_OPUS_PARAMETERS)
+          .map(([key, value]) => `${key}=${value}`)
+          .join(";")}`
+      );
+    }
+  }
+
+  return lines.join("\r\n");
 }
 
 function App({ initialConfig = DEFAULT_APP_CONFIG }) {
@@ -892,19 +955,49 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
 
     const stream = await navigator.mediaDevices.getUserMedia({
       video: false,
-      audio: {
-        deviceId: audioDeviceId ? { exact: audioDeviceId } : undefined,
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true
-      }
+      audio: interactionAudioConstraints(audioDeviceId)
     });
     interactionAudioStream.current = stream;
     setAudioCall({
       state: "connected",
-      label: `本地音频已建立，轨道 ${stream.getAudioTracks().length} 路`
+      label: `本地音频已建立，低延迟模式，轨道 ${stream.getAudioTracks().length} 路`
     });
     return stream;
+  }
+
+  async function tuneAudioSender(sender) {
+    if (!sender?.track || sender.track.kind !== "audio" || !sender.getParameters || !sender.setParameters) return;
+    const parameters = sender.getParameters();
+    parameters.encodings = parameters.encodings?.length ? parameters.encodings : [{}];
+    parameters.encodings = parameters.encodings.map((encoding) => ({
+      ...encoding,
+      maxBitrate: 32000,
+      priority: "high",
+      networkPriority: "high"
+    }));
+    try {
+      await sender.setParameters(parameters);
+    } catch {
+      // Browsers can reject optional RTP priority fields; SDP low-latency hints still apply.
+    }
+  }
+
+  function tuneAudioReceiver(peerConnection, track) {
+    const receiver = peerConnection.getReceivers().find((item) => item.track === track);
+    if (!receiver || !("jitterBufferTarget" in receiver)) return;
+    try {
+      receiver.jitterBufferTarget = 0.02;
+    } catch {
+      // Optional browser optimization.
+    }
+  }
+
+  async function setLowLatencyLocalDescription(peerConnection, description) {
+    const nextDescription =
+      description?.sdp && (description.type === "offer" || description.type === "answer")
+        ? { type: description.type, sdp: applyLowLatencyAudioSdp(description.sdp) }
+        : description;
+    await peerConnection.setLocalDescription(nextDescription);
   }
 
   async function addInteractionAudioToPeerConnection(peerConnection, endpointId) {
@@ -914,7 +1007,9 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     const existingTracks = new Set(peerConnection.getSenders().map((sender) => sender.track).filter(Boolean));
     for (const track of stream.getAudioTracks()) {
       if (existingTracks.has(track)) continue;
-      senders.push(peerConnection.addTrack(track, stream));
+      const sender = peerConnection.addTrack(track, stream);
+      await tuneAudioSender(sender);
+      senders.push(sender);
     }
     localAudioSenders.current.set(endpointId, senders);
     return stream.getAudioTracks().length > 0;
@@ -925,7 +1020,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     const peerConnection = mediaPeerConnections.current.get(endpointId);
     if (!session?.id || !peerConnection) return;
     const offer = await peerConnection.createOffer();
-    await peerConnection.setLocalDescription(offer);
+    await setLowLatencyLocalDescription(peerConnection, offer);
     sendSignaling("peer.signal", {
       sessionId: session.id,
       toEndpointId: endpointId,
@@ -974,6 +1069,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
         });
       }
       if (event.track.kind === "audio") {
+        tuneAudioReceiver(peerConnection, event.track);
         const audioStream = mediaRemoteAudioStreams.current[endpointId] || new MediaStream();
         if (!audioStream.getTracks().includes(event.track)) {
           audioStream.addTrack(event.track);
@@ -981,7 +1077,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
         mediaRemoteAudioStreams.current[endpointId] = audioStream;
         setAudioCall({
           state: "connected",
-          label: `已接收 ${endpointLabelById(endpointId)} 的远端音频`
+          label: `已接收 ${endpointLabelById(endpointId)} 的远端音频，低延迟模式`
         });
       }
       setMediaVersion((value) => value + 1);
@@ -1161,7 +1257,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
           }
         }
         const answer = await peerConnection.createAnswer();
-        await peerConnection.setLocalDescription(answer);
+        await setLowLatencyLocalDescription(peerConnection, answer);
         sendSignaling("peer.signal", {
           sessionId: session.id,
           toEndpointId: fromEndpointId,
@@ -1724,14 +1820,14 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       }
       setAudioCall({
         state: "connected",
-        label: `已建立，本地音频轨道 ${stream.getAudioTracks().length} 路${
+        label: `已建立，低延迟本地音频轨道 ${stream.getAudioTracks().length} 路${
           renegotiatedPeers.length ? "，已加入 WebRTC" : ""
         }`
       });
       setStatus(
         renegotiatedPeers.length
-          ? `交互音频已加入 ${renegotiatedPeers.length} 条 WebRTC 媒体链路。`
-          : "交互音频已建立，已启用回声消除、噪声抑制和自动增益约束；当前尚无 WebRTC 媒体链路。"
+          ? `交互音频已按低延迟模式加入 ${renegotiatedPeers.length} 条 WebRTC 媒体链路。`
+          : "交互音频已建立，已启用低延迟采集、回声消除、噪声抑制和自动增益约束；当前尚无 WebRTC 媒体链路。"
       );
     } catch (error) {
       setAudioCall({ state: "error", label: error.message });

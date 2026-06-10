@@ -39,7 +39,7 @@ test("phase 2 call workflow renders and reaches active interaction state", async
   await popup.close();
 
   await page.getByRole("button", { name: "建立音频通话" }).click();
-  await expect(page.locator(".status-list dd").filter({ hasText: "已建立，本地音频轨道" })).toBeVisible();
+  await expect(page.locator(".status-list dd").filter({ hasText: "低延迟本地音频轨道" })).toBeVisible();
   await page.getByRole("button", { name: "停止音频" }).click();
 
   await page.getByLabel("通道 2 术野").check();
