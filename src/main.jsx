@@ -590,6 +590,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   const localAudioSenders = useRef(new Map());
   const pendingMediaIceCandidates = useRef(new Map());
   const mediaStatsTimer = useRef(null);
+  const mediaStatsHistory = useRef(new Map());
 
   const supportedMimeType = useMemo(getSupportedMimeType, []);
 
@@ -1274,6 +1275,26 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     return Number.isFinite(value) ? `${Math.max(0, Math.round(value))} ms` : "-";
   }
 
+  function formatBitrate(value) {
+    if (!Number.isFinite(value) || value < 0) return "-";
+    if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)} Mbps`;
+    if (value >= 1_000) return `${Math.round(value / 1_000)} kbps`;
+    return `${Math.round(value)} bps`;
+  }
+
+  function statsHistoryKey(endpointId, report) {
+    return `${endpointId}:${report.type}:${report.id}`;
+  }
+
+  function trackBitrate(endpointId, report, bytes) {
+    if (!Number.isFinite(bytes) || !Number.isFinite(report.timestamp)) return null;
+    const key = statsHistoryKey(endpointId, report);
+    const previous = mediaStatsHistory.current.get(key);
+    mediaStatsHistory.current.set(key, { bytes, timestamp: report.timestamp });
+    if (!previous || report.timestamp <= previous.timestamp || bytes < previous.bytes) return null;
+    return ((bytes - previous.bytes) * 8 * 1000) / (report.timestamp - previous.timestamp);
+  }
+
   async function updateWebRtcStats() {
     const values = [];
     for (const [endpointId, peerConnection] of mediaPeerConnections.current.entries()) {
@@ -1283,10 +1304,15 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
         let audioBufferMs = null;
         let audioJitterMs = null;
         let rttMs = null;
+        let videoBitrateBps = 0;
+        let hasVideoBitrate = false;
+        let videoPacketsLost = 0;
+        let hasVideoPacketsLost = false;
         stats.forEach((report) => {
+          const reportKind = report.kind || report.mediaType;
           if (
             report.type === "inbound-rtp" &&
-            report.kind === "audio" &&
+            reportKind === "audio" &&
             report.jitterBufferDelay != null &&
             report.jitterBufferEmittedCount
           ) {
@@ -1296,9 +1322,23 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
           if (report.type === "candidate-pair" && report.state === "succeeded" && report.currentRoundTripTime != null) {
             rttMs = report.currentRoundTripTime * 1000;
           }
+          if (reportKind === "video" && (report.type === "inbound-rtp" || report.type === "outbound-rtp")) {
+            const bytes = report.type === "outbound-rtp" ? report.bytesSent : report.bytesReceived;
+            const bitrate = trackBitrate(endpointId, report, bytes);
+            if (Number.isFinite(bitrate)) {
+              videoBitrateBps += bitrate;
+              hasVideoBitrate = true;
+            }
+            if (report.type === "inbound-rtp" && Number.isFinite(report.packetsLost)) {
+              videoPacketsLost += report.packetsLost;
+              hasVideoPacketsLost = true;
+            }
+          }
         });
         values.push(
-          `${endpointLabelById(endpointId)}：音频缓冲 ${formatMs(audioBufferMs)} / jitter ${formatMs(
+          `${endpointLabelById(endpointId)}：视频 ${formatBitrate(
+            hasVideoBitrate ? videoBitrateBps : null
+          )} / 丢包 ${hasVideoPacketsLost ? videoPacketsLost : "-"} / 音频缓冲 ${formatMs(audioBufferMs)} / jitter ${formatMs(
             audioJitterMs
           )} / RTT ${formatMs(rttMs)}`
         );
@@ -1462,6 +1502,9 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     localAudioSenders.current.delete(endpointId);
     delete mediaRemoteAudioStreams.current[endpointId];
     pendingMediaIceCandidates.current.delete(endpointId);
+    for (const key of mediaStatsHistory.current.keys()) {
+      if (key.startsWith(`${endpointId}:`)) mediaStatsHistory.current.delete(key);
+    }
   }
 
   async function addMediaIceCandidate(endpointId, candidate) {
@@ -1492,6 +1535,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     mediaRemoteAudioStreams.current = {};
     localAudioSenders.current.clear();
     pendingMediaIceCandidates.current.clear();
+    mediaStatsHistory.current.clear();
     stopMediaStatsPolling();
     setMediaVersion((value) => value + 1);
     setWebrtcMediaState({ state: "idle", label: "未建立" });

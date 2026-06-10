@@ -56,6 +56,12 @@ async function expectPeerDiagnosticLiveCount(page, count) {
   await expect(page.locator(".peer-diagnostic-state-live")).toHaveCount(count, { timeout: 15000 });
 }
 
+async function expectMediaStatsIncludesVideo(page) {
+  await expect(page.locator(".status-list div", { hasText: "媒体统计" }).locator("dd")).toContainText("视频", {
+    timeout: 15000
+  });
+}
+
 test("phase 2 UI connects to signaling server and enters accepted session", async ({ page }) => {
   const server = createSignalingServer({ port: 0 });
   const address = await server.start();
@@ -1104,6 +1110,7 @@ test("phase 3 UI sends subscribed videos over WebRTC signaling", async ({ page }
     await expectDiagnosticLiveCount(teachingPage, 3);
     await expectPeerDiagnosticLiveCount(page, 1);
     await expectPeerDiagnosticLiveCount(teachingPage, 1);
+    await expectMediaStatsIncludesVideo(teachingPage);
     await page.getByRole("button", { name: "刷新事件" }).click();
     await expect(page.locator(".signal-event").filter({ hasText: "peer.signal.forwarded" }).first()).toBeVisible();
 
