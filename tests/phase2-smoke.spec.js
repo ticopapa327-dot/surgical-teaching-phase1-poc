@@ -108,3 +108,24 @@ test("phase 2 remote popout can target an Electron display", async ({ page }) =>
   await expect(page.locator(".footer")).toContainText("目标：扩展显示器 Teaching Display");
   await popup.close();
 });
+
+test("phase 3 audio panel can select a playback device", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator.mediaDevices, "enumerateDevices", {
+      configurable: true,
+      value: async () => [
+        { kind: "videoinput", deviceId: "video-1", label: "USB Capture 1" },
+        { kind: "audioinput", deviceId: "mic-1", label: "USB Mic" },
+        { kind: "audiooutput", deviceId: "speaker-1", label: "Teaching Speaker" }
+      ]
+    });
+  });
+
+  await page.goto("/");
+  await expect(page.getByLabel("音频输出设备")).toBeVisible();
+  await page.getByRole("button", { name: "授权并刷新设备" }).click();
+  await expect(page.locator(".footer")).toContainText("1 个音频输出");
+  await expect(page.getByLabel("音频输出设备")).toContainText("Teaching Speaker");
+  await page.getByLabel("音频输出设备").selectOption("speaker-1");
+  await expect(page.locator(".footer")).toContainText("远端音频输出将使用：Teaching Speaker");
+});

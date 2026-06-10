@@ -517,8 +517,10 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   const [appInfo, setAppInfo] = useState(null);
   const [videoDevices, setVideoDevices] = useState([]);
   const [audioDevices, setAudioDevices] = useState([]);
+  const [audioOutputDevices, setAudioOutputDevices] = useState([]);
   const [channelConfig, setChannelConfig] = useState(createDefaultChannelConfig);
   const [audioDeviceId, setAudioDeviceId] = useState("");
+  const [audioOutputDeviceId, setAudioOutputDeviceId] = useState("");
   const [includeAudio, setIncludeAudio] = useState(true);
   const [recordings, setRecordings] = useState([]);
   const [status, setStatus] = useState("准备就绪");
@@ -684,12 +686,41 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     for (const endpointId of activeSession.participantIds.filter((id) => id !== selfId)) {
       const audio = remoteAudioRefs.current[endpointId];
       const stream = mediaRemoteAudioStreams.current[endpointId];
-      if (audio && audio.srcObject !== stream) {
-        audio.srcObject = stream || null;
-        if (stream) audio.play().catch(() => {});
+      if (audio) {
+        if (audio.srcObject !== stream) {
+          audio.srcObject = stream || null;
+        }
+        applyAudioOutputDevice(audio).finally(() => {
+          if (stream) audio.play().catch(() => {});
+        });
       }
     }
-  }, [activeSession, mediaVersion]);
+  }, [activeSession, mediaVersion, audioOutputDeviceId]);
+
+  function audioOutputLabel(deviceId) {
+    if (!deviceId) return "系统默认音频输出";
+    const device = audioOutputDevices.find((item) => item.deviceId === deviceId);
+    return device?.label || deviceId;
+  }
+
+  function handleAudioOutputChange(deviceId) {
+    setAudioOutputDeviceId(deviceId);
+    setStatus(`远端音频输出将使用：${audioOutputLabel(deviceId)}。`);
+  }
+
+  async function applyAudioOutputDevice(audioElement) {
+    if (!audioElement) return;
+    if (typeof audioElement.setSinkId !== "function") {
+      if (audioOutputDeviceId) setStatus("当前浏览器不支持选择音频输出设备，继续使用系统默认输出。");
+      return;
+    }
+    if ((audioElement.sinkId || "") === audioOutputDeviceId) return;
+    try {
+      await audioElement.setSinkId(audioOutputDeviceId);
+    } catch (error) {
+      setStatus(`音频输出切换失败：${error.message}`);
+    }
+  }
 
   async function refreshRecordings() {
     const items = await api.recordings.list();
@@ -773,19 +804,27 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       const devices = await navigator.mediaDevices.enumerateDevices();
       const videos = devices.filter((device) => device.kind === "videoinput");
       const audios = devices.filter((device) => device.kind === "audioinput");
+      const audioOutputs = devices.filter((device) => device.kind === "audiooutput");
       setVideoDevices(videos);
       setAudioDevices(audios);
+      setAudioOutputDevices(audioOutputs);
+      setAudioOutputDeviceId((current) =>
+        current && audioOutputs.some((device) => device.deviceId === current) ? current : ""
+      );
       const videoNames = videos
         .map((device, index) => device.label || `视频输入 ${index + 1}`)
         .slice(0, 6)
         .join("、");
       const errorText = options.errors?.length ? `；${options.errors.join("；")}` : "";
       setStatus(
-        `已发现 ${videos.length} 个视频输入、${audios.length} 个音频输入${videoNames ? `：${videoNames}` : ""}${errorText}`
+        `已发现 ${videos.length} 个视频输入、${audios.length} 个音频输入、${audioOutputs.length} 个音频输出${
+          videoNames ? `：${videoNames}` : ""
+        }${errorText}`
       );
     } catch (error) {
       setVideoDevices([]);
       setAudioDevices([]);
+      setAudioOutputDevices([]);
       setStatus(`媒体设备枚举失败：${error.message}`);
     }
   }
@@ -2607,14 +2646,28 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
               />
               录制时包含音频
             </label>
-            <select value={audioDeviceId} onChange={(event) => setAudioDeviceId(event.target.value)}>
-              <option value="">不选择音频输入</option>
-              {audioDevices.map((device, index) => (
-                <option value={device.deviceId} key={device.deviceId}>
-                  {device.label || `音频输入 ${index + 1}`}
-                </option>
-              ))}
-            </select>
+            <label className="annotation-input">
+              音频输入设备
+              <select value={audioDeviceId} onChange={(event) => setAudioDeviceId(event.target.value)}>
+                <option value="">不选择音频输入</option>
+                {audioDevices.map((device, index) => (
+                  <option value={device.deviceId} key={device.deviceId}>
+                    {device.label || `音频输入 ${index + 1}`}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="annotation-input">
+              音频输出设备
+              <select value={audioOutputDeviceId} onChange={(event) => handleAudioOutputChange(event.target.value)}>
+                <option value="">系统默认音频输出</option>
+                {audioOutputDevices.map((device, index) => (
+                  <option value={device.deviceId} key={device.deviceId}>
+                    {device.label || `音频输出 ${index + 1}`}
+                  </option>
+                ))}
+              </select>
+            </label>
             <p className="hint">当前阶段已接入按订阅多通道 WebRTC 视频 PoC；交互模式下音频通话会进入同一 WebRTC 媒体链路。</p>
           </section>
 
