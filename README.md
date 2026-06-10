@@ -87,13 +87,21 @@ npm run server:signaling
 - `SIGNALING_HEARTBEAT_MS`：WebSocket 心跳间隔，默认 `30000`；设置为 `0` 可关闭心跳。
 - `SIGNALING_EVENT_LOG_LIMIT`：内存事件日志保留条数，默认 `200`，范围 `20` 到 `1000`。
 
+局域网双机测试可直接使用一键启动：
+
+```powershell
+npm run dev:lan
+```
+
+该命令会同时启动 `0.0.0.0:7077` 信令服务和 `0.0.0.0:5173` 前端页面，并打印本机局域网访问地址。
+
 ## 配置
 
 前端启动时会读取 [public/config.json](public/config.json) 作为运行时默认配置。当前支持：
 
-- `signalingUrl`：默认信令服务器地址。
+- `signalingUrl`：默认信令服务器地址。当前端从局域网 IP 打开且配置仍为 `127.0.0.1` 时，软件会自动改用页面所在主机的 `7077` 端口。
 - `signalingToken`：可选信令共享令牌；为空时不发送。
-- `localEndpoint.id`：本端终端 ID。
+- `localEndpoint.id`：本端终端 ID。默认占位值会自动替换为浏览器本地保存的唯一 ID，避免两台电脑使用同一 `endpointId` 互相顶号。
 - `localEndpoint.name`：本端显示名称。
 - `localEndpoint.role`：本端角色，支持 `operating-room`、`teaching-room`、`observer`。
 

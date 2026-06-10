@@ -89,7 +89,23 @@ New-NetFirewallRule -DisplayName "UST Web 5173" -Direction Inbound -Action Allow
 
 ### 1. 在 PC-A 启动信令服务器
 
-在 PC-A 执行：
+推荐在 PC-A 使用一键局域网启动：
+
+```powershell
+cd D:\CodeX\UST\phase1-poc
+npm run dev:lan
+```
+
+该命令会同时启动信令服务和前端页面。正常输出会包含：
+
+```text
+Signaling: ws://0.0.0.0:7077/signal
+Web:       http://0.0.0.0:5173
+LAN URL:   http://192.168.1.118:5173
+Signal:    ws://192.168.1.118:7077/signal
+```
+
+如果需要分开启动，也可以在 PC-A 执行：
 
 ```powershell
 cd D:\CodeX\UST\phase1-poc
@@ -114,7 +130,7 @@ $env:SIGNALING_AUTH_TOKEN = "test-token"
 
 ### 2. 在 PC-A 启动手术室端前端
 
-在 PC-A 新开一个 PowerShell 窗口：
+如果已使用 `npm run dev:lan`，本步骤跳过。分开启动时，在 PC-A 新开一个 PowerShell 窗口：
 
 ```powershell
 cd D:\CodeX\UST\phase1-poc
@@ -158,6 +174,8 @@ http://<PC-A局域网IP>:5173
 ```
 
 该方式适合示教室端收看和验证信令控制流。由于浏览器可能阻止非安全 HTTP 来源的摄像头和麦克风权限，不推荐把手术室端采集发布也放在远程 HTTP 页面上测试。
+
+说明：当前版本会根据页面地址自动修正默认信令地址。PC-A 使用 `http://127.0.0.1:5173` 时默认连接 `ws://127.0.0.1:7077/signal`；PC-B 使用 `http://192.168.1.118:5173` 时默认连接 `ws://192.168.1.118:7077/signal`。默认本端 ID 也会在浏览器本地生成唯一值，避免两端都使用 `or-local` 导致在线目录只剩一个终端。
 
 ## 六、客户端配置
 

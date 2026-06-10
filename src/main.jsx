@@ -35,6 +35,7 @@ const MOCK_PATIENTS = [
 ];
 
 const DEFAULT_SIGNALING_URL = "ws://127.0.0.1:7077/signal";
+const LOCAL_ENDPOINT_ID_KEY = "ust.localEndpointId";
 const DEFAULT_APP_CONFIG = {
   signalingUrl: DEFAULT_SIGNALING_URL,
   signalingToken: "",
@@ -120,13 +121,68 @@ function getSupportedMimeType() {
   return MIME_CANDIDATES.find((type) => window.MediaRecorder.isTypeSupported(type)) || "";
 }
 
+function isLoopbackHost(hostname) {
+  const host = String(hostname || "").toLowerCase();
+  return host === "localhost" || host === "::1" || host === "[::1]" || host === "127.0.0.1" || host.startsWith("127.");
+}
+
+function defaultSignalingUrlForPage() {
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const host = window.location.hostname || "127.0.0.1";
+  return `${protocol}//${host}:7077/signal`;
+}
+
+function isLoopbackSignalingUrl(value) {
+  try {
+    return isLoopbackHost(new URL(value).hostname);
+  } catch {
+    return false;
+  }
+}
+
+function generatedEndpointId() {
+  const random =
+    window.crypto?.randomUUID?.().slice(0, 8) || Math.random().toString(16).slice(2, 10).padEnd(8, "0");
+  return `ust-${random}`;
+}
+
+function stableEndpointId(configuredId) {
+  const explicitId = String(configuredId || "").trim();
+  if (explicitId && explicitId !== DEFAULT_APP_CONFIG.localEndpoint.id) return explicitId;
+  try {
+    const stored = window.localStorage.getItem(LOCAL_ENDPOINT_ID_KEY);
+    if (stored) return stored;
+    const next = generatedEndpointId();
+    window.localStorage.setItem(LOCAL_ENDPOINT_ID_KEY, next);
+    return next;
+  } catch {
+    return generatedEndpointId();
+  }
+}
+
+function normalizeRuntimeConfig(config = {}) {
+  const merged = {
+    ...DEFAULT_APP_CONFIG,
+    ...config,
+    localEndpoint: {
+      ...DEFAULT_APP_CONFIG.localEndpoint,
+      ...(config.localEndpoint || {})
+    }
+  };
+  if (!merged.signalingUrl || (!isLoopbackHost(window.location.hostname) && isLoopbackSignalingUrl(merged.signalingUrl))) {
+    merged.signalingUrl = defaultSignalingUrlForPage();
+  }
+  merged.localEndpoint.id = stableEndpointId(merged.localEndpoint.id);
+  return merged;
+}
+
 async function loadRuntimeConfig() {
   try {
     const response = await fetch("/config.json", { cache: "no-store" });
-    if (!response.ok) return DEFAULT_APP_CONFIG;
-    return { ...DEFAULT_APP_CONFIG, ...(await response.json()) };
+    if (!response.ok) return normalizeRuntimeConfig(DEFAULT_APP_CONFIG);
+    return normalizeRuntimeConfig(await response.json());
   } catch {
-    return DEFAULT_APP_CONFIG;
+    return normalizeRuntimeConfig(DEFAULT_APP_CONFIG);
   }
 }
 
@@ -450,29 +506,64 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
 
   async function requestDevicePermissionAndRefresh() {
     setStatus("正在请求摄像头和麦克风权限...");
-    let stream;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      setPermissionReady(true);
-    } catch (error) {
-      setStatus(`设备授权失败：${error.message}`);
-    } finally {
-      stopStream(stream);
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setStatus("当前页面不支持媒体设备访问。请使用 Chrome/Edge，并从 http://127.0.0.1:5173 打开手术室端。");
+      return;
     }
-    await refreshDevices();
+    if (!window.isSecureContext) {
+      setStatus("当前页面不是安全上下文，浏览器可能禁止摄像头枚举。手术室端请使用 http://127.0.0.1:5173。");
+      return;
+    }
+
+    const errors = [];
+    let granted = false;
+    let videoStream;
+    let audioStream;
+    try {
+      try {
+        videoStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        granted = true;
+      } catch (error) {
+        errors.push(`视频授权失败：${error.message}`);
+      }
+      try {
+        audioStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+        granted = true;
+      } catch (error) {
+        errors.push(`音频授权失败：${error.message}`);
+      }
+      setPermissionReady(granted);
+    } finally {
+      stopStream(videoStream);
+      stopStream(audioStream);
+    }
+    await refreshDevices({ errors });
   }
 
-  async function refreshDevices() {
+  async function refreshDevices(options = {}) {
     if (!navigator.mediaDevices?.enumerateDevices) {
       setStatus("当前环境不支持媒体设备枚举。");
       return;
     }
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    const videos = devices.filter((device) => device.kind === "videoinput");
-    const audios = devices.filter((device) => device.kind === "audioinput");
-    setVideoDevices(videos);
-    setAudioDevices(audios);
-    setStatus(`已发现 ${videos.length} 个视频输入、${audios.length} 个音频输入。`);
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videos = devices.filter((device) => device.kind === "videoinput");
+      const audios = devices.filter((device) => device.kind === "audioinput");
+      setVideoDevices(videos);
+      setAudioDevices(audios);
+      const videoNames = videos
+        .map((device, index) => device.label || `视频输入 ${index + 1}`)
+        .slice(0, 6)
+        .join("、");
+      const errorText = options.errors?.length ? `；${options.errors.join("；")}` : "";
+      setStatus(
+        `已发现 ${videos.length} 个视频输入、${audios.length} 个音频输入${videoNames ? `：${videoNames}` : ""}${errorText}`
+      );
+    } catch (error) {
+      setVideoDevices([]);
+      setAudioDevices([]);
+      setStatus(`媒体设备枚举失败：${error.message}`);
+    }
   }
 
   function updateChannel(channelId, patch) {
@@ -1154,7 +1245,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     setSignalingState({ connected: false, label: "连接中" });
     setStatus("正在连接信令服务器...");
 
-    const nextUrl = signalingUrl.trim() || DEFAULT_SIGNALING_URL;
+    const nextUrl = signalingUrl.trim() || defaultSignalingUrlForPage();
     if (!isValidWebSocketUrl(nextUrl)) {
       setSignalingState({ connected: false, label: "连接错误" });
       setStatus("信令地址无效：必须使用 ws:// 或 wss:// 地址。");
@@ -1262,7 +1353,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   }
 
   async function checkSignalingHealth() {
-    const nextUrl = signalingUrl.trim() || DEFAULT_SIGNALING_URL;
+      const nextUrl = signalingUrl.trim() || defaultSignalingUrlForPage();
     if (!isValidWebSocketUrl(nextUrl)) {
       setSignalingHealth("地址无效");
       setStatus("信令地址无效：必须使用 ws:// 或 wss:// 地址。");
