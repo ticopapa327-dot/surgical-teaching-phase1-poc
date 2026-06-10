@@ -118,6 +118,8 @@ const api = window.surgicalApi || {
     },
     list: async () => browserRecordingStore.index,
     delete: async (id) => {
+      const item = browserRecordingStore.index.find((record) => record.id === id);
+      if (item?.fileUrl?.startsWith("blob:")) URL.revokeObjectURL(item.fileUrl);
       browserRecordingStore.index = browserRecordingStore.index.filter((item) => item.id !== id);
       return { ok: true };
     },
@@ -985,6 +987,61 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     };
     setAiJobs((jobs) => [job, ...jobs]);
     setStatus(`AI 处理任务已加入本地模拟队列：${recording.channelLabel}`);
+  }
+
+  function recordingDisplayName(recording) {
+    return recording?.fileName || recording?.channelLabel || "录像文件";
+  }
+
+  async function revealRecording(recording) {
+    if (!recording) return;
+    try {
+      const result = await api.recordings.reveal(recording.id);
+      setStatus(
+        result?.ok ? `已定位录像：${recordingDisplayName(recording)}` : `录像定位失败：${result?.reason || "未知错误"}`
+      );
+    } catch (error) {
+      setStatus(`录像定位失败：${error.message}`);
+    }
+  }
+
+  async function exportRecording(recording) {
+    if (!recording) return;
+    try {
+      const result = await api.recordings.export(recording.id);
+      if (result?.ok) {
+        setStatus(`录像已导出：${result.filePath || recordingDisplayName(recording)}`);
+        return;
+      }
+      setStatus(result?.reason === "canceled" ? "已取消导出录像。" : `录像导出失败：${result?.reason || "未知错误"}`);
+    } catch (error) {
+      setStatus(`录像导出失败：${error.message}`);
+    }
+  }
+
+  async function deleteRecording(recording) {
+    if (!recording) return;
+    try {
+      const result = await api.recordings.delete(recording.id);
+      if (!result?.ok) {
+        setStatus(`录像删除失败：${result?.reason || "未知错误"}`);
+        return;
+      }
+      if (selectedPlayback?.id === recording.id) setSelectedPlayback(null);
+      await refreshRecordings();
+      setStatus(`录像已删除：${recordingDisplayName(recording)}`);
+    } catch (error) {
+      setStatus(`录像删除失败：${error.message}`);
+    }
+  }
+
+  async function openRecordingRoot() {
+    try {
+      const result = await api.recordings.openRoot();
+      setStatus(result?.ok ? "已打开录像目录。" : `录像目录打开失败：${result?.reason || "未知错误"}`);
+    } catch (error) {
+      setStatus(`录像目录打开失败：${error.message}`);
+    }
   }
 
   function selectedTarget() {
@@ -2476,7 +2533,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
                 <dd>{appInfo?.recordingsDir || "-"}</dd>
               </div>
             </dl>
-            <button onClick={() => api.recordings.openRoot()}>打开录像目录</button>
+            <button onClick={openRecordingRoot}>打开录像目录</button>
           </section>
 
           <section className="panel-block">
@@ -2533,16 +2590,9 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
                     )}
                   </button>
                   <div className="recording-actions">
-                    <button onClick={() => api.recordings.reveal(item.id)}>定位</button>
-                    <button onClick={() => api.recordings.export(item.id)}>导出</button>
-                    <button
-                      className="danger"
-                      onClick={async () => {
-                        await api.recordings.delete(item.id);
-                        if (selectedPlayback?.id === item.id) setSelectedPlayback(null);
-                        await refreshRecordings();
-                      }}
-                    >
+                    <button onClick={() => revealRecording(item)}>定位</button>
+                    <button onClick={() => exportRecording(item)}>导出</button>
+                    <button className="danger" onClick={() => deleteRecording(item)}>
                       删除
                     </button>
                   </div>
