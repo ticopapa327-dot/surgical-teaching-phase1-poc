@@ -1455,6 +1455,10 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     return `${Math.round(value)} bps`;
   }
 
+  function candidateTypeLabel(candidate) {
+    return typeof candidate?.candidateType === "string" && candidate.candidateType ? candidate.candidateType : "-";
+  }
+
   function statsHistoryKey(endpointId, report) {
     return `${endpointId}:${report.type}:${report.id}`;
   }
@@ -1474,14 +1478,18 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       if (peerConnection.connectionState === "closed") continue;
       try {
         const stats = await peerConnection.getStats();
+        const reports = [];
+        stats.forEach((report) => reports.push(report));
+        const reportsById = new Map(reports.map((report) => [report.id, report]));
         let audioBufferMs = null;
         let audioJitterMs = null;
         let rttMs = null;
+        let iceRouteLabel = "-→-";
         let videoBitrateBps = 0;
         let hasVideoBitrate = false;
         let videoPacketsLost = 0;
         let hasVideoPacketsLost = false;
-        stats.forEach((report) => {
+        reports.forEach((report) => {
           const reportKind = report.kind || report.mediaType;
           if (
             report.type === "inbound-rtp" &&
@@ -1494,6 +1502,9 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
           }
           if (report.type === "candidate-pair" && report.state === "succeeded" && report.currentRoundTripTime != null) {
             rttMs = report.currentRoundTripTime * 1000;
+            const localCandidate = reportsById.get(report.localCandidateId);
+            const remoteCandidate = reportsById.get(report.remoteCandidateId);
+            iceRouteLabel = `${candidateTypeLabel(localCandidate)}→${candidateTypeLabel(remoteCandidate)}`;
           }
           if (reportKind === "video" && (report.type === "inbound-rtp" || report.type === "outbound-rtp")) {
             const bytes = report.type === "outbound-rtp" ? report.bytesSent : report.bytesReceived;
@@ -1513,7 +1524,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
             hasVideoBitrate ? videoBitrateBps : null
           )} / 丢包 ${hasVideoPacketsLost ? videoPacketsLost : "-"} / 音频缓冲 ${formatMs(audioBufferMs)} / jitter ${formatMs(
             audioJitterMs
-          )} / RTT ${formatMs(rttMs)}`
+          )} / RTT ${formatMs(rttMs)} / ICE ${iceRouteLabel}`
         );
       } catch {
         values.push(`${endpointLabelById(endpointId)}：统计读取失败`);

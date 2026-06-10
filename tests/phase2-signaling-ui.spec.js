@@ -57,9 +57,9 @@ async function expectPeerDiagnosticLiveCount(page, count) {
 }
 
 async function expectMediaStatsIncludesVideo(page) {
-  await expect(page.locator(".status-list div", { hasText: "媒体统计" }).locator("dd")).toContainText("视频", {
-    timeout: 15000
-  });
+  const mediaStats = page.locator(".status-list div", { hasText: "媒体统计" }).locator("dd");
+  await expect(mediaStats).toContainText("视频", { timeout: 15000 });
+  await expect(mediaStats).toContainText("ICE", { timeout: 15000 });
 }
 
 test("phase 2 UI connects to signaling server and enters accepted session", async ({ page }) => {
