@@ -1173,6 +1173,7 @@ test("phase 3 UI sends subscribed videos over WebRTC signaling", async ({ page }
 });
 
 test("phase 3 UI publishes each remote endpoint subscription independently", async ({ page }) => {
+  test.setTimeout(60000);
   const server = createSignalingServer({ port: 0 });
   const address = await server.start();
   const url = `ws://127.0.0.1:${address.port}/signal`;
@@ -1242,6 +1243,14 @@ test("phase 3 UI publishes each remote endpoint subscription independently", asy
     await expectLiveRemoteVideoCount(observerPage, 2);
     await expectRemoteHealthLiveCount(teachingPage, 3);
     await expectRemoteHealthLiveCount(observerPage, 2);
+    await expectPeerDiagnosticLiveCount(page, 2);
+
+    await observerPage.getByRole("button", { name: "停止媒体链路" }).click();
+    await expectRemoteHealthLiveCount(observerPage, 0);
+    await expect(page.locator(".footer")).toContainText("已停止媒体链路");
+    await expectPeerDiagnosticLiveCount(page, 1);
+    await expectLiveRemoteVideoCount(teachingPage, 3);
+    await expectRemoteHealthLiveCount(teachingPage, 3);
   } finally {
     await observerPage.close();
     await teachingPage.close();

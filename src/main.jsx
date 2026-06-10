@@ -1645,6 +1645,30 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     }
   }
 
+  function openMediaPeerConnectionCount() {
+    return Array.from(mediaPeerConnections.current.values()).filter(
+      (peerConnection) => peerConnection.connectionState !== "closed"
+    ).length;
+  }
+
+  function cleanupWebRtcMediaForEndpoint(endpointId, message) {
+    closeMediaPeerConnection(endpointId);
+    const remainingPeers = openMediaPeerConnectionCount();
+    if (remainingPeers === 0) {
+      publishedSubscriptionSignature.current = "";
+      mediaStatsHistory.current.clear();
+      stopMediaStatsPolling();
+      setWebrtcMediaState({ state: "idle", label: "未建立" });
+    } else {
+      setWebrtcMediaState({
+        state: "publishing",
+        label: `${endpointLabelById(endpointId)} 已停止媒体链路，仍向 ${remainingPeers} 个远端发布`
+      });
+    }
+    setMediaVersion((value) => value + 1);
+    if (message) setStatus(message);
+  }
+
   async function addMediaIceCandidate(endpointId, candidate) {
     if (!candidate) return;
     const peerConnection = mediaPeerConnections.current.get(endpointId);
@@ -1686,7 +1710,12 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   function stopWebRtcMedia(message = "WebRTC 媒体链路已停止。") {
     const session = activeSessionRef.current;
     if (session?.source === "signaling") {
-      for (const endpointId of activeRemoteEndpointIds()) {
+      const selfId = signalingEndpointIdRef.current;
+      const targetEndpointIds =
+        session.ownerEndpointId && session.ownerEndpointId !== selfId
+          ? [session.ownerEndpointId]
+          : activeRemoteEndpointIds();
+      for (const endpointId of targetEndpointIds) {
         sendSignaling("peer.signal", {
           sessionId: session.id,
           toEndpointId: endpointId,
@@ -1981,7 +2010,12 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       }
 
       if (signal.kind === "media-stop") {
-        cleanupWebRtcMedia(`${endpointLabelById(fromEndpointId)} 已停止媒体链路。`);
+        const selfId = signalingEndpointIdRef.current;
+        if (localEndpointRole === "operating-room" && session.ownerEndpointId === selfId) {
+          cleanupWebRtcMediaForEndpoint(fromEndpointId, `${endpointLabelById(fromEndpointId)} 已停止媒体链路。`);
+        } else {
+          cleanupWebRtcMedia(`${endpointLabelById(fromEndpointId)} 已停止媒体链路。`);
+        }
       }
     } catch (error) {
       setWebrtcMediaState({ state: "error", label: error.message });
