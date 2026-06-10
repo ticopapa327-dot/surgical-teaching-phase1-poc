@@ -23,6 +23,8 @@ test("phase 2 call workflow renders and reaches active interaction state", async
   await page.locator(".recording-main").first().click();
   await page.getByRole("button", { name: "加入 AI 队列" }).click();
   await expect(page.getByText("AI 队列：1")).toBeVisible();
+  await expect(page.locator(".ai-job-item")).toContainText("queued");
+  await expect(page.locator(".ai-job-item")).toContainText("患者 001 / HIS-001");
   await expect(page.locator(".footer")).toContainText("AI 处理任务已加入本地模拟队列");
 
   await expect(page.getByText("阶段 2 呼叫控制")).toBeVisible();

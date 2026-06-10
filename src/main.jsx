@@ -1083,6 +1083,9 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       id: `ai-${Date.now()}`,
       recordingId: recording.id,
       channelLabel: recording.channelLabel,
+      fileName: recording.fileName,
+      durationMs: recording.durationMs,
+      bytes: recording.bytes,
       patient: recording.patient || null,
       status: "queued",
       createdAt: new Date().toISOString()
@@ -3320,6 +3323,17 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
               加入 AI 队列
             </button>
             <span>AI 队列：{aiJobs.length}</span>
+          </div>
+          <div className="ai-job-list">
+            {aiJobs.length === 0 && <p className="hint">暂无 AI 任务。</p>}
+            {aiJobs.slice(0, 5).map((job) => (
+              <div className="ai-job-item" key={job.id}>
+                <strong>{job.channelLabel || job.fileName}</strong>
+                <span>{job.status}</span>
+                <span>{formatDuration(job.durationMs)} / {formatBytes(job.bytes)}</span>
+                <span>{job.patient ? `${job.patient.name} / ${job.patient.hisId}` : "未绑定患者"}</span>
+              </div>
+            ))}
           </div>
         </div>
         <video src={selectedPlayback?.fileUrl || ""} controls />

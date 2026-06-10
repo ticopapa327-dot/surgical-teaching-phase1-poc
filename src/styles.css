@@ -389,6 +389,31 @@ input {
   border-color: #1f6f8b;
 }
 
+.ai-job-list {
+  display: grid;
+  gap: 6px;
+  max-height: 120px;
+  margin-top: 10px;
+  overflow: auto;
+}
+
+.ai-job-item {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) auto auto minmax(110px, auto);
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  border: 1px solid #dde5ee;
+  border-radius: 6px;
+  background: #f8fafc;
+  font-size: 12px;
+}
+
+.ai-job-item span,
+.ai-job-item strong {
+  overflow-wrap: anywhere;
+}
+
 .recording-main {
   width: 100%;
   height: auto;
