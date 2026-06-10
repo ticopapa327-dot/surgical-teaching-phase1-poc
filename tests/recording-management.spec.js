@@ -9,6 +9,13 @@ test("recording list supports deleting a completed recording", async ({ page }) 
   await page.locator(".top-actions button.danger").click();
 
   await expect(page.locator(".recording-item")).toHaveCount(1);
+  await page.getByLabel("录像搜索").fill("不存在的录像");
+  await expect(page.locator(".recording-item")).toHaveCount(0);
+  await expect(page.getByText("没有匹配的录像。")).toBeVisible();
+  await page.getByLabel("录像搜索").fill("通道 1");
+  await expect(page.locator(".recording-item")).toHaveCount(1);
+  await page.getByLabel("录像搜索").fill("");
+
   await page.locator(".recording-actions").getByRole("button", { name: "定位" }).click();
   await expect(page.locator(".footer")).toContainText("已定位录像");
 

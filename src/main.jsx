@@ -530,6 +530,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   const [recordings, setRecordings] = useState([]);
   const [status, setStatus] = useState("准备就绪");
   const [selectedPlayback, setSelectedPlayback] = useState(null);
+  const [recordingFilter, setRecordingFilter] = useState("");
   const [isPermissionReady, setPermissionReady] = useState(false);
   const [recordingSessionId, setRecordingSessionId] = useState("");
   const [previewVersion, setPreviewVersion] = useState(0);
@@ -1092,6 +1093,22 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
 
   function recordingDisplayName(recording) {
     return recording?.fileName || recording?.channelLabel || "录像文件";
+  }
+
+  function recordingFilterText(recording) {
+    return [
+      recording?.fileName,
+      recording?.channelLabel,
+      recording?.startedAt,
+      recording?.stoppedAt,
+      recording?.patient?.name,
+      recording?.patient?.hisId,
+      recording?.patient?.department,
+      recording?.patient?.surgery
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
   }
 
   async function revealRecording(recording) {
@@ -2590,6 +2607,10 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     channelId,
     ...remoteMediaHealth(channelId)
   })) || [];
+  const normalizedRecordingFilter = recordingFilter.trim().toLowerCase();
+  const visibleRecordings = normalizedRecordingFilter
+    ? recordings.filter((recording) => recordingFilterText(recording).includes(normalizedRecordingFilter))
+    : recordings;
   const peerConnectionDiagnostics = Array.from(mediaPeerConnections.current.entries())
     .filter(([, peerConnection]) => peerConnection.connectionState !== "closed")
     .map(([endpointId, peerConnection]) => peerConnectionHealth(endpointId, peerConnection));
@@ -2815,9 +2836,18 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
               <h2>录像索引</h2>
               <button onClick={refreshRecordings}>刷新</button>
             </div>
+            <label className="annotation-input">
+              录像搜索
+              <input
+                value={recordingFilter}
+                onChange={(event) => setRecordingFilter(event.target.value)}
+                placeholder="文件、通道、患者、HIS ID"
+              />
+            </label>
             <div className="recording-list">
               {recordings.length === 0 && <p className="hint">暂无录像。完成录制后会自动生成索引。</p>}
-              {recordings.map((item) => (
+              {recordings.length > 0 && visibleRecordings.length === 0 && <p className="hint">没有匹配的录像。</p>}
+              {visibleRecordings.map((item) => (
                 <div
                   className={`recording-item ${selectedPlayback?.id === item.id ? "active" : ""}`}
                   key={item.id}
