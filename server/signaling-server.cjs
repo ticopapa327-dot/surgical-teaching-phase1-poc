@@ -217,6 +217,7 @@ function createSignalingServer(options = {}) {
   const sessions = new Map();
   const eventLog = [];
   let heartbeatInterval = null;
+  const serverStartedAt = new Date();
   const jsonHeaders = {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
@@ -265,7 +266,11 @@ function createSignalingServer(options = {}) {
           ok: true,
           endpoints: endpoints.size,
           sessions: sessions.size,
-          pendingCalls: pendingCalls.size
+          pendingCalls: pendingCalls.size,
+          startedAt: serverStartedAt.toISOString(),
+          uptimeSeconds: Math.max(0, Math.floor((Date.now() - serverStartedAt.getTime()) / 1000)),
+          eventLogSize: eventLog.length,
+          eventLogLimit
         })
       );
       return;

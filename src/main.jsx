@@ -2327,7 +2327,13 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       const response = await fetch(healthUrlFromSignalingUrl(nextUrl), { cache: "no-store" });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const health = await response.json();
-      setSignalingHealth(`${health.endpoints} 终端 / ${health.sessions} 会话 / ${health.pendingCalls} 呼叫`);
+      const summary = `${health.endpoints} 终端 / ${health.sessions} 会话 / ${health.pendingCalls} 呼叫`;
+      const details = [];
+      if (Number.isFinite(health.uptimeSeconds)) details.push(`运行 ${Math.floor(health.uptimeSeconds)} 秒`);
+      if (Number.isFinite(health.eventLogSize) && Number.isFinite(health.eventLogLimit)) {
+        details.push(`事件 ${health.eventLogSize}/${health.eventLogLimit}`);
+      }
+      setSignalingHealth(details.length ? `${summary} / ${details.join(" / ")}` : summary);
       setStatus("信令健康检查正常。");
     } catch (error) {
       setSignalingHealth("检查失败");

@@ -1033,7 +1033,8 @@ test("phase 2 UI clears signaling session when server disconnects", async ({ pag
     await expect(page.locator(".status-list dd").filter({ hasText: "低延迟本地音频轨道" })).toBeVisible();
     await page.getByRole("button", { name: "检查健康" }).click();
     const healthMetric = page.locator(".status-list.compact div", { hasText: "健康检查" }).locator("dd");
-    await expect(healthMetric).toHaveText("2 终端 / 1 会话 / 0 呼叫");
+    await expect(healthMetric).toContainText("2 终端 / 1 会话 / 0 呼叫");
+    await expect(healthMetric).toContainText("事件");
 
     await server.stop();
     stopped = true;

@@ -38,6 +38,17 @@ async function getJson(url) {
   return response.json();
 }
 
+function assertHealthMetadata(health) {
+  assert.equal(typeof health.startedAt, "string");
+  assert.ok(Number.isFinite(Date.parse(health.startedAt)));
+  assert.equal(typeof health.uptimeSeconds, "number");
+  assert.ok(health.uptimeSeconds >= 0);
+  assert.equal(typeof health.eventLogSize, "number");
+  assert.ok(health.eventLogSize >= 0);
+  assert.equal(typeof health.eventLogLimit, "number");
+  assert.ok(health.eventLogLimit >= health.eventLogSize);
+}
+
 async function main() {
   const server = createSignalingServer({ port: 0 });
   const address = await server.start();
@@ -49,6 +60,7 @@ async function main() {
   assert.equal(emptyHealth.endpoints, 0);
   assert.equal(emptyHealth.sessions, 0);
   assert.equal(emptyHealth.pendingCalls, 0);
+  assertHealthMetadata(emptyHealth);
   const emptySessions = await getJson(`${httpBase}/sessions`);
   assert.deepEqual(emptySessions, []);
 
