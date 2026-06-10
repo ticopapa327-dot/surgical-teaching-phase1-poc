@@ -147,6 +147,14 @@ $env:SIGNALING_AUTH_TOKEN = "test-token"
 
 启用令牌后，两台前端都必须填写同一个信令令牌。
 
+如需跨网段、VPN 或 TURN 中继联调，可从示例文件复制运行时配置后再修改：
+
+```powershell
+Copy-Item public\config.example.json public\config.json
+```
+
+`public/config.example.json` 只包含占位 STUN/TURN 地址和凭据。真实 TURN 用户名、密码、医院内网密钥或公网中继地址不应提交到公开仓库。
+
 如需在 PC-A 手术室端验证 FTP 上传，应使用 Electron 客户端并在启动前设置 FTP 环境变量。浏览器模式、`npm run dev:web` 和 `npm run dev:lan` 只能验证按钮提示，不能直接上传本地录像文件。
 
 ```powershell

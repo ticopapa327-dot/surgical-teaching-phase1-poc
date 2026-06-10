@@ -1,0 +1,21 @@
+{
+  "signalingUrl": "ws://192.168.1.118:7077/signal",
+  "signalingToken": "",
+  "localEndpoint": {
+    "id": "or-pc-a",
+    "name": "手术室端 PC-A",
+    "role": "operating-room"
+  },
+  "webrtc": {
+    "iceServers": [
+      {
+        "urls": "stun:stun.example.com:3478"
+      },
+      {
+        "urls": "turn:turn.example.com:3478?transport=udp",
+        "username": "turn-user",
+        "credential": "turn-password"
+      }
+    ]
+  }
+}

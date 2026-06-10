@@ -135,6 +135,8 @@ npm run dev:lan:check
 - `localEndpoint.role`：本端角色，支持 `operating-room`、`teaching-room`、`observer`。
 - `webrtc.iceServers`：可选 STUN/TURN 配置数组，默认空数组，适合同一局域网 P2P 测试；跨网段联调时可填入 `{ "urls": "turn:host:3478", "username": "...", "credential": "..." }`。
 
+可参考 [public/config.example.json](public/config.example.json) 配置局域网信令地址和 STUN/TURN。不要把真实 TURN 用户名、密码或医院内网密钥提交到公开仓库。
+
 ## 验证
 
 ```powershell
