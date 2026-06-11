@@ -123,3 +123,11 @@ Remove-Item Env:UST_KYLIN_SUDO_PASSWORD -ErrorAction SilentlyContinue
 - `--stop-on-failure`：发现失败后立即停止，适合定位问题；稳定性观察阶段建议不启用，以便收集连续失败证据。
 
 持续验证会在 `validation-results/cross-machine-validation/` 下生成 `continuous-*.json`、`continuous-*.md` 和 `continuous-*.sha256` 总账文件。总账记录每一轮对应的单次交叉验证报告、索引刷新结果和命令输出尾部；单次报告仍由 `npm run test:remote:cross` 生成，并继续由 `npm run test:remote:cross:index` 校验哈希和 artifact 完整性。
+
+持续验证完成后刷新总账索引：
+
+```powershell
+npm run test:remote:cross:loop:index
+```
+
+该索引会校验 `continuous-*.sha256`，并反查每个周期引用的单次交叉验证报告及其 SHA256 文件，防止长期测试后只保留了不可审计的文本结论。
