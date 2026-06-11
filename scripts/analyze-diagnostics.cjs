@@ -127,17 +127,23 @@ function analyze(entries) {
 }
 
 function main(argv) {
-  if (!argv.length) {
-    console.error("Usage: node scripts/analyze-diagnostics.cjs <snapshot.json> [snapshot2.json ...]");
+  const failOnWarn = argv.includes("--fail-on-warn");
+  const filePaths = argv.filter((item) => item !== "--fail-on-warn");
+  if (!filePaths.length) {
+    console.error("Usage: node scripts/analyze-diagnostics.cjs [--fail-on-warn] <snapshot.json> [snapshot2.json ...]");
     process.exitCode = 1;
     return;
   }
 
-  const entries = argv.map((filePath) => ({
+  const entries = filePaths.map((filePath) => ({
     label: fileLabel(filePath),
     snapshot: readSnapshot(filePath)
   }));
-  console.log(analyze(entries).join("\n"));
+  const lines = analyze(entries);
+  console.log(lines.join("\n"));
+  if (failOnWarn && lines.some((line) => line.startsWith("WARN "))) {
+    process.exitCode = 2;
+  }
 }
 
 main(process.argv.slice(2));

@@ -119,4 +119,13 @@ assert.match(warningResult.stdout, /WARN warning-snapshot\.json: RTT 180 ms for 
 assert.match(warningResult.stdout, /WARN session mismatch/);
 assert.match(warningResult.stdout, /WARN media room mismatch/);
 
+const failOnWarnResult = spawnSync(
+  process.execPath,
+  ["scripts/analyze-diagnostics.cjs", "--fail-on-warn", okSnapshotPath, warningSnapshotPath],
+  { encoding: "utf8" }
+);
+
+assert.equal(failOnWarnResult.status, 2);
+assert.match(failOnWarnResult.stdout, /WARN warning-snapshot\.json/);
+
 console.log("diagnostic analyzer test passed");

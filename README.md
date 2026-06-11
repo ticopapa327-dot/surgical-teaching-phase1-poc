@@ -164,6 +164,7 @@ npm run test:signaling
 
 现场保存的诊断快照 JSON 可用 `node scripts/summarize-diagnostics.cjs snapshot-a.json snapshot-b.json > diagnostics.csv` 汇总为 CSV，输出包含访问主机、安全上下文、采集能力、会话 ID、媒体房间 ID、视频码率、包计数、RTT 和 ICE 路由。
 也可执行 `npm run diagnostics:analyze -- snapshot-a.json snapshot-b.json`，自动提示媒体房间不一致、非安全上下文、缺少 `peer.signal`、远端画面等待、PeerConnection 异常、无视频码率、音频缓冲过高或 RTT 过高等常见问题。
+如需作为自动化门禁，可执行 `npm run diagnostics:analyze -- --fail-on-warn snapshot-a.json snapshot-b.json`，出现 `WARN` 时返回非零退出码。
 
 ## 文档
 
