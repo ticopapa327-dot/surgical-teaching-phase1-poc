@@ -85,6 +85,12 @@ Remove-Item Env:UST_KYLIN_SUDO_PASSWORD -ErrorAction SilentlyContinue
 
 报告默认写入 `validation-results/cross-machine-validation/`，同时生成 JSON 原始报告、Markdown 摘要、SHA256 校验文件和 artifacts 归档目录。归档目录会复制本轮远程媒体/音频诊断 JSON 与 CSV，避免只保留易被清理的 `test-results` 路径。`validation-results` 不提交到仓库，只作为本地验证证据。
 
+多轮验证后可生成本地索引，快速查看最近报告、失败步骤、重试次数和证据完整性：
+
+```powershell
+npm run test:remote:cross:index
+```
+
 如需临时跳过某台远端：
 
 ```powershell
