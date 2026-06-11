@@ -17,6 +17,7 @@
 在 118 执行：
 
 ```powershell
+npm run test:remote:windows:probe
 npm run test:remote:signal:tunnel
 npm run test:remote:media:tunnel
 npm run test:remote:audio:tunnel

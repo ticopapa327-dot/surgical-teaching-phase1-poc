@@ -293,6 +293,7 @@ async function main() {
   }
 
   const windowsSteps = [
+    step("117-probe", "117 Windows environment probe", "test:remote:windows:probe", 60000),
     retryingStep("117-signal", "117 Windows signal smoke", "test:remote:signal:tunnel", 180000),
     retryingStep("117-media", "117 Windows 4-channel media smoke", "test:remote:media:tunnel", 240000),
     retryingStep("117-audio", "117 Windows remote audio receive smoke", "test:remote:audio:tunnel", 240000),
