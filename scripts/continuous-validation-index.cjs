@@ -137,6 +137,39 @@ function resolveReportPath(reportDir, reportPath) {
   return path.resolve(reportDir, path.basename(reportPath));
 }
 
+function hasOwn(object, key) {
+  return Object.prototype.hasOwnProperty.call(object || {}, key);
+}
+
+function commandStatus(command) {
+  return command?.status || "";
+}
+
+function inspectPostChecks(ledger, cycle) {
+  const config = ledger.config || {};
+  const resourceRequired = hasOwn(config, "skipResourceIndex") ? config.skipResourceIndex !== true : false;
+  const statusGateRequired = config.strictPostChecks === true && config.skipStatusGate !== true;
+  const resourceStatus = commandStatus(cycle.resourceIndex);
+  const statusGateStatus = commandStatus(cycle.statusGate);
+  const resourceOk = !resourceRequired || resourceStatus === "passed";
+  const statusGateOk = !statusGateRequired || statusGateStatus === "passed";
+  const failures = [];
+
+  if (!resourceOk) failures.push(`resource index ${resourceStatus || "missing"}`);
+  if (!statusGateOk) failures.push(`status gate ${statusGateStatus || "missing"}`);
+
+  return {
+    ok: resourceOk && statusGateOk,
+    resourceRequired,
+    resourceStatus,
+    resourceOk,
+    statusGateRequired,
+    statusGateStatus,
+    statusGateOk,
+    failures
+  };
+}
+
 function inspectCrossReport(reportDir, reportPath) {
   const resolvedPath = resolveReportPath(reportDir, reportPath);
   if (!resolvedPath || !fs.existsSync(resolvedPath)) {
@@ -171,7 +204,8 @@ function summarizeLedger(ledgerPath, reportDir) {
   const checksum = readChecksum(ledgerPath);
   const cycles = (ledger.cycles || []).map((cycle) => {
     const crossReport = inspectCrossReport(reportDir, cycle.crossReport?.reportPath || "");
-    const commandOk = cycle.cross?.status === "passed" && cycle.index?.status === "passed";
+    const postChecks = inspectPostChecks(ledger, cycle);
+    const commandOk = cycle.cross?.status === "passed" && cycle.index?.status === "passed" && postChecks.ok;
     const resultOk = Boolean(cycle.ok) && commandOk && crossReport.reportOk;
     const evidenceOk = crossReport.ok;
     return {
@@ -182,6 +216,9 @@ function summarizeLedger(ledgerPath, reportDir) {
       evidenceOk,
       crossStatus: cycle.cross?.status || "",
       indexStatus: cycle.index?.status || "",
+      resourceIndexStatus: cycle.resourceIndex?.status || "",
+      statusGateStatus: cycle.statusGate?.status || "",
+      postChecks,
       crossReport,
       startedAt: cycle.startedAt || "",
       finishedAt: cycle.finishedAt || "",
@@ -204,7 +241,7 @@ function summarizeLedger(ledgerPath, reportDir) {
     failedCycles,
     evidenceFailedCycles,
     evidenceOk,
-    resultOk: Boolean(ledger.ok) && evidenceOk,
+    resultOk: Boolean(ledger.ok) && failedCycles.length === 0 && evidenceOk,
     cycles
   };
 }
@@ -236,7 +273,7 @@ function renderMarkdown(index) {
     `- Passing ledgers: ${index.passingLedgers}`,
     `- Failing ledgers: ${index.failingLedgers}`,
     `- Evidence failures: ${index.evidenceFailures}`,
-    latest ? `- Latest ledger: ${latest.id} (${latest.ok ? "PASS" : "FAIL"})` : "- Latest ledger: none",
+    latest ? `- Latest ledger: ${latest.id} (${latest.resultOk ? "PASS" : "FAIL"})` : "- Latest ledger: none",
     "",
     "## Ledgers",
     "",
@@ -246,16 +283,17 @@ function renderMarkdown(index) {
 
   for (const ledger of index.ledgers) {
     lines.push(
-      `| ${markdownCell(ledger.startedAt)} | ${ledger.ok ? "PASS" : "FAIL"} | ${ledger.evidenceOk ? "OK" : "BAD"} | ${ledger.cycleCount} | ${ledger.failedCycles.join(", ") || "-"} | ${markdownCell(ledger.ledgerPath)} |`
+      `| ${markdownCell(ledger.startedAt)} | ${ledger.resultOk ? "PASS" : "FAIL"} | ${ledger.evidenceOk ? "OK" : "BAD"} | ${ledger.cycleCount} | ${ledger.failedCycles.join(", ") || "-"} | ${markdownCell(ledger.ledgerPath)} |`
     );
   }
 
-  const problemLedgers = index.ledgers.filter((ledger) => !ledger.ok || !ledger.evidenceOk);
+  const problemLedgers = index.ledgers.filter((ledger) => !ledger.resultOk || !ledger.evidenceOk);
   if (problemLedgers.length) {
     lines.push("", "## Problems", "");
     for (const ledger of problemLedgers) {
       const problems = [];
       if (!ledger.checksum.ok) problems.push(ledger.checksum.error);
+      if (!ledger.ok) problems.push("ledger result is not ok");
       if (ledger.failedCycles.length) problems.push(`failed cycles: ${ledger.failedCycles.join(", ")}`);
       if (ledger.evidenceFailedCycles.length) problems.push(`evidence failed cycles: ${ledger.evidenceFailedCycles.join(", ")}`);
       lines.push(`- ${ledger.id}: ${problems.join("; ") || "unknown issue"}`);
@@ -278,8 +316,8 @@ function main(argv) {
     reportDir: options.reportDir,
     outputPath: options.outputPath,
     totalLedgers: ledgers.length,
-    passingLedgers: ledgers.filter((ledger) => ledger.ok).length,
-    failingLedgers: ledgers.filter((ledger) => !ledger.ok).length,
+    passingLedgers: ledgers.filter((ledger) => ledger.resultOk).length,
+    failingLedgers: ledgers.filter((ledger) => !ledger.resultOk).length,
     evidenceFailures: ledgers.filter((ledger) => !ledger.evidenceOk).length,
     ledgers
   };

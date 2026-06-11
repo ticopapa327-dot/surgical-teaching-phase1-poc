@@ -4,6 +4,7 @@ const { spawn, spawnSync } = require("node:child_process");
 
 const DEFAULTS = {
   sshTarget: "xyzn@192.168.1.137",
+  sshBindAddress: "192.168.1.118",
   remoteLanHost: "192.168.1.137",
   remoteHost: "127.0.0.1",
   remotePort: "9334",
@@ -26,6 +27,12 @@ function env(name, fallback) {
   return String(process.env[name] || fallback).trim();
 }
 
+function envAllowEmpty(name, fallback) {
+  return Object.prototype.hasOwnProperty.call(process.env, name)
+    ? String(process.env[name]).trim()
+    : String(fallback).trim();
+}
+
 function envFlag(name, fallback) {
   const value = env(name, fallback).toLowerCase();
   return value === "1" || value === "true" || value === "yes" || value === "on";
@@ -39,6 +46,7 @@ function configFromEnv() {
   const localPort = env("UST_KYLIN_DEVTOOLS_LOCAL_PORT", DEFAULTS.localPort);
   return {
     sshTarget: env("UST_KYLIN_SSH_TARGET", DEFAULTS.sshTarget),
+    sshBindAddress: envAllowEmpty("UST_KYLIN_SSH_BIND_ADDRESS", DEFAULTS.sshBindAddress),
     remoteLanHost,
     remoteHost: env("UST_KYLIN_DEVTOOLS_REMOTE_HOST", DEFAULTS.remoteHost),
     remotePort,
@@ -76,6 +84,7 @@ function usage() {
     "",
     "Environment:",
     "  UST_KYLIN_SSH_TARGET              Default: xyzn@192.168.1.137",
+    "  UST_KYLIN_SSH_BIND_ADDRESS        Default: 192.168.1.118; set empty to let the OS choose",
     "  UST_KYLIN_HOST                    Default: 192.168.1.137",
     "  UST_KYLIN_DEVTOOLS_MODE           Default: lan; use ssh-tunnel only when sshd allows forwarding",
     "  UST_KYLIN_DEVTOOLS_LOCAL_PORT     Default: 9225",
@@ -241,16 +250,22 @@ function remoteCleanupScript(config) {
   return processFilter(config);
 }
 
+function sshBaseArgs(config, options = []) {
+  const args = ["-o", "BatchMode=yes", ...options];
+  if (config.sshBindAddress) args.push("-b", config.sshBindAddress);
+  return args;
+}
+
 function spawnTunnel(config) {
   const args = [
-    "-o",
-    "BatchMode=yes",
-    "-o",
-    "ExitOnForwardFailure=yes",
-    "-o",
-    "ServerAliveInterval=30",
-    "-o",
-    "ServerAliveCountMax=2",
+    ...sshBaseArgs(config, [
+      "-o",
+      "ExitOnForwardFailure=yes",
+      "-o",
+      "ServerAliveInterval=30",
+      "-o",
+      "ServerAliveCountMax=2"
+    ]),
     "-L",
     `${config.localHost}:${config.localPort}:${config.remoteHost}:${config.remotePort}`,
     config.sshTarget,
@@ -267,11 +282,19 @@ function spawnTunnel(config) {
 }
 
 function runRemoteBrowserStart(config) {
-  return spawnSync("ssh", ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5", config.sshTarget, remoteBashCommand(remoteBrowserScript(config, { bindHost: "0.0.0.0" }))], {
-    encoding: "utf8",
-    timeout: 30000,
-    windowsHide: true
-  });
+  return spawnSync(
+    "ssh",
+    [
+      ...sshBaseArgs(config, ["-o", "ConnectTimeout=5"]),
+      config.sshTarget,
+      remoteBashCommand(remoteBrowserScript(config, { bindHost: "0.0.0.0" }))
+    ],
+    {
+      encoding: "utf8",
+      timeout: 30000,
+      windowsHide: true
+    }
+  );
 }
 
 function runRemoteFirewall(config, action) {
@@ -284,11 +307,15 @@ function runRemoteFirewall(config, action) {
     `--dport ${shellQuote(config.remotePort)}`,
     "-j ACCEPT"
   ].join(" ");
-  return spawnSync("ssh", ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5", config.sshTarget, remoteBashCommand(command)], {
-    encoding: "utf8",
-    timeout: 15000,
-    windowsHide: true
-  });
+  return spawnSync(
+    "ssh",
+    [...sshBaseArgs(config, ["-o", "ConnectTimeout=5"]), config.sshTarget, remoteBashCommand(command)],
+    {
+      encoding: "utf8",
+      timeout: 15000,
+      windowsHide: true
+    }
+  );
 }
 
 async function waitForReady(config, timeoutMs = 25000) {
@@ -358,6 +385,7 @@ async function start(config) {
     startedAt: new Date().toISOString(),
     localDebugUrl: config.localDebugUrl,
     sshTarget: config.sshTarget,
+    sshBindAddress: config.sshBindAddress,
     mode: config.mode,
     remoteLanHost: config.remoteLanHost,
     remoteHost: config.remoteHost,
@@ -394,11 +422,15 @@ async function start(config) {
 }
 
 function runRemoteCleanup(config) {
-  return spawnSync("ssh", ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5", config.sshTarget, remoteBashCommand(remoteCleanupScript(config))], {
-    encoding: "utf8",
-    timeout: 15000,
-    windowsHide: true
-  });
+  return spawnSync(
+    "ssh",
+    [...sshBaseArgs(config, ["-o", "ConnectTimeout=5"]), config.sshTarget, remoteBashCommand(remoteCleanupScript(config))],
+    {
+      encoding: "utf8",
+      timeout: 15000,
+      windowsHide: true
+    }
+  );
 }
 
 function stop(config) {

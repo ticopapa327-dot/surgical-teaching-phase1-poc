@@ -4,6 +4,7 @@ const { spawnSync } = require("node:child_process");
 
 const DEFAULTS = {
   sshTarget: "xyzn@192.168.1.137",
+  sshBindAddress: "192.168.1.118",
   webUrl: "http://192.168.1.118:5173/",
   signalingHealthUrl: "http://192.168.1.118:7077/health",
   artifactDir: path.join("test-results", "remote-kylin-probe"),
@@ -14,6 +15,12 @@ function env(name, fallback) {
   return String(process.env[name] || fallback).trim();
 }
 
+function envAllowEmpty(name, fallback) {
+  return Object.prototype.hasOwnProperty.call(process.env, name)
+    ? String(process.env[name]).trim()
+    : String(fallback).trim();
+}
+
 function stripLoginBanner(text) {
   return String(text || "")
     .split(/\r?\n/)
@@ -22,16 +29,19 @@ function stripLoginBanner(text) {
     .trim();
 }
 
+function sshArgs(config, command) {
+  const args = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"];
+  if (config.sshBindAddress) args.push("-b", config.sshBindAddress);
+  args.push(config.sshTarget, command);
+  return args;
+}
+
 function runSsh(config, command, options = {}) {
-  const result = spawnSync(
-    "ssh",
-    ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5", config.sshTarget, command],
-    {
-      encoding: "utf8",
-      timeout: options.timeoutMs || Number(config.sshTimeoutMs),
-      windowsHide: true
-    }
-  );
+  const result = spawnSync("ssh", sshArgs(config, command), {
+    encoding: "utf8",
+    timeout: options.timeoutMs || Number(config.sshTimeoutMs),
+    windowsHide: true
+  });
   return {
     ok: result.status === 0,
     status: result.status,
@@ -137,6 +147,7 @@ function writeProbeArtifact(payload, artifactDir) {
 function configFromEnv() {
   return {
     sshTarget: env("UST_KYLIN_SSH_TARGET", DEFAULTS.sshTarget),
+    sshBindAddress: envAllowEmpty("UST_KYLIN_SSH_BIND_ADDRESS", DEFAULTS.sshBindAddress),
     webUrl: env("UST_KYLIN_WEB_URL", DEFAULTS.webUrl),
     signalingHealthUrl: env("UST_KYLIN_SIGNALING_HEALTH_URL", DEFAULTS.signalingHealthUrl),
     artifactDir: env("UST_KYLIN_PROBE_ARTIFACT_DIR", DEFAULTS.artifactDir),
@@ -151,6 +162,7 @@ function usage() {
     "",
     "Environment:",
     "  UST_KYLIN_SSH_TARGET             Default: xyzn@192.168.1.137",
+    "  UST_KYLIN_SSH_BIND_ADDRESS       Default: 192.168.1.118; set empty to let the OS choose",
     "  UST_KYLIN_WEB_URL                Default: http://192.168.1.118:5173/",
     "  UST_KYLIN_SIGNALING_HEALTH_URL   Default: http://192.168.1.118:7077/health",
     "  UST_KYLIN_PROBE_ARTIFACT_DIR     Default: test-results/remote-kylin-probe",

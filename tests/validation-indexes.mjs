@@ -198,7 +198,16 @@ async function writeContinuousLedger(
   reportDir,
   id,
   crossReportPath,
-  { ok = true, crossScript = "test:remote:cross:strict", finishedAt = "2026-06-11T00:02:00.000Z" } = {}
+  {
+    ok = true,
+    crossScript = "test:remote:cross:strict",
+    finishedAt = "2026-06-11T00:02:00.000Z",
+    strictPostChecks = crossScript === "test:remote:cross:strict",
+    skipResourceIndex = false,
+    skipStatusGate = false,
+    resourceIndexStatus = "passed",
+    statusGateStatus = "passed"
+  } = {}
 ) {
   const ledger = {
     id,
@@ -212,7 +221,10 @@ async function writeContinuousLedger(
       iterations: 1,
       durationMs: 0,
       intervalSeconds: 1,
-      stopOnFailure: false
+      stopOnFailure: false,
+      strictPostChecks,
+      skipResourceIndex,
+      skipStatusGate
     },
     cycles: [
       {
@@ -227,6 +239,17 @@ async function writeContinuousLedger(
         index: {
           status: "passed"
         },
+        resourceIndex: skipResourceIndex
+          ? null
+          : {
+              status: resourceIndexStatus
+            },
+        statusGate:
+          strictPostChecks && !skipStatusGate
+            ? {
+                status: statusGateStatus
+              }
+            : null,
         crossReport: {
           reportPath: crossReportPath,
           ok
@@ -291,6 +314,29 @@ try {
   assert.equal(continuousIndexJson.evidenceFailures, 0);
   assert.equal(continuousIndexJson.ledgers[0].cycles[0].crossReport.reportOk, true);
   assert.equal(continuousIndexJson.ledgers[0].cycles[0].crossReport.artifacts.ok, true);
+  assert.equal(continuousIndexJson.ledgers[0].cycles[0].postChecks.ok, true);
+
+  const failedPostCheckDir = path.join(tempDir, "continuous-post-check-failed");
+  await mkdir(failedPostCheckDir, { recursive: true });
+  const failedPostCheckReport = await writeCrossReport(failedPostCheckDir, "2026-06-11T00-02-00-000Z", {
+    strict: true
+  });
+  await writeContinuousLedger(
+    failedPostCheckDir,
+    "continuous-2026-06-11T00-02-30-000Z",
+    failedPostCheckReport.reportPath,
+    { statusGateStatus: "failed" }
+  );
+  const failedPostCheckIndex = await runNode("scripts/continuous-validation-index.cjs", {
+    UST_VALIDATION_REPORT_DIR: failedPostCheckDir
+  });
+  assert.equal(failedPostCheckIndex.code, 0, `${failedPostCheckIndex.stdout}\n${failedPostCheckIndex.stderr}`);
+  const failedPostCheckIndexJson = JSON.parse(failedPostCheckIndex.stdout);
+  assert.equal(failedPostCheckIndexJson.passingLedgers, 0);
+  assert.equal(failedPostCheckIndexJson.failingLedgers, 1);
+  assert.equal(failedPostCheckIndexJson.evidenceFailures, 0);
+  assert.deepEqual(failedPostCheckIndexJson.ledgers[0].failedCycles, [1]);
+  assert.equal(failedPostCheckIndexJson.ledgers[0].cycles[0].postChecks.statusGateOk, false);
 
   const strictStatusDir = path.join(tempDir, "status-strict-ok");
   await mkdir(strictStatusDir, { recursive: true });

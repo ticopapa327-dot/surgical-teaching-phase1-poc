@@ -36,6 +36,8 @@ npm run test:remote:audio:diagnostics
 
 137 当前 SSHD 配置禁止端口转发，因此不能采用 117 的 SSH 隧道模式。现阶段使用临时 LAN DevTools 模式：118 通过 SSH 在 137 启动 headless 麒麟浏览器，并临时放行 137 的 `9334` 端口，仅允许 118 访问。
 
+麒麟端 SSH 默认通过 `UST_KYLIN_SSH_BIND_ADDRESS=192.168.1.118` 绑定 118 的有线地址，避免 Windows 上 VPN、Meta Tunnel 或其他虚拟网卡抢占到 `192.168.1.137` 的路由。若 118 的测试网 IP 发生变化，必须同步调整该环境变量；如确需交给操作系统自动选路，可将该变量设为空。
+
 先做环境探测：
 
 ```powershell
@@ -150,7 +152,7 @@ Remove-Item Env:UST_KYLIN_SUDO_PASSWORD -ErrorAction SilentlyContinue
 npm run test:remote:cross:loop:index
 ```
 
-该索引会校验 `continuous-*.sha256`，并反查每个周期引用的单次交叉验证报告及其 SHA256 文件，防止长期测试后只保留了不可审计的文本结论。
+该索引会校验 `continuous-*.sha256`，反查每个周期引用的单次交叉验证报告及其 SHA256 文件，并把每轮资源趋势索引、严格状态门禁等后置检查纳入周期结果判定，防止长期测试后只保留了不可审计或门禁不完整的文本结论。
 
 长期验证期间还应生成资源趋势索引：
 
