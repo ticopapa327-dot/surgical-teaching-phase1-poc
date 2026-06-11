@@ -43,6 +43,7 @@ function warnMedia(lines, label, snapshot) {
   const media = snapshot?.media || {};
   const metrics = Array.isArray(media.statsMetrics) ? media.statsMetrics : [];
   const peers = Array.isArray(media.peerConnections) ? media.peerConnections : [];
+  const diagnostics = Array.isArray(media.diagnostics) ? media.diagnostics : [];
 
   if (session && peers.length === 0 && metrics.length === 0) {
     lines.push(`WARN ${label}: session exists but no WebRTC peer connection or stats metrics were captured`);
@@ -52,6 +53,21 @@ function warnMedia(lines, label, snapshot) {
   }
   if (session && !hasPeerSignalEvent(snapshot)) {
     lines.push(`WARN ${label}: recent events do not include peer.signal.forwarded`);
+  }
+
+  for (const diagnostic of diagnostics) {
+    if (diagnostic?.state === "waiting") {
+      lines.push(`WARN ${label}: channel ${diagnostic.channelId || "unknown"} is still waiting for remote WebRTC video`);
+    }
+    if (diagnostic?.state === "ended") {
+      lines.push(`WARN ${label}: channel ${diagnostic.channelId || "unknown"} remote media is abnormal`);
+    }
+  }
+
+  for (const peer of peers) {
+    if (peer?.state === "ended") {
+      lines.push(`WARN ${label}: peer ${peer.endpointId || "unknown"} connection is abnormal`);
+    }
   }
 
   for (const metric of metrics) {

@@ -163,7 +163,7 @@ npm run test:signaling
 `test:signaling` 启动本地 WebSocket 信令服务器，模拟手术室端、示教室端和观摩端，验证注册、通讯录、会话目录、呼叫、接受、默认通道、订阅、参与上限拒绝、协议错误分支和心跳清理。
 
 现场保存的诊断快照 JSON 可用 `node scripts/summarize-diagnostics.cjs snapshot-a.json snapshot-b.json > diagnostics.csv` 汇总为 CSV，输出包含访问主机、安全上下文、采集能力、会话 ID、媒体房间 ID、视频码率、包计数、RTT 和 ICE 路由。
-也可执行 `npm run diagnostics:analyze -- snapshot-a.json snapshot-b.json`，自动提示媒体房间不一致、非安全上下文、缺少 `peer.signal`、无视频码率、音频缓冲过高或 RTT 过高等常见问题。
+也可执行 `npm run diagnostics:analyze -- snapshot-a.json snapshot-b.json`，自动提示媒体房间不一致、非安全上下文、缺少 `peer.signal`、远端画面等待、PeerConnection 异常、无视频码率、音频缓冲过高或 RTT 过高等常见问题。
 
 ## 文档
 
