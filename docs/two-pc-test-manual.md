@@ -124,6 +124,48 @@ npm run dev:lan
 
 开发自检时可使用 `npm run dev:lan:smoke`，该命令启动服务并在 ready 探测通过后自动退出；正式双机测试仍使用 `npm run dev:lan` 并保持窗口打开。
 
+### 2. 使用 117 Windows 远程浏览器做自动化 smoke
+
+当 PC-B 为已开放 SSH 和 Edge/Chrome DevTools 的 Windows 终端时，可在 PC-A 直接执行远程信令 smoke。该测试由 PC-A 启动本地 Playwright 页面作为手术室端，并通过 PC-B 的 `9222` DevTools 端口控制远程 Edge 页面作为示教室端；PC-B 不需要安装 Node.js 或本仓库。
+
+前置条件：
+
+1. PC-A 已执行 `npm run dev:lan`，并保持 `5173` 和 `7077` 服务运行。
+2. PC-B 的浏览器远程调试端口可访问，例如 `http://192.168.1.117:9222/json/version` 返回 `200`。
+3. PC-B 可访问 PC-A 的 `http://192.168.1.118:5173/` 和 `http://192.168.1.118:7077/health`。
+
+默认拓扑为 PC-A `192.168.1.118`、PC-B `192.168.1.117`。执行：
+
+```powershell
+npm run test:remote:signal
+```
+
+或使用等价别名：
+
+```powershell
+npm run test:remote:windows
+```
+
+默认环境变量如下，现场 IP 或端口变化时可覆盖：
+
+```powershell
+$env:UST_LOCAL_WEB_URL = "http://127.0.0.1:5173/"
+$env:UST_REMOTE_WEB_URL = "http://192.168.1.118:5173/"
+$env:UST_SIGNALING_URL = "ws://192.168.1.118:7077/signal"
+$env:UST_SIGNALING_HEALTH_URL = "http://127.0.0.1:7077/health"
+$env:UST_REMOTE_DEBUG_URL = "http://192.168.1.117:9222"
+npm run test:remote:signal
+```
+
+通过标准：
+
+1. 脚本输出 `ok: true`。
+2. 输出中包含本次自动生成的手术室端 ID 和示教室端 ID。
+3. 测试过程中服务端健康状态出现 `sessions=1`，`endpoints` 至少为 `2`；如果 PC-B 已有手动测试页面在线，`endpoints` 可能大于 `2`。
+4. 测试结束后远程测试页面会关闭，会话应自动清理。
+
+该测试依赖局域网、PC-B 在线状态和浏览器调试端口，不纳入 GitHub Actions CI；它是本地双机开发门禁，用于证明 118 能自动控制 117 完成信令呼叫闭环。
+
 如果需要分开启动，也可以在 PC-A 执行：
 
 ```powershell
