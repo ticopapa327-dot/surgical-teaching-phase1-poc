@@ -280,6 +280,7 @@ function collectReports(options) {
   return fs
     .readdirSync(options.reportDir, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+    .filter((entry) => /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z(?:-[^.]+)?\.json$/.test(entry.name))
     .filter((entry) => !entry.name.startsWith("continuous-"))
     .filter((entry) => entry.name !== "status.json")
     .filter((entry) => !entry.name.endsWith("artifact-manifest.json"))

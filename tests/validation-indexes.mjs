@@ -125,6 +125,11 @@ async function writeCrossReport(
         "cross-machine-validation",
         "lan-route-remediation-plan.md"
       );
+      const lanRoutePlanJsonPath = path.join(
+        artifactDir,
+        "cross-machine-validation",
+        "lan-route-remediation-plan.json"
+      );
       const windowsProbePath = path.join(artifactDir, "remote-windows-probe", "windows-probe.json");
       const kylinProbePath = path.join(artifactDir, "remote-kylin-probe", "kylin-probe.json");
       const lanTopologyJson = `${JSON.stringify(
@@ -156,7 +161,7 @@ async function writeCrossReport(
         2
       )}\n`;
       const lanRoutePlanClassification = lanTopology?.diagnosis?.classification || "ok";
-      const lanRoutePlanRequiresManualAction = lanTopology?.topologyOk === false ? "true" : "false";
+      const lanRoutePlanRequiresManualAction = lanTopology?.topologyOk === false;
       const lanRoutePlanText = [
         "# LAN route remediation plan",
         "",
@@ -166,6 +171,22 @@ async function writeCrossReport(
         `Requires manual action: ${lanRoutePlanRequiresManualAction}`,
         ""
       ].join("\n");
+      const lanRoutePlanJson = `${JSON.stringify(
+        {
+          ok: !lanRoutePlanRequiresManualAction,
+          requiresManualAction: lanRoutePlanRequiresManualAction,
+          generatedAt: "2026-06-11T00:00:01.000Z",
+          sourcePath: "test-results/remote-lan-topology/lan-topology.json",
+          sourceGeneratedAt: "2026-06-11T00:00:01.000Z",
+          targetHost: "192.168.1.137",
+          targetPort: 22,
+          classification: lanRoutePlanClassification,
+          evidence: lanTopology?.diagnosis?.evidence || [],
+          hosts: []
+        },
+        null,
+        2
+      )}\n`;
       const windowsProbeJson = `${JSON.stringify(
         {
           checks: {
@@ -203,6 +224,7 @@ async function writeCrossReport(
       await mkdir(path.dirname(kylinProbePath), { recursive: true });
       await writeFile(lanTopologyPath, lanTopologyJson, "utf8");
       await writeFile(lanRoutePlanPath, lanRoutePlanText, "utf8");
+      await writeFile(lanRoutePlanJsonPath, lanRoutePlanJson, "utf8");
       await writeFile(windowsProbePath, windowsProbeJson, "utf8");
       await writeFile(kylinProbePath, kylinProbeJson, "utf8");
       files.push(
@@ -217,6 +239,12 @@ async function writeCrossReport(
           targetPath: lanRoutePlanPath,
           bytes: Buffer.byteLength(lanRoutePlanText),
           sha256: sha256(lanRoutePlanText)
+        },
+        {
+          sourcePath: "validation-results/cross-machine-validation/lan-route-remediation-plan.json",
+          targetPath: lanRoutePlanJsonPath,
+          bytes: Buffer.byteLength(lanRoutePlanJson),
+          sha256: sha256(lanRoutePlanJson)
         },
         {
           sourcePath: "test-results/remote-windows-probe/windows-probe.json",
@@ -466,6 +494,11 @@ try {
   const strictStatusDir = path.join(tempDir, "status-strict-ok");
   await mkdir(strictStatusDir, { recursive: true });
   const strictPass = await writeCrossReport(strictStatusDir, "2026-06-11T00-06-00-000Z", { strict: true });
+  await writeFile(
+    path.join(strictStatusDir, "lan-route-remediation-plan.json"),
+    `${JSON.stringify({ classification: "ok", requiresManualAction: false }, null, 2)}\n`,
+    "utf8"
+  );
   await writeContinuousLedger(strictStatusDir, "continuous-2026-06-11T00-06-30-000Z", strictPass.reportPath);
   const strictStatus = await runNode("scripts/validation-status.cjs", {
     UST_VALIDATION_REPORT_DIR: strictStatusDir,
@@ -481,6 +514,7 @@ try {
   assert.equal(strictStatusJson.latestStrictReport.steps.ok, true);
   assert.equal(strictStatusJson.latestStrictReport.artifacts.ok, true);
   assert.equal(strictStatusJson.latestStrictReport.lanRoutePlan.available, true);
+  assert.equal(strictStatusJson.latestStrictReport.lanRoutePlan.source, "json");
   assert.equal(strictStatusJson.latestStrictReport.lanRoutePlan.classification, "ok");
   assert.equal(strictStatusJson.latestStrictReport.lanRoutePlan.requiresManualAction, false);
 
@@ -505,8 +539,10 @@ try {
   });
   assert.equal(strictReportIndex.code, 0, `${strictReportIndex.stdout}\n${strictReportIndex.stderr}`);
   const strictReportIndexJson = JSON.parse(strictReportIndex.stdout);
+  assert.equal(strictReportIndexJson.totalReports, 1);
   assert.equal(strictReportIndexJson.routePlanReports, 1);
   assert.equal(strictReportIndexJson.reports[0].lanTopology.classification, "ok");
+  assert.equal(strictReportIndexJson.reports[0].lanRoutePlan.source, "json");
   assert.equal(strictReportIndexJson.reports[0].lanRoutePlan.classification, "ok");
   assert.equal(strictReportIndexJson.reports[0].lanRoutePlan.requiresManualAction, false);
 
@@ -638,6 +674,7 @@ try {
   assert.equal(splitRouteStatusJson.latestStrictReport.remoteResources.windowsLanTargetsOk, false);
   assert.equal(splitRouteStatusJson.latestStrictReport.lanTopology.topologyOk, false);
   assert.equal(splitRouteStatusJson.latestStrictReport.lanRoutePlan.available, true);
+  assert.equal(splitRouteStatusJson.latestStrictReport.lanRoutePlan.source, "json");
   assert.equal(
     splitRouteStatusJson.latestStrictReport.lanRoutePlan.classification,
     "overlay_route_hijack_and_lan_target_unresolved"
@@ -657,6 +694,7 @@ try {
     splitRouteIndexJson.reports[0].lanRoutePlan.classification,
     "overlay_route_hijack_and_lan_target_unresolved"
   );
+  assert.equal(splitRouteIndexJson.reports[0].lanRoutePlan.source, "json");
   assert.equal(splitRouteIndexJson.reports[0].lanRoutePlan.requiresManualAction, true);
   assert.equal(
     splitRouteStatusJson.latestStrictReport.lanTopology.diagnosis.classification,

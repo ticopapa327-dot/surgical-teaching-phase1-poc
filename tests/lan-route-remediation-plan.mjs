@@ -5,7 +5,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { createPlan, findLatestJsonFile, renderMarkdown, run } = require("../scripts/lan-route-remediation-plan.cjs");
+const { createPlan, defaultJsonOutputPath, findLatestJsonFile, renderMarkdown, run } = require("../scripts/lan-route-remediation-plan.cjs");
 
 const splitRouteArtifact = {
   generatedAt: "2026-06-11T19:59:23.157Z",
@@ -151,17 +151,24 @@ try {
   assert.equal(path.basename(findLatestJsonFile(tmp)), "newer.json");
 
   const outputPath = path.join(tmp, "plan.md");
+  const jsonOutputPath = path.join(tmp, "plan.json");
+  assert.equal(defaultJsonOutputPath(outputPath), jsonOutputPath);
   const originalLog = console.log;
   let result;
   try {
     console.log = () => {};
-    result = run(["--artifact", newerPath, "--output", outputPath]);
+    result = run(["--artifact", newerPath, "--output", outputPath, "--json-output", jsonOutputPath]);
   } finally {
     console.log = originalLog;
   }
   assert.equal(result.requiresManualAction, true);
+  assert.equal(result.jsonOutputPath, jsonOutputPath);
   const output = await readFile(outputPath, "utf8");
   assert.match(output, /LAN route remediation plan/);
+  const planJson = JSON.parse(await readFile(jsonOutputPath, "utf8"));
+  assert.equal(planJson.requiresManualAction, true);
+  assert.equal(planJson.classification, "overlay_route_hijack_and_lan_target_unresolved");
+  assert.equal(planJson.targetHost, "192.168.1.137");
 } finally {
   await rm(tmp, { recursive: true, force: true });
 }

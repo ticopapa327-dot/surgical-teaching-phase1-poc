@@ -215,8 +215,22 @@ function findArtifactFile(manifest, sourceName, extension = "") {
     .sort((a, b) => String(b.targetPath || "").localeCompare(String(a.targetPath || "")))[0];
 }
 
-function readTextArtifact(manifest, sourceName) {
-  const file = findArtifactFile(manifest, sourceName);
+function readNamedJsonArtifact(manifest, sourceName) {
+  const file = findArtifactFile(manifest, sourceName, ".json");
+  if (!file?.targetPath) return { artifact: null, targetPath: "", error: "" };
+  const targetPath = path.resolve(file.targetPath);
+  if (!fs.existsSync(targetPath)) {
+    return { artifact: null, targetPath, error: "artifact missing" };
+  }
+  try {
+    return { artifact: readJson(targetPath), targetPath, error: "" };
+  } catch {
+    return { artifact: null, targetPath, error: "artifact unreadable" };
+  }
+}
+
+function readTextArtifact(manifest, sourceName, extension = "") {
+  const file = findArtifactFile(manifest, sourceName, extension);
   if (!file?.targetPath) return { text: "", targetPath: "" };
   const targetPath = path.resolve(file.targetPath);
   if (!fs.existsSync(targetPath)) return { text: "", targetPath };
@@ -345,7 +359,40 @@ function lanRoutePlanStatus(report, reportPath) {
     };
   }
   const manifest = readJson(manifestPath);
-  const { text, targetPath } = readTextArtifact(manifest, "lan-route-remediation-plan");
+  const planJson = readNamedJsonArtifact(manifest, "lan-route-remediation-plan");
+  if (planJson.targetPath) {
+    if (!planJson.artifact) {
+      return {
+        available: false,
+        ok: false,
+        requiresManualAction: null,
+        classification: "",
+        artifactPath: planJson.targetPath,
+        source: "json",
+        error: `LAN route remediation plan ${planJson.error}`
+      };
+    }
+    const classification = String(planJson.artifact.classification || "");
+    const requiresManualAction =
+      typeof planJson.artifact.requiresManualAction === "boolean"
+        ? planJson.artifact.requiresManualAction
+        : null;
+    const ok = Boolean(classification && requiresManualAction !== null);
+    return {
+      available: true,
+      ok,
+      requiresManualAction,
+      classification,
+      artifactPath: planJson.targetPath,
+      source: "json",
+      targetHost: planJson.artifact.targetHost || "",
+      targetPort: planJson.artifact.targetPort ?? null,
+      generatedAt: planJson.artifact.generatedAt || "",
+      error: ok ? "" : "LAN route remediation plan JSON missing required fields"
+    };
+  }
+
+  const { text, targetPath } = readTextArtifact(manifest, "lan-route-remediation-plan", ".md");
   if (!text) {
     return {
       available: false,
@@ -353,6 +400,7 @@ function lanRoutePlanStatus(report, reportPath) {
       requiresManualAction: null,
       classification: "",
       artifactPath: targetPath,
+      source: "",
       error: targetPath ? "LAN route remediation plan unreadable" : "LAN route remediation plan missing"
     };
   }
@@ -365,6 +413,7 @@ function lanRoutePlanStatus(report, reportPath) {
       requiresManualActionText === "true" ? true : requiresManualActionText === "false" ? false : null,
     classification,
     artifactPath: targetPath,
+    source: "markdown",
     error: classification && requiresManualActionText ? "" : "LAN route remediation plan missing required fields"
   };
 }

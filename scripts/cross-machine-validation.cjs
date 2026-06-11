@@ -265,7 +265,8 @@ function archiveDiagnosticArtifacts(reportDir, reportId, startedAt) {
     path.join("test-results", "remote-kylin-media-smoke"),
     path.join("test-results", "remote-kylin-audio-smoke"),
     path.join("test-results", "remote-cross-conference-smoke"),
-    path.join(reportDir, "lan-route-remediation-plan.md")
+    path.join(reportDir, "lan-route-remediation-plan.md"),
+    path.join(reportDir, "lan-route-remediation-plan.json")
   ];
   const allowedExtensions = new Set([".json", ".csv", ".md"]);
   const artifactsDir = path.join(reportDir, `${reportId}-artifacts`);
@@ -602,7 +603,8 @@ async function main(argv = []) {
     30000
   );
   lanRoutePlanStep.env = {
-    UST_LAN_REMEDIATION_OUTPUT: path.join(config.reportDir, "lan-route-remediation-plan.md")
+    UST_LAN_REMEDIATION_OUTPUT: path.join(config.reportDir, "lan-route-remediation-plan.md"),
+    UST_LAN_REMEDIATION_JSON_OUTPUT: path.join(config.reportDir, "lan-route-remediation-plan.json")
   };
 
   const hasFailedStep = () => report.steps.some((item) => item.status === "failed");

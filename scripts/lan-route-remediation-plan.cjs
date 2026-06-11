@@ -17,6 +17,12 @@ function readArg(argv, name) {
   return argv[index + 1] || "";
 }
 
+function defaultJsonOutputPath(outputPath) {
+  const parsed = path.parse(outputPath || DEFAULTS.outputPath);
+  if (!parsed.ext) return `${outputPath}.json`;
+  return path.join(parsed.dir, `${parsed.name}.json`);
+}
+
 function usage() {
   return [
     "Usage:",
@@ -25,22 +31,29 @@ function usage() {
     "Options:",
     "  --artifact <path>     LAN topology artifact JSON; default is newest test-results/remote-lan-topology/*.json",
     "  --output <path>       Markdown output path",
+    "  --json-output <path>  Machine-readable plan JSON output path; default is Markdown path with .json extension",
     "  --json                Print plan as JSON",
-    "  --no-write            Do not write Markdown output",
+    "  --no-write            Do not write output files",
     "  --help                Show this help",
     "",
     "Environment:",
     "  UST_LAN_REMEDIATION_ARTIFACT     Default artifact path",
     "  UST_LAN_REMEDIATION_OUTPUT       Default Markdown output path",
+    "  UST_LAN_REMEDIATION_JSON_OUTPUT  Default machine-readable plan JSON output path",
     "  UST_LAN_REMEDIATION_TOPOLOGY_DIR Default topology artifact directory"
   ].join("\n");
 }
 
 function parseArgs(argv) {
+  const outputPath = readArg(argv, "--output") || env("UST_LAN_REMEDIATION_OUTPUT", DEFAULTS.outputPath);
   return {
     artifactPath: readArg(argv, "--artifact") || env("UST_LAN_REMEDIATION_ARTIFACT", ""),
     topologyDir: env("UST_LAN_REMEDIATION_TOPOLOGY_DIR", DEFAULTS.topologyDir),
-    outputPath: readArg(argv, "--output") || env("UST_LAN_REMEDIATION_OUTPUT", DEFAULTS.outputPath),
+    outputPath,
+    jsonOutputPath:
+      readArg(argv, "--json-output") ||
+      env("UST_LAN_REMEDIATION_JSON_OUTPUT", "") ||
+      defaultJsonOutputPath(outputPath),
     json: argv.includes("--json"),
     noWrite: argv.includes("--no-write"),
     help: argv.includes("--help") || argv.includes("-h")
@@ -339,10 +352,13 @@ function run(argv = process.argv.slice(2)) {
   if (!options.noWrite) {
     fs.mkdirSync(path.dirname(options.outputPath), { recursive: true });
     fs.writeFileSync(options.outputPath, markdown, "utf8");
+    fs.mkdirSync(path.dirname(options.jsonOutputPath), { recursive: true });
+    fs.writeFileSync(options.jsonOutputPath, `${JSON.stringify(plan, null, 2)}\n`, "utf8");
   }
   const result = {
     ok: true,
     outputPath: options.noWrite ? "" : options.outputPath,
+    jsonOutputPath: options.noWrite ? "" : options.jsonOutputPath,
     artifactPath,
     requiresManualAction: plan.requiresManualAction,
     classification: plan.classification
@@ -366,6 +382,7 @@ if (require.main === module) {
 
 module.exports = {
   createPlan,
+  defaultJsonOutputPath,
   findLatestJsonFile,
   hostPlan,
   parseArgs,
