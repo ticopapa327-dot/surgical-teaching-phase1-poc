@@ -13,7 +13,13 @@ const DEFAULTS = {
   expectAudio: "false",
   allowNonPublisherRuntimeWarn: "false",
   channels: "ch1,ch2,ch3,ch4",
-  artifactDir: path.join("test-results", "remote-windows-media-smoke")
+  artifactDir: path.join("test-results", "remote-windows-media-smoke"),
+  localEndpointIdPrefix: "or-media-118",
+  localEndpointNamePrefix: "Media OR 118",
+  remoteEndpointIdPrefix: "teach-media-117",
+  remoteEndpointNamePrefix: "Media Teach 117",
+  localSnapshotSuffix: "or-118",
+  remoteSnapshotSuffix: "teach-117"
 };
 
 const LABELS = {
@@ -78,6 +84,9 @@ function printConfig(config) {
   console.log(`  allowNonPublisherRuntimeWarn: ${config.allowNonPublisherRuntimeWarn}`);
   console.log(`  channels:           ${config.channels.join(",")}`);
   console.log(`  artifactDir:        ${config.artifactDir}`);
+  console.log(`  localEndpoint:      ${config.localEndpointIdPrefix} / ${config.localEndpointNamePrefix}`);
+  console.log(`  remoteEndpoint:     ${config.remoteEndpointIdPrefix} / ${config.remoteEndpointNamePrefix}`);
+  console.log(`  snapshotSuffixes:   ${config.localSnapshotSuffix} / ${config.remoteSnapshotSuffix}`);
 }
 
 async function requireHttpOk(url, label) {
@@ -195,6 +204,14 @@ function saveJson(filePath, value) {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
+function safeSnapshotSuffix(value, fallback) {
+  const normalized = String(value || "")
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized || fallback;
+}
+
 function runDiagnosticAnalyzer(localSnapshotPath, remoteSnapshotPath, options = {}) {
   const result = spawnSync(
     process.execPath,
@@ -232,7 +249,19 @@ async function main() {
       DEFAULTS.allowNonPublisherRuntimeWarn
     ),
     channels: normalizeChannels(env("UST_REMOTE_MEDIA_CHANNELS", DEFAULTS.channels)),
-    artifactDir: env("UST_REMOTE_ARTIFACT_DIR", DEFAULTS.artifactDir)
+    artifactDir: env("UST_REMOTE_ARTIFACT_DIR", DEFAULTS.artifactDir),
+    localEndpointIdPrefix: env("UST_LOCAL_ENDPOINT_ID_PREFIX", DEFAULTS.localEndpointIdPrefix),
+    localEndpointNamePrefix: env("UST_LOCAL_ENDPOINT_NAME_PREFIX", DEFAULTS.localEndpointNamePrefix),
+    remoteEndpointIdPrefix: env("UST_REMOTE_ENDPOINT_ID_PREFIX", DEFAULTS.remoteEndpointIdPrefix),
+    remoteEndpointNamePrefix: env("UST_REMOTE_ENDPOINT_NAME_PREFIX", DEFAULTS.remoteEndpointNamePrefix),
+    localSnapshotSuffix: safeSnapshotSuffix(
+      env("UST_LOCAL_SNAPSHOT_SUFFIX", DEFAULTS.localSnapshotSuffix),
+      DEFAULTS.localSnapshotSuffix
+    ),
+    remoteSnapshotSuffix: safeSnapshotSuffix(
+      env("UST_REMOTE_SNAPSHOT_SUFFIX", DEFAULTS.remoteSnapshotSuffix),
+      DEFAULTS.remoteSnapshotSuffix
+    )
   };
   printConfig(config);
 
@@ -244,13 +273,13 @@ async function main() {
   let remotePage;
   const suffix = Date.now().toString(36).slice(-6);
   const operatingRoom = {
-    id: `or-media-118-${suffix}`,
-    name: `Media OR 118 ${suffix}`,
+    id: `${config.localEndpointIdPrefix}-${suffix}`,
+    name: `${config.localEndpointNamePrefix} ${suffix}`,
     role: "operating-room"
   };
   const teachingRoom = {
-    id: `teach-media-117-${suffix}`,
-    name: `Media Teach 117 ${suffix}`,
+    id: `${config.remoteEndpointIdPrefix}-${suffix}`,
+    name: `${config.remoteEndpointNamePrefix} ${suffix}`,
     role: "teaching-room"
   };
 
@@ -305,8 +334,8 @@ async function main() {
       "local"
     );
 
-    const localSnapshotPath = path.join(config.artifactDir, `${suffix}-or-118.json`);
-    const remoteSnapshotPath = path.join(config.artifactDir, `${suffix}-teach-117.json`);
+    const localSnapshotPath = path.join(config.artifactDir, `${suffix}-${config.localSnapshotSuffix}.json`);
+    const remoteSnapshotPath = path.join(config.artifactDir, `${suffix}-${config.remoteSnapshotSuffix}.json`);
     saveJson(localSnapshotPath, localSnapshot);
     saveJson(remoteSnapshotPath, remoteSnapshot);
     runDiagnosticAnalyzer(localSnapshotPath, remoteSnapshotPath, {

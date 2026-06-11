@@ -5,7 +5,11 @@ const DEFAULTS = {
   remoteWebUrl: "http://192.168.1.118:5173/",
   signalingUrl: "ws://192.168.1.118:7077/signal",
   signalingHealthUrl: "http://127.0.0.1:7077/health",
-  remoteDebugUrl: "http://192.168.1.117:9222"
+  remoteDebugUrl: "http://192.168.1.117:9222",
+  localEndpointIdPrefix: "or-118",
+  localEndpointNamePrefix: "OR 118",
+  remoteEndpointIdPrefix: "teach-117",
+  remoteEndpointNamePrefix: "Teach 117"
 };
 
 const LABELS = {
@@ -32,6 +36,8 @@ function printConfig(config) {
   console.log(`  signalingUrl:       ${config.signalingUrl}`);
   console.log(`  signalingHealthUrl: ${config.signalingHealthUrl}`);
   console.log(`  remoteDebugUrl:     ${config.remoteDebugUrl}`);
+  console.log(`  localEndpoint:      ${config.localEndpointIdPrefix} / ${config.localEndpointNamePrefix}`);
+  console.log(`  remoteEndpoint:     ${config.remoteEndpointIdPrefix} / ${config.remoteEndpointNamePrefix}`);
 }
 
 async function requireHttpOk(url, label) {
@@ -84,7 +90,11 @@ async function main() {
     remoteWebUrl: env("UST_REMOTE_WEB_URL", DEFAULTS.remoteWebUrl),
     signalingUrl: env("UST_SIGNALING_URL", DEFAULTS.signalingUrl),
     signalingHealthUrl: env("UST_SIGNALING_HEALTH_URL", DEFAULTS.signalingHealthUrl),
-    remoteDebugUrl: env("UST_REMOTE_DEBUG_URL", DEFAULTS.remoteDebugUrl)
+    remoteDebugUrl: env("UST_REMOTE_DEBUG_URL", DEFAULTS.remoteDebugUrl),
+    localEndpointIdPrefix: env("UST_LOCAL_ENDPOINT_ID_PREFIX", DEFAULTS.localEndpointIdPrefix),
+    localEndpointNamePrefix: env("UST_LOCAL_ENDPOINT_NAME_PREFIX", DEFAULTS.localEndpointNamePrefix),
+    remoteEndpointIdPrefix: env("UST_REMOTE_ENDPOINT_ID_PREFIX", DEFAULTS.remoteEndpointIdPrefix),
+    remoteEndpointNamePrefix: env("UST_REMOTE_ENDPOINT_NAME_PREFIX", DEFAULTS.remoteEndpointNamePrefix)
   };
   printConfig(config);
 
@@ -97,13 +107,13 @@ async function main() {
   let remotePage;
   const suffix = Date.now().toString(36).slice(-6);
   const operatingRoom = {
-    id: `or-118-${suffix}`,
-    name: `OR 118 ${suffix}`,
+    id: `${config.localEndpointIdPrefix}-${suffix}`,
+    name: `${config.localEndpointNamePrefix} ${suffix}`,
     role: "operating-room"
   };
   const teachingRoom = {
-    id: `teach-117-${suffix}`,
-    name: `Teach 117 ${suffix}`,
+    id: `${config.remoteEndpointIdPrefix}-${suffix}`,
+    name: `${config.remoteEndpointNamePrefix} ${suffix}`,
     role: "teaching-room"
   };
 
