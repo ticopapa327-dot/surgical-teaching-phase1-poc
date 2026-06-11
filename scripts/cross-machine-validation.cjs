@@ -1,10 +1,11 @@
 const fs = require("node:fs");
 const path = require("node:path");
+const crypto = require("node:crypto");
 const { spawnSync } = require("node:child_process");
 
 const DEFAULTS = {
   healthUrl: "http://127.0.0.1:7077/health",
-  reportDir: path.join("test-results", "cross-machine-validation")
+  reportDir: path.join("validation-results", "cross-machine-validation")
 };
 
 function env(name, fallback) {
@@ -35,6 +36,55 @@ function nowStamp() {
 
 function ensureDir(dir) {
   fs.mkdirSync(dir, { recursive: true });
+}
+
+function sha256(text) {
+  return crypto.createHash("sha256").update(text).digest("hex");
+}
+
+function markdownCell(value) {
+  return String(value ?? "")
+    .replace(/\r?\n/g, " ")
+    .replace(/\|/g, "\\|");
+}
+
+function renderSummary(report, paths) {
+  const lines = [
+    "# UST Cross-Machine Validation Report",
+    "",
+    `- Result: ${report.ok ? "PASS" : "FAIL"}`,
+    `- Started: ${report.startedAt}`,
+    `- Finished: ${report.finishedAt}`,
+    `- JSON report: ${paths.reportPath}`,
+    `- SHA256: ${paths.reportSha256}`,
+    "",
+    "## Health",
+    "",
+    `- Before: endpoints=${report.healthBefore?.endpoints ?? "-"}, sessions=${report.healthBefore?.sessions ?? "-"}, pendingCalls=${report.healthBefore?.pendingCalls ?? "-"}`,
+    `- After: endpoints=${report.healthAfter?.endpoints ?? "-"}, sessions=${report.healthAfter?.sessions ?? "-"}, pendingCalls=${report.healthAfter?.pendingCalls ?? "-"}`,
+    `- Health clean: ${report.healthClean ? "yes" : "no"}`,
+    "",
+    "## Steps",
+    "",
+    "| Step | Status | Duration ms | Exit | Command |",
+    "|---|---:|---:|---:|---|"
+  ];
+
+  for (const item of report.steps) {
+    lines.push(
+      `| ${markdownCell(item.id)} | ${markdownCell(item.status)} | ${markdownCell(item.durationMs)} | ${markdownCell(item.exitCode ?? "")} | ${markdownCell(item.command || item.reason || "")} |`
+    );
+  }
+
+  lines.push(
+    "",
+    "## Notes",
+    "",
+    "- Full stdout/stderr is retained in the JSON report for local audit.",
+    "- The validation-results directory is intentionally ignored by Git because it may contain machine-specific runtime evidence.",
+    "- Test snapshots under test-results remain volatile and may be cleaned by Playwright."
+  );
+  return `${lines.join("\n")}\n`;
 }
 
 async function fetchHealth(url) {
@@ -114,7 +164,10 @@ async function main() {
   };
 
   ensureDir(config.reportDir);
-  const reportPath = path.join(config.reportDir, `${nowStamp()}.json`);
+  const reportId = nowStamp();
+  const reportPath = path.join(config.reportDir, `${reportId}.json`);
+  const summaryPath = path.join(config.reportDir, `${reportId}.md`);
+  const checksumPath = path.join(config.reportDir, `${reportId}.sha256`);
   const report = {
     ok: false,
     startedAt: new Date().toISOString(),
@@ -193,12 +246,19 @@ async function main() {
     Number(report.healthAfter.pendingCalls) === 0;
   report.ok = failed.length === 0 && report.healthClean;
 
-  fs.writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+  const reportJson = `${JSON.stringify(report, null, 2)}\n`;
+  const reportSha256 = sha256(reportJson);
+  fs.writeFileSync(reportPath, reportJson, "utf8");
+  fs.writeFileSync(checksumPath, `${reportSha256}  ${path.basename(reportPath)}\n`, "utf8");
+  fs.writeFileSync(summaryPath, renderSummary(report, { reportPath, summaryPath, checksumPath, reportSha256 }), "utf8");
   console.log(
     JSON.stringify(
       {
         ok: report.ok,
         reportPath,
+        summaryPath,
+        checksumPath,
+        reportSha256,
         failedSteps: failed.map((item) => item.id),
         skippedSteps: report.steps.filter((item) => item.status === "skipped").map((item) => item.id),
         healthAfter: report.healthAfter

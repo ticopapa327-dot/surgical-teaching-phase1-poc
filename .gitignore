@@ -13,3 +13,4 @@ recordings/
 *.mp4
 test-results/
 playwright-report/
+validation-results/
