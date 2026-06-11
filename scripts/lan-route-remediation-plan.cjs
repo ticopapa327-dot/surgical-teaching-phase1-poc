@@ -4,7 +4,8 @@ const path = require("node:path");
 const DEFAULTS = {
   topologyDir: path.join("test-results", "remote-lan-topology"),
   outputPath: path.join("validation-results", "cross-machine-validation", "lan-route-remediation-plan.md"),
-  targetSubnet: "192.168.1.0/24"
+  targetSubnet: "192.168.1.0/24",
+  disallowedRouteInterfaces: "CMYNetwork"
 };
 
 function env(name, fallback) {
@@ -79,6 +80,20 @@ function normalizeArray(value) {
   return value ? [value] : [];
 }
 
+function parseRouteInterfaceList(value) {
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function routeAliasIsDisallowed(interfaceAlias, disallowedRouteInterfaces = DEFAULTS.disallowedRouteInterfaces) {
+  const normalized = String(interfaceAlias || "").trim().toLowerCase();
+  return parseRouteInterfaceList(disallowedRouteInterfaces).some(
+    (item) => item.toLowerCase() === normalized
+  );
+}
+
 function field(object, ...names) {
   for (const name of names) {
     const value = object?.[name];
@@ -145,8 +160,12 @@ function hostPlan({ label, probe, targetHost, targetPort, peerAddress }) {
   const boundTcpOk = probe?.tcp?.bound?.ok === true;
   const targetNeighborResolved = isResolvedNeighbor(targetNeighbor);
   const peerNeighborResolved = isResolvedNeighbor(peerNeighbor);
+  const routeInterfaceDisallowed = routeAliasIsDisallowed(routeInterface);
   const issues = [];
 
+  if (routeInterfaceDisallowed) {
+    issues.push("disallowed_route_interface");
+  }
   if (routeSource && localAddress && routeSource !== localAddress) {
     issues.push("route_source_not_expected_lan");
   }
@@ -189,6 +208,7 @@ function hostPlan({ label, probe, targetHost, targetPort, peerAddress }) {
     lanInterfaceIndex,
     routeDestination,
     routeInterface,
+    routeInterfaceDisallowed,
     routeSource,
     boundTcpOk,
     targetNeighborResolved,
@@ -385,7 +405,9 @@ module.exports = {
   defaultJsonOutputPath,
   findLatestJsonFile,
   hostPlan,
+  parseRouteInterfaceList,
   parseArgs,
   renderMarkdown,
+  routeAliasIsDisallowed,
   run
 };

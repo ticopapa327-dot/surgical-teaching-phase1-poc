@@ -5,7 +5,19 @@ import path from "node:path";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { createPlan, defaultJsonOutputPath, findLatestJsonFile, renderMarkdown, run } = require("../scripts/lan-route-remediation-plan.cjs");
+const {
+  createPlan,
+  defaultJsonOutputPath,
+  findLatestJsonFile,
+  parseRouteInterfaceList,
+  renderMarkdown,
+  routeAliasIsDisallowed,
+  run
+} = require("../scripts/lan-route-remediation-plan.cjs");
+
+assert.deepEqual(parseRouteInterfaceList("CMYNetwork, Other"), ["CMYNetwork", "Other"]);
+assert.equal(routeAliasIsDisallowed("CMYNetwork"), true);
+assert.equal(routeAliasIsDisallowed("Ethernet"), false);
 
 const splitRouteArtifact = {
   generatedAt: "2026-06-11T19:59:23.157Z",
@@ -79,6 +91,8 @@ const splitRouteArtifact = {
 const plan = createPlan(splitRouteArtifact, "split-route.json");
 assert.equal(plan.requiresManualAction, true);
 assert.equal(plan.classification, "overlay_route_hijack_and_lan_target_unresolved");
+assert.equal(plan.hosts[0].routeInterfaceDisallowed, true);
+assert.equal(plan.hosts[0].issues.includes("disallowed_route_interface"), true);
 assert.equal(plan.hosts[0].issues.includes("route_source_not_expected_lan"), true);
 assert.equal(plan.hosts[0].issues.includes("lan_bound_tcp_unreachable"), true);
 assert.equal(plan.hosts[0].targetRoutes[0].destinationPrefix, "0.0.0.0/0");

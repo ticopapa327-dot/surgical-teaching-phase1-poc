@@ -98,7 +98,9 @@ async function writeCrossReport(
     steps = null,
     kylinDiscovery = null,
     windowsLanTargets = [],
-    lanTopology = null
+    lanTopology = null,
+    windowsSsh = { ok: true, status: 0, stderr: "", error: "" },
+    kylinSsh = { ok: true, value: "Linux kylin137" }
   } = {}
 ) {
   const artifactDir = path.join(reportDir, `${id}-artifacts`);
@@ -190,6 +192,7 @@ async function writeCrossReport(
       const windowsProbeJson = `${JSON.stringify(
         {
           checks: {
+            ssh: windowsSsh,
             remote: {
               checks: {
                 resources: {
@@ -208,6 +211,7 @@ async function writeCrossReport(
       const kylinProbeJson = `${JSON.stringify(
         {
           checks: {
+            ssh: kylinSsh,
             resources: {
               capturedAt: "2026-06-11T00:00:01.000Z",
               memory: { availableGiB: 8 },
@@ -511,6 +515,8 @@ try {
   assert.equal(strictStatusJson.latestStrictReport.strictCoverage.ok, true);
   assert.equal(strictStatusJson.latestStrictReport.localResources.ok, true);
   assert.equal(strictStatusJson.latestStrictReport.remoteResources.ok, true);
+  assert.equal(strictStatusJson.latestStrictReport.remoteProbes.ok, true);
+  assert.equal(strictStatusJson.latestStrictReport.remoteProbes.kylin137.sshOk, true);
   assert.equal(strictStatusJson.latestStrictReport.steps.ok, true);
   assert.equal(strictStatusJson.latestStrictReport.artifacts.ok, true);
   assert.equal(strictStatusJson.latestStrictReport.lanRoutePlan.available, true);
@@ -562,6 +568,46 @@ try {
   assert.equal(activeLedgerStatus.code, 0, `${activeLedgerStatus.stdout}\n${activeLedgerStatus.stderr}`);
   const activeLedgerStatusJson = JSON.parse(activeLedgerStatus.stdout);
   assert.equal(activeLedgerStatusJson.latestStrictLedger.finishedAt, "2026-06-11T00:02:00.000Z");
+
+  const kylinSshFailedDir = path.join(tempDir, "status-kylin-ssh-failed");
+  await mkdir(kylinSshFailedDir, { recursive: true });
+  const kylinSshFailedReport = await writeCrossReport(
+    kylinSshFailedDir,
+    "2026-06-11T00-06-20-000Z",
+    {
+      ok: false,
+      strict: true,
+      kylinSsh: {
+        ok: false,
+        value: "ssh: connect to host 192.168.1.137 port 22: Connection timed out"
+      },
+      steps: requiredStrictStepIds.map((stepId) => ({
+        id: stepId,
+        status: stepId === "137-probe" ? "failed" : "passed",
+        attemptCount: 1,
+        maxAttempts: 1
+      }))
+    }
+  );
+  await writeContinuousLedger(
+    kylinSshFailedDir,
+    "continuous-2026-06-11T00-06-50-000Z",
+    kylinSshFailedReport.reportPath,
+    { ok: false }
+  );
+  const kylinSshFailedStatus = await runNode("scripts/validation-status.cjs", {
+    UST_VALIDATION_REPORT_DIR: kylinSshFailedDir,
+    UST_VALIDATION_STATUS_MAX_AGE_MINUTES: "0"
+  });
+  assert.equal(kylinSshFailedStatus.code, 1);
+  const kylinSshFailedStatusJson = JSON.parse(kylinSshFailedStatus.stdout);
+  assert.equal(kylinSshFailedStatusJson.latestStrictReport.remoteProbes.kylin137.sshOk, false);
+  assert.equal(
+    kylinSshFailedStatusJson.failures.includes(
+      "strict cross report Kylin 137 SSH probe failed: ssh: connect to host 192.168.1.137 port 22: Connection timed out"
+    ),
+    true
+  );
 
   const noStrictLedgerDir = path.join(tempDir, "status-no-strict-ledger");
   await mkdir(noStrictLedgerDir, { recursive: true });
@@ -633,6 +679,8 @@ try {
         port: 22,
         ok: true,
         onExpectedLan: false,
+        usesDisallowedRoute: true,
+        policyOk: false,
         expectedLanSourcePrefix: "192.168.1.",
         route: {
           interfaceAlias: "CMYNetwork",
@@ -672,6 +720,10 @@ try {
     true
   );
   assert.equal(splitRouteStatusJson.latestStrictReport.remoteResources.windowsLanTargetsOk, false);
+  assert.equal(
+    splitRouteStatusJson.latestStrictReport.remoteResources.windowsLanTargets[0].usesDisallowedRoute,
+    true
+  );
   assert.equal(splitRouteStatusJson.latestStrictReport.lanTopology.topologyOk, false);
   assert.equal(splitRouteStatusJson.latestStrictReport.lanRoutePlan.available, true);
   assert.equal(splitRouteStatusJson.latestStrictReport.lanRoutePlan.source, "json");
@@ -711,6 +763,12 @@ try {
   assert.equal(
     splitRouteStatusJson.failures.includes(
       "strict cross report Windows 117 LAN target route is not on expected LAN"
+    ),
+    true
+  );
+  assert.equal(
+    splitRouteStatusJson.failures.includes(
+      "strict cross report Windows 117 LAN target route uses a disallowed interface"
     ),
     true
   );

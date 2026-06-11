@@ -31,6 +31,7 @@ const splitRouteProbe = {
 };
 
 assert.deepEqual(topologyWarnings(splitRouteProbe, "or118"), [
+  "or118_kylin137_disallowed_route_interface",
   "or118_kylin137_route_source_not_expected_lan",
   "or118_kylin137_bound_tcp_unreachable",
   "or118_kylin137_neighbor_unresolved"
@@ -118,10 +119,12 @@ const splitRouteDiagnosis = diagnoseTopology({
 assert.equal(splitRouteDiagnosis.classification, "overlay_route_hijack_and_lan_target_unresolved");
 assert.equal(splitRouteDiagnosis.blocking, true);
 assert.equal(splitRouteDiagnosis.local.routeDestination, "192.168.1.137/32");
+assert.equal(splitRouteDiagnosis.local.routeInterfaceDisallowed, true);
 assert.equal(
   splitRouteDiagnosis.evidence.includes("default_route_tcp_works_but_lan_bound_tcp_fails"),
   true
 );
+assert.equal(splitRouteDiagnosis.evidence.includes("disallowed_route_interface_on_all_available_probes"), true);
 assert.equal(splitRouteDiagnosis.evidence.includes("117_and_118_can_resolve_each_other_on_lan"), true);
 
 const okDiagnosis = diagnoseTopology({

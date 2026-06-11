@@ -20,7 +20,9 @@ const DEFAULTS = {
   remoteUserDataDir: "/tmp/ust-kylin-headless-remote-debug",
   legacyRemoteUserDataDirs: "/tmp/ust-kylin-browser-remote-debug",
   remoteLogPath: "/tmp/ust-kylin-headless-remote-debug.log",
-  statePath: path.join("test-results", "remote-kylin-devtools", "state.json")
+  statePath: path.join("test-results", "remote-kylin-devtools", "state.json"),
+  disallowedRouteInterfaces: "CMYNetwork",
+  requireAllowedRoute: "true"
 };
 
 function env(name, fallback) {
@@ -36,6 +38,20 @@ function envAllowEmpty(name, fallback) {
 function envFlag(name, fallback) {
   const value = env(name, fallback).toLowerCase();
   return value === "1" || value === "true" || value === "yes" || value === "on";
+}
+
+function parseRouteInterfaceList(value) {
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function routeAliasIsDisallowed(interfaceAlias, disallowedRouteInterfaces) {
+  const normalized = String(interfaceAlias || "").trim().toLowerCase();
+  return parseRouteInterfaceList(disallowedRouteInterfaces).some(
+    (item) => item.toLowerCase() === normalized
+  );
 }
 
 function configFromEnv() {
@@ -70,7 +86,11 @@ function configFromEnv() {
       .map((item) => item.trim())
       .filter(Boolean),
     remoteLogPath: env("UST_KYLIN_BROWSER_LOG", DEFAULTS.remoteLogPath),
-    statePath: env("UST_KYLIN_DEVTOOLS_STATE", DEFAULTS.statePath)
+    statePath: env("UST_KYLIN_DEVTOOLS_STATE", DEFAULTS.statePath),
+    disallowedRouteInterfaces: parseRouteInterfaceList(
+      env("UST_DISALLOWED_ROUTE_INTERFACES", DEFAULTS.disallowedRouteInterfaces)
+    ),
+    requireAllowedRoute: envFlag("UST_KYLIN_REQUIRE_ALLOWED_ROUTE", DEFAULTS.requireAllowedRoute)
   };
 }
 
@@ -100,6 +120,8 @@ function usage() {
     "  UST_KYLIN_BROWSER_BIN             Default: kylin-browser",
     "  UST_KYLIN_LEGACY_BROWSER_USER_DATA_DIRS",
     "                                      Comma-separated old user-data dirs to clean up",
+    "  UST_DISALLOWED_ROUTE_INTERFACES    Default: CMYNetwork",
+    "  UST_KYLIN_REQUIRE_ALLOWED_ROUTE    Default: true; LAN mode refuses disallowed/non-LAN Windows routes",
     "  UST_KYLIN_DEVTOOLS_STATE          Default: test-results/remote-kylin-devtools/state.json"
   ].join("\n");
 }
@@ -154,6 +176,102 @@ async function checkDevTools(config, options = {}) {
   } catch (error) {
     return { ok: false, url, error: error.message };
   }
+}
+
+function psQuote(value) {
+  return `'${String(value).replace(/'/g, "''")}'`;
+}
+
+function readWindowsRouteHint(host) {
+  if (process.platform !== "win32") {
+    return {
+      available: false,
+      platform: process.platform,
+      error: "Windows route guard only runs on Windows"
+    };
+  }
+  const script = [
+    "$ErrorActionPreference = 'Stop'",
+    `$matches = @(Find-NetRoute -RemoteIPAddress ${psQuote(host)} -ErrorAction Stop)`,
+    "$source = $matches | Where-Object { $_.IPAddress } | Select-Object -First 1",
+    "$route = $matches | Where-Object { $_.DestinationPrefix } | Select-Object -First 1",
+    "if ($source -or $route) {",
+    "  [pscustomobject]@{",
+    "    available = $true",
+    "    interfaceAlias = if ($source -and $source.InterfaceAlias) { [string]$source.InterfaceAlias } elseif ($route) { [string]$route.InterfaceAlias } else { '' }",
+    "    interfaceIndex = if ($source -and $null -ne $source.InterfaceIndex) { [int]$source.InterfaceIndex } elseif ($route -and $null -ne $route.InterfaceIndex) { [int]$route.InterfaceIndex } else { $null }",
+    "    destinationPrefix = if ($route) { [string]$route.DestinationPrefix } else { '' }",
+    "    sourceAddress = if ($source) { [string]$source.IPAddress } else { '' }",
+    "    prefixLength = if ($source -and $null -ne $source.PrefixLength) { [int]$source.PrefixLength } else { $null }",
+    "    nextHop = if ($route) { [string]$route.NextHop } else { '' }",
+    "  } | ConvertTo-Json -Compress",
+    "}"
+  ].join("\n");
+  const result = spawnSync("powershell.exe", ["-NoProfile", "-NoLogo", "-Command", script], {
+    encoding: "utf8",
+    timeout: 5000,
+    windowsHide: true
+  });
+  if (result.status !== 0) {
+    return {
+      available: false,
+      error: (result.stderr || result.error?.message || "Find-NetRoute failed").trim()
+    };
+  }
+  const text = String(result.stdout || "").trim();
+  if (!text) {
+    return {
+      available: false,
+      error: "Find-NetRoute returned no route"
+    };
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return {
+      available: false,
+      error: "Find-NetRoute returned unreadable JSON"
+    };
+  }
+}
+
+function routePolicyStatus(routeHint, config) {
+  const expectedSource = String(config.firewallAllowHost || "").trim();
+  const sourceAddress = String(routeHint?.sourceAddress || "").trim();
+  const interfaceAlias = String(routeHint?.interfaceAlias || "").trim();
+  const sourceOk = Boolean(expectedSource && sourceAddress && sourceAddress === expectedSource);
+  const usesDisallowedRoute = routeAliasIsDisallowed(interfaceAlias, config.disallowedRouteInterfaces);
+  const ok = Boolean(routeHint?.available !== false && sourceOk && !usesDisallowedRoute);
+  return {
+    ok,
+    host: config.remoteLanHost,
+    expectedSource,
+    sourceAddress,
+    interfaceAlias,
+    destinationPrefix: routeHint?.destinationPrefix || "",
+    nextHop: routeHint?.nextHop || "",
+    usesDisallowedRoute,
+    error: routeHint?.error || (ok ? "" : "route does not satisfy LAN policy")
+  };
+}
+
+function assertLanRouteAllowed(config) {
+  if (config.mode !== "lan" || !config.requireAllowedRoute) return null;
+  const routeHint = readWindowsRouteHint(config.remoteLanHost);
+  const policy = routePolicyStatus(routeHint, config);
+  if (!policy.ok) {
+    throw new Error(
+      [
+        `LAN route guard refused ${config.remoteLanHost}`,
+        `interface=${policy.interfaceAlias || "-"}`,
+        `source=${policy.sourceAddress || "-"}`,
+        `expectedSource=${policy.expectedSource || "-"}`,
+        `destination=${policy.destinationPrefix || "-"}`,
+        `disallowed=${policy.usesDisallowedRoute}`
+      ].join("; ")
+    );
+  }
+  return policy;
 }
 
 function ensureStateDir(config) {
@@ -330,6 +448,7 @@ async function waitForReady(config, timeoutMs = 25000) {
 }
 
 async function start(config) {
+  const routePolicy = assertLanRouteAllowed(config);
   const existing = await checkDevTools(config, { timeoutMs: 1500 });
   if (existing.ok) {
     const state = readState(config);
@@ -340,6 +459,7 @@ async function start(config) {
           action: "start",
           alreadyRunning: true,
           localDebugUrl: config.localDebugUrl,
+          routePolicy,
           statePath: config.statePath,
           sshPid: state?.sshPid || null,
           browser: existing.version.Browser
@@ -392,6 +512,7 @@ async function start(config) {
     remotePort: config.remotePort,
     localHost: config.localHost,
     localPort: config.localPort,
+    routePolicy,
     firewallRuleAdded,
     firewallAllowHost: config.firewallAllowHost,
     headless: config.headless,
@@ -409,6 +530,7 @@ async function start(config) {
         action: "start",
         alreadyRunning: false,
         localDebugUrl: config.localDebugUrl,
+        routePolicy,
         statePath: config.statePath,
         sshPid,
         mode: config.mode,
@@ -467,6 +589,7 @@ function stop(config) {
 }
 
 async function check(config) {
+  const routePolicy = assertLanRouteAllowed(config);
   const result = await checkDevTools(config);
   const state = readState(config);
   console.log(
@@ -475,6 +598,7 @@ async function check(config) {
         ok: result.ok,
         action: "check",
         localDebugUrl: config.localDebugUrl,
+        routePolicy,
         statePath: config.statePath,
         sshPid: state?.sshPid || null,
         sshPidRunning: state?.sshPid ? isProcessRunning(state.sshPid) : false,
@@ -550,7 +674,15 @@ async function main(argv) {
   throw new Error(`unknown action: ${action}`);
 }
 
-main(process.argv.slice(2)).catch((error) => {
-  console.error(`Remote Kylin DevTools failed: ${error.message}`);
-  process.exit(1);
-});
+if (require.main === module) {
+  main(process.argv.slice(2)).catch((error) => {
+    console.error(`Remote Kylin DevTools failed: ${error.message}`);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  parseRouteInterfaceList,
+  routeAliasIsDisallowed,
+  routePolicyStatus
+};

@@ -10,6 +10,7 @@ const DEFAULTS = {
   lanTargets: "kylin137=192.168.1.137:22",
   lanTargetTimeoutMs: "1500",
   expectedLanSourcePrefix: "192.168.1.",
+  disallowedRouteInterfaces: "CMYNetwork",
   artifactDir: path.join("test-results", "remote-windows-probe"),
   sshTimeoutMs: "20000"
 };
@@ -59,6 +60,20 @@ function parseLanTargets(value) {
     });
 }
 
+function parseRouteInterfaceList(value) {
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function routeAliasIsDisallowed(interfaceAlias, disallowedRouteInterfaces) {
+  const normalized = String(interfaceAlias || "").trim().toLowerCase();
+  return parseRouteInterfaceList(disallowedRouteInterfaces).some(
+    (item) => item.toLowerCase() === normalized
+  );
+}
+
 function probeWarnings(remote) {
   const warnings = [];
   if (!remote?.checks?.runtime?.node) warnings.push("node_not_found_on_remote_windows");
@@ -67,7 +82,11 @@ function probeWarnings(remote) {
     const targetName = target.name || target.host || "unknown";
     if (!target.ok) {
       warnings.push(`lan_target_${targetName}_unreachable`);
-    } else if (target.onExpectedLan === false) {
+    }
+    if (target.usesDisallowedRoute === true) {
+      warnings.push(`lan_target_${targetName}_disallowed_route_interface`);
+    }
+    if (target.onExpectedLan === false) {
       warnings.push(`lan_target_${targetName}_non_lan_route`);
     }
   }
@@ -95,6 +114,9 @@ function configFromEnv() {
     lanTargets: parseLanTargets(env("UST_REMOTE_WINDOWS_LAN_TARGETS", DEFAULTS.lanTargets)),
     lanTargetTimeoutMs: env("UST_REMOTE_WINDOWS_LAN_TARGET_TIMEOUT_MS", DEFAULTS.lanTargetTimeoutMs),
     expectedLanSourcePrefix: env("UST_REMOTE_WINDOWS_EXPECTED_LAN_SOURCE_PREFIX", DEFAULTS.expectedLanSourcePrefix),
+    disallowedRouteInterfaces: parseRouteInterfaceList(
+      env("UST_DISALLOWED_ROUTE_INTERFACES", DEFAULTS.disallowedRouteInterfaces)
+    ),
     artifactDir: env("UST_REMOTE_WINDOWS_PROBE_ARTIFACT_DIR", DEFAULTS.artifactDir),
     sshTimeoutMs: env("UST_REMOTE_WINDOWS_SSH_TIMEOUT_MS", DEFAULTS.sshTimeoutMs)
   };
@@ -114,6 +136,7 @@ function usage() {
     "  UST_REMOTE_WINDOWS_LAN_TARGET_TIMEOUT_MS  Default: 1500",
     "  UST_REMOTE_WINDOWS_EXPECTED_LAN_SOURCE_PREFIX",
     "                                            Default: 192.168.1.",
+    "  UST_DISALLOWED_ROUTE_INTERFACES           Default: CMYNetwork",
     "  UST_REMOTE_WINDOWS_PROBE_ARTIFACT_DIR     Default: test-results/remote-windows-probe",
     "  UST_REMOTE_WINDOWS_SSH_TIMEOUT_MS         Default: 20000"
   ].join("\n");
@@ -131,6 +154,7 @@ $devToolsUrl = ${psQuote(config.devToolsUrl)}
 $lanTargetsJson = ${psQuote(lanTargetsJson)}
 $lanTargetTimeoutMs = [int]${Number(config.lanTargetTimeoutMs) || Number(DEFAULTS.lanTargetTimeoutMs)}
 $expectedLanSourcePrefix = ${psQuote(config.expectedLanSourcePrefix)}
+$disallowedRouteInterfaces = @(${config.disallowedRouteInterfaces.map((item) => psQuote(item)).join(", ")})
 
 function Test-HttpStatus($Url) {
   try {
@@ -230,6 +254,12 @@ function Test-TcpTarget($Target) {
   if ($expectedLanSourcePrefix) {
     $onExpectedLan = ([string]$route.sourceAddress).StartsWith($expectedLanSourcePrefix)
   }
+  $usesDisallowedRoute = $false
+  foreach ($blockedInterface in $disallowedRouteInterfaces) {
+    if ($blockedInterface -and ([string]$route.interfaceAlias).Equals([string]$blockedInterface, [System.StringComparison]::OrdinalIgnoreCase)) {
+      $usesDisallowedRoute = $true
+    }
+  }
   return [ordered]@{
     name = [string]$Target.name
     host = [string]$Target.host
@@ -240,6 +270,8 @@ function Test-TcpTarget($Target) {
     durationMs = [int]([math]::Round(($finished - $started).TotalMilliseconds))
     expectedLanSourcePrefix = $expectedLanSourcePrefix
     onExpectedLan = [bool]$onExpectedLan
+    usesDisallowedRoute = [bool]$usesDisallowedRoute
+    policyOk = [bool]($ok -and $onExpectedLan -and -not $usesDisallowedRoute)
     route = $route
   }
 }
@@ -268,6 +300,7 @@ try {
   if ($parsedLanTargets) { $lanTargets = @($parsedLanTargets) }
 } catch {}
 $lanTargetResults = @($lanTargets | ForEach-Object { Test-TcpTarget $_ })
+$lanTargetsPolicyOk = @($lanTargetResults | Where-Object { -not $_.policyOk }).Count -eq 0
 $edgeDebugProcesses = @(Get-CimInstance Win32_Process -Filter "Name = 'msedge.exe'" -ErrorAction SilentlyContinue |
   Where-Object { $_.CommandLine -like "*--remote-debugging-port=*" } |
   Select-Object ProcessId, CommandLine)
@@ -286,7 +319,7 @@ $resourceProcesses = @(Get-Process -ErrorAction SilentlyContinue |
     @{Name="CpuSeconds"; Expression={ if ($_.CPU) { [math]::Round($_.CPU, 1) } else { 0 } }})
 
 $result = [ordered]@{
-  ok = ($web.ok -and $health.ok -and [bool]$edge)
+  ok = ($web.ok -and $health.ok -and [bool]$edge -and $lanTargetsPolicyOk)
   computerName = $env:COMPUTERNAME
   userName = $env:USERNAME
   os = [ordered]@{
@@ -417,5 +450,6 @@ if (require.main === module) {
 
 module.exports = {
   parseLanTargets,
+  parseRouteInterfaceList,
   probeWarnings
 };

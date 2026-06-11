@@ -262,7 +262,11 @@ function remoteResourcesStatus(report, reportPath) {
   const windows117Ok = Boolean(windowsResources?.capturedAt && windowsResources?.memory && windowsResources?.processes);
   const kylin137Ok = Boolean(kylinResources?.capturedAt && kylinResources?.memory && kylinResources?.processes);
   const windowsLanTargetsOk = windowsLanTargets.every(
-    (target) => target?.ok === true && target?.onExpectedLan !== false
+    (target) =>
+      target?.ok === true &&
+      target?.onExpectedLan !== false &&
+      target?.usesDisallowedRoute !== true &&
+      target?.policyOk !== false
   );
   return {
     ok: windows117Ok && kylin137Ok && windowsLanTargetsOk,
@@ -275,6 +279,8 @@ function remoteResourcesStatus(report, reportPath) {
       port: target.port ?? null,
       ok: target.ok === true,
       onExpectedLan: target.onExpectedLan ?? null,
+      usesDisallowedRoute: target.usesDisallowedRoute ?? null,
+      policyOk: target.policyOk ?? null,
       expectedLanSourcePrefix: target.expectedLanSourcePrefix || "",
       route: {
         interfaceAlias: target.route?.interfaceAlias || "",
@@ -286,6 +292,58 @@ function remoteResourcesStatus(report, reportPath) {
     kylinCapturedAt: kylinResources?.capturedAt || "",
     windowsMemoryFreeGiB: windowsResources?.memory?.freeGiB ?? null,
     kylinMemoryAvailableGiB: kylinResources?.memory?.availableGiB ?? null
+  };
+}
+
+function probeFailureText(probe) {
+  return String(probe?.sshError || probe?.sshValue || probe?.error || "unknown").trim();
+}
+
+function remoteProbeConnectionStatus(report, reportPath) {
+  const manifestPath = resolveArtifactManifestPath(report, reportPath);
+  if (!manifestPath) {
+    return {
+      ok: false,
+      windows117: null,
+      kylin137: null,
+      error: "artifact manifest missing"
+    };
+  }
+  const manifest = readJson(manifestPath);
+  const windowsProbe = readNamedJsonArtifact(manifest, "remote-windows-probe");
+  const kylinProbe = readNamedJsonArtifact(manifest, "remote-kylin-probe");
+  const summarizeWindows = ({ artifact, targetPath, error }) => {
+    const ssh = artifact?.checks?.ssh || {};
+    return {
+      available: Boolean(artifact),
+      ok: artifact?.ok === true,
+      sshOk: ssh.ok === true,
+      sshStatus: ssh.status ?? null,
+      sshError: ssh.error || ssh.stderr || "",
+      warnings: Array.isArray(artifact?.warnings) ? artifact.warnings : [],
+      artifactPath: targetPath,
+      error: artifact ? "" : error || (targetPath ? "remote Windows probe unreadable" : "remote Windows probe missing")
+    };
+  };
+  const summarizeKylin = ({ artifact, targetPath, error }) => {
+    const ssh = artifact?.checks?.ssh || {};
+    return {
+      available: Boolean(artifact),
+      ok: artifact?.ok === true,
+      sshOk: ssh.ok === true,
+      sshValue: ssh.value || "",
+      warnings: Array.isArray(artifact?.warnings) ? artifact.warnings : [],
+      artifactPath: targetPath,
+      error: artifact ? "" : error || (targetPath ? "remote Kylin probe unreadable" : "remote Kylin probe missing")
+    };
+  };
+  const windows117 = summarizeWindows(windowsProbe);
+  const kylin137 = summarizeKylin(kylinProbe);
+  return {
+    ok: windows117.sshOk && kylin137.sshOk,
+    windows117,
+    kylin137,
+    error: ""
   };
 }
 
@@ -619,6 +677,7 @@ function buildStatus(options) {
   const coverage = report ? strictCoverage(report) : null;
   const localResources = report ? localResourcesStatus(report) : null;
   const remoteResources = report ? remoteResourcesStatus(report, reportPath) : null;
+  const remoteProbes = report ? remoteProbeConnectionStatus(report, reportPath) : null;
   const kylinDiscovery = report ? kylinDiscoveryStatus(report, reportPath) : null;
   const lanTopology = report ? lanTopologyStatus(report, reportPath) : null;
   const lanRoutePlan = report ? lanRoutePlanStatus(report, reportPath) : null;
@@ -645,8 +704,19 @@ function buildStatus(options) {
   if (coverage && !coverage.ok) failures.push("strict cross report did not require full remote coverage");
   if (localResources && !localResources.ok) failures.push("strict cross report local resources missing");
   if (remoteResources && !remoteResources.ok) failures.push("strict cross report remote resources missing");
+  if (remoteProbes?.windows117 && !remoteProbes.windows117.sshOk) {
+    failures.push(`strict cross report Windows 117 SSH probe failed: ${probeFailureText(remoteProbes.windows117)}`);
+  }
+  if (remoteProbes?.kylin137 && !remoteProbes.kylin137.sshOk) {
+    failures.push(`strict cross report Kylin 137 SSH probe failed: ${probeFailureText(remoteProbes.kylin137)}`);
+  }
   if (remoteResources && remoteResources.windowsLanTargetsOk === false) {
     failures.push("strict cross report Windows 117 LAN target route is not on expected LAN");
+  }
+  if (
+    remoteResources?.windowsLanTargets?.some((target) => target.usesDisallowedRoute === true)
+  ) {
+    failures.push("strict cross report Windows 117 LAN target route uses a disallowed interface");
   }
   if (lanTopology && !lanTopology.available) {
     failures.push("strict cross report LAN topology artifact missing");
@@ -711,6 +781,7 @@ function buildStatus(options) {
           strictCoverage: coverage,
           localResources,
           remoteResources,
+          remoteProbes,
           kylinDiscovery,
           lanTopology,
           lanRoutePlan,

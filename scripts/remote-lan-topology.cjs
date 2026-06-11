@@ -14,7 +14,8 @@ const DEFAULTS = {
   targetHost: "192.168.1.137",
   targetPort: "22",
   timeoutMs: "1500",
-  sshTimeoutMs: "90000"
+  sshTimeoutMs: "90000",
+  disallowedRouteInterfaces: "CMYNetwork"
 };
 
 function env(name, fallback) {
@@ -41,6 +42,20 @@ function parseJsonFromOutput(text) {
   }
 }
 
+function parseRouteInterfaceList(value) {
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function routeAliasIsDisallowed(interfaceAlias, disallowedRouteInterfaces = DEFAULTS.disallowedRouteInterfaces) {
+  const normalized = String(interfaceAlias || "").trim().toLowerCase();
+  return parseRouteInterfaceList(disallowedRouteInterfaces).some(
+    (item) => item.toLowerCase() === normalized
+  );
+}
+
 function bootstrapEncodedCommand() {
   const script = [
     "$ErrorActionPreference = 'Stop'",
@@ -52,11 +67,15 @@ function bootstrapEncodedCommand() {
   return Buffer.from(script, "utf16le").toString("base64");
 }
 
-function topologyWarnings(probe, role) {
+function topologyWarnings(probe, role, disallowedRouteInterfaces = DEFAULTS.disallowedRouteInterfaces) {
   const warnings = [];
   const targetName = probe?.target?.name || probe?.target?.host || "target";
   const expectedSource = String(probe?.localAddress || "");
   const routeSource = String(probe?.routeHint?.sourceAddress || "");
+  const routeInterface = String(probe?.routeHint?.interfaceAlias || "");
+  if (routeAliasIsDisallowed(routeInterface, disallowedRouteInterfaces)) {
+    warnings.push(`${role}_${targetName}_disallowed_route_interface`);
+  }
   if (routeSource && expectedSource && routeSource !== expectedSource) {
     warnings.push(`${role}_${targetName}_route_source_not_expected_lan`);
   }
@@ -88,7 +107,7 @@ function neighborMac(neighbor) {
   return String(neighbor?.linkLayerAddress || neighbor?.LinkLayerAddress || "");
 }
 
-function summarizeProbe(probe, peerAddress) {
+function summarizeProbe(probe, peerAddress, disallowedRouteInterfaces = DEFAULTS.disallowedRouteInterfaces) {
   const targetHost = probe?.target?.host || "";
   const routeSource = String(probe?.routeHint?.sourceAddress || "");
   const localAddress = String(probe?.localAddress || "");
@@ -100,6 +119,10 @@ function summarizeProbe(probe, peerAddress) {
     localAddress,
     routeDestination: probe?.routeHint?.destinationPrefix || "",
     routeInterface: probe?.routeHint?.interfaceAlias || "",
+    routeInterfaceDisallowed: routeAliasIsDisallowed(
+      probe?.routeHint?.interfaceAlias || "",
+      disallowedRouteInterfaces
+    ),
     routeSource,
     routeSourceExpectedLan: Boolean(routeSource && localAddress && routeSource === localAddress),
     defaultTcpOk: probe?.tcp?.default?.ok ?? null,
@@ -112,8 +135,12 @@ function summarizeProbe(probe, peerAddress) {
 }
 
 function diagnoseTopology({ config, local, remoteWindows, warnings }) {
-  const localSummary = summarizeProbe(local.probe, config.remoteWindowsAddress);
-  const remoteSummary = summarizeProbe(remoteWindows.probe, config.localAddress);
+  const localSummary = summarizeProbe(local.probe, config.remoteWindowsAddress, config.disallowedRouteInterfaces);
+  const remoteSummary = summarizeProbe(
+    remoteWindows.probe,
+    config.localAddress,
+    config.disallowedRouteInterfaces
+  );
   const summaries = [localSummary, remoteSummary].filter((item) => item.available);
   const all = (predicate) => summaries.length > 0 && summaries.every(predicate);
   const any = (predicate) => summaries.some(predicate);
@@ -143,12 +170,16 @@ function diagnoseTopology({ config, local, remoteWindows, warnings }) {
     evidence.push("default_route_tcp_works_but_lan_bound_tcp_fails");
   }
   if (bothRouteHijacked) evidence.push("route_source_is_not_expected_lan_on_all_available_probes");
+  if (all((item) => item.routeInterfaceDisallowed === true)) {
+    evidence.push("disallowed_route_interface_on_all_available_probes");
+  }
   if (bothTargetNeighborUnresolved) evidence.push("target_neighbor_unresolved_on_all_available_probes");
   if (peerLanVisible) evidence.push("117_and_118_can_resolve_each_other_on_lan");
 
   const recommendations = blocking
     ? [
-        `Confirm ${config.targetHost} is physically connected or associated to the same 192.168.1.0/24 LAN as ${config.localAddress} and ${config.remoteWindowsAddress}.`,
+      `Confirm ${config.targetHost} is physically connected or associated to the same 192.168.1.0/24 LAN as ${config.localAddress} and ${config.remoteWindowsAddress}.`,
+        "CMYNetwork is a disallowed validation interface for 118/117; do not count traffic through it as surgical teaching LAN evidence.",
         "Do not treat TCP success through CMYNetwork/Meta Tunnel as valid same-LAN surgical teaching evidence.",
         "Disable or deprioritize the overlay tunnel for validation only after confirming remote access will not be lost.",
         "Re-run npm run test:remote:lan:topology before strict cross-machine validation."
@@ -429,9 +460,11 @@ function buildReport(config) {
   const local = runLocalProbe(config);
   const remoteWindows = runRemoteWindowsProbe(config);
   const warnings = [
-    ...(local.probe ? topologyWarnings(local.probe, config.localName) : [`${config.localName}_probe_missing`]),
+    ...(local.probe
+      ? topologyWarnings(local.probe, config.localName, config.disallowedRouteInterfaces)
+      : [`${config.localName}_probe_missing`]),
     ...(remoteWindows.probe
-      ? topologyWarnings(remoteWindows.probe, config.remoteWindowsName)
+      ? topologyWarnings(remoteWindows.probe, config.remoteWindowsName, config.disallowedRouteInterfaces)
       : [`${config.remoteWindowsName}_probe_missing`])
   ];
   const uniqueWarnings = [...new Set(warnings)];
@@ -450,7 +483,8 @@ function buildReport(config) {
       targetName: config.targetName,
       targetHost: config.targetHost,
       targetPort: Number(config.targetPort),
-      timeoutMs: Number(config.timeoutMs)
+      timeoutMs: Number(config.timeoutMs),
+      disallowedRouteInterfaces: config.disallowedRouteInterfaces
     },
     local,
     remoteWindows,
@@ -479,7 +513,10 @@ function configFromEnv() {
     targetHost: env("UST_LAN_TARGET_HOST", DEFAULTS.targetHost),
     targetPort: env("UST_LAN_TARGET_PORT", DEFAULTS.targetPort),
     timeoutMs: env("UST_LAN_TOPOLOGY_TIMEOUT_MS", DEFAULTS.timeoutMs),
-    sshTimeoutMs: env("UST_LAN_TOPOLOGY_SSH_TIMEOUT_MS", DEFAULTS.sshTimeoutMs)
+    sshTimeoutMs: env("UST_LAN_TOPOLOGY_SSH_TIMEOUT_MS", DEFAULTS.sshTimeoutMs),
+    disallowedRouteInterfaces: parseRouteInterfaceList(
+      env("UST_DISALLOWED_ROUTE_INTERFACES", DEFAULTS.disallowedRouteInterfaces)
+    )
   };
 }
 
@@ -493,7 +530,8 @@ function usage() {
     "  UST_LAN_REMOTE_WINDOWS_SSH_TARGET  Default: HUAWEI@192.168.1.117",
     "  UST_LAN_REMOTE_WINDOWS_ADDRESS     Default: 192.168.1.117",
     "  UST_LAN_TARGET_HOST                Default: 192.168.1.137",
-    "  UST_LAN_TARGET_PORT                Default: 22"
+    "  UST_LAN_TARGET_PORT                Default: 22",
+    "  UST_DISALLOWED_ROUTE_INTERFACES    Default: CMYNetwork"
   ].join("\n");
 }
 
@@ -518,5 +556,7 @@ if (require.main === module) {
 module.exports = {
   diagnoseTopology,
   topologyWarnings,
-  powershellProbeScript
+  powershellProbeScript,
+  parseRouteInterfaceList,
+  routeAliasIsDisallowed
 };
