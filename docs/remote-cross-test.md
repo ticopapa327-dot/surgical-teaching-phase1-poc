@@ -103,3 +103,23 @@ $env:UST_CROSS_SKIP_KYLIN_137 = "1"
 ```powershell
 $env:UST_CROSS_REQUIRE_KYLIN_137 = "1"
 ```
+
+## 六、持续交叉验证
+
+长时间无人值守测试不要直接手工反复执行单次命令，应使用持续验证入口保存总账：
+
+```powershell
+$env:UST_KYLIN_SUDO_PASSWORD = "<137 sudo 密码>"
+npm run test:remote:cross:loop -- --iterations 12 --interval-seconds 300
+Remove-Item Env:UST_KYLIN_SUDO_PASSWORD -ErrorAction SilentlyContinue
+```
+
+常用参数：
+
+- `--once`：只执行 1 轮，用于快速验证脚本链路。
+- `--iterations <次数>`：限制轮次；`0` 表示在设置 duration 时不限制轮次。
+- `--duration-hours <小时>`：按时间限制运行，例如 7 小时或 16 小时。
+- `--interval-seconds <秒>`：两轮之间的等待时间。
+- `--stop-on-failure`：发现失败后立即停止，适合定位问题；稳定性观察阶段建议不启用，以便收集连续失败证据。
+
+持续验证会在 `validation-results/cross-machine-validation/` 下生成 `continuous-*.json`、`continuous-*.md` 和 `continuous-*.sha256` 总账文件。总账记录每一轮对应的单次交叉验证报告、索引刷新结果和命令输出尾部；单次报告仍由 `npm run test:remote:cross` 生成，并继续由 `npm run test:remote:cross:index` 校验哈希和 artifact 完整性。
