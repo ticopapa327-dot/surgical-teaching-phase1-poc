@@ -6,6 +6,7 @@ import { spawnSync } from "node:child_process";
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ust-diagnostic-analyzer-"));
 const okSnapshotPath = path.join(tmpDir, "ok-snapshot.json");
+const publisherSnapshotPath = path.join(tmpDir, "publisher-snapshot.json");
 const warningSnapshotPath = path.join(tmpDir, "warning-snapshot.json");
 
 fs.writeFileSync(
@@ -17,12 +18,22 @@ fs.writeFileSync(
       webRtc: true,
       setSinkId: true
     },
+    endpoint: {
+      role: "teaching-room"
+    },
     session: {
       id: "session-1",
-      mediaRoomId: "media-room-1"
+      mediaRoomId: "media-room-1",
+      subscribedChannels: ["ch1"]
     },
     media: {
       iceServerCount: 1,
+      diagnostics: [
+        {
+          channelId: "ch1",
+          state: "live"
+        }
+      ],
       peerConnections: [{ endpointId: "or-1" }],
       statsMetrics: [
         {
@@ -50,6 +61,66 @@ fs.writeFileSync(
 );
 
 fs.writeFileSync(
+  publisherSnapshotPath,
+  JSON.stringify({
+    runtime: {
+      secureContext: true,
+      getUserMedia: true,
+      webRtc: true,
+      setSinkId: true
+    },
+    endpoint: {
+      role: "operating-room"
+    },
+    session: {
+      id: "session-publisher",
+      mediaRoomId: "media-room-publisher",
+      subscribedChannels: ["ch1"]
+    },
+    media: {
+      state: "publishing",
+      iceServerCount: 1,
+      diagnostics: [
+        {
+          channelId: "ch1",
+          state: "waiting"
+        }
+      ],
+      peerConnections: [
+        {
+          endpointId: "teach-1",
+          state: "live",
+          connectionState: "connected",
+          iceConnectionState: "connected"
+        }
+      ],
+      statsMetrics: [
+        {
+          endpointId: "teach-1",
+          video: {
+            sendBitrateBps: 640000,
+            packetsSent: 300
+          },
+          audio: {
+            bufferMs: 40
+          },
+          network: {
+            rttMs: 10
+          }
+        }
+      ]
+    },
+    recentEvents: [
+      {
+        type: "peer.signal.forwarded",
+        sessionId: "session-publisher",
+        mediaRoomId: "media-room-publisher"
+      }
+    ]
+  })
+);
+
+fs.writeFileSync(
   warningSnapshotPath,
   JSON.stringify({
     runtime: {
@@ -60,7 +131,8 @@ fs.writeFileSync(
     },
     session: {
       id: "session-2",
-      mediaRoomId: "media-room-2"
+      mediaRoomId: "media-room-2",
+      subscribedChannels: ["ch1", "ch2"]
     },
     media: {
       iceServerCount: 0,
@@ -108,6 +180,14 @@ const okResult = spawnSync(process.execPath, ["scripts/analyze-diagnostics.cjs",
 assert.equal(okResult.status, 0, okResult.stderr);
 assert.match(okResult.stdout, /OK diagnostics look consistent across 1 snapshot/);
 
+const publisherResult = spawnSync(process.execPath, ["scripts/analyze-diagnostics.cjs", publisherSnapshotPath], {
+  encoding: "utf8"
+});
+
+assert.equal(publisherResult.status, 0, publisherResult.stderr);
+assert.match(publisherResult.stdout, /OK diagnostics look consistent across 1 snapshot/);
+assert.doesNotMatch(publisherResult.stdout, /channel ch1 is still waiting/);
+
 const warningResult = spawnSync(
   process.execPath,
   ["scripts/analyze-diagnostics.cjs", okSnapshotPath, warningSnapshotPath],
@@ -120,6 +200,7 @@ assert.match(warningResult.stdout, /WARN warning-snapshot\.json: getUserMedia un
 assert.match(warningResult.stdout, /INFO warning-snapshot\.json: audio output selection unavailable/);
 assert.match(warningResult.stdout, /WARN warning-snapshot\.json: no positive WebRTC video bitrate/);
 assert.match(warningResult.stdout, /WARN warning-snapshot\.json: recent events do not include peer\.signal\.forwarded/);
+assert.match(warningResult.stdout, /WARN warning-snapshot\.json: only 1\/2 subscribed channel diagnostics were captured/);
 assert.match(warningResult.stdout, /WARN warning-snapshot\.json: channel ch1 is still waiting for remote WebRTC video/);
 assert.match(warningResult.stdout, /WARN warning-snapshot\.json: peer or-2 connection is abnormal \(failed\)/);
 assert.match(warningResult.stdout, /WARN warning-snapshot\.json: peer or-2 ICE failed during negotiation/);

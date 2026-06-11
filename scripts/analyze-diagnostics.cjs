@@ -16,6 +16,19 @@ function metricHasVideo(metric) {
   );
 }
 
+function subscribedChannels(snapshot) {
+  const channels = snapshot?.session?.subscribedChannels;
+  return Array.isArray(channels) ? channels.filter((channel) => typeof channel === "string" && channel.trim()) : [];
+}
+
+function isOperatingRoomPublisher(snapshot) {
+  const mediaState = snapshot?.media?.state;
+  return (
+    snapshot?.endpoint?.role === "operating-room" &&
+    (mediaState === "publishing" || mediaState === "connected")
+  );
+}
+
 function eventMatchesSession(event, session) {
   if (!session) return true;
   if (session.id && event.sessionId && event.sessionId !== session.id) return false;
@@ -52,6 +65,8 @@ function warnMedia(lines, label, snapshot) {
   const metrics = Array.isArray(media.statsMetrics) ? media.statsMetrics : [];
   const peers = Array.isArray(media.peerConnections) ? media.peerConnections : [];
   const diagnostics = Array.isArray(media.diagnostics) ? media.diagnostics : [];
+  const subscribed = subscribedChannels(snapshot);
+  const publisherOnly = isOperatingRoomPublisher(snapshot);
 
   if (session && peers.length === 0 && metrics.length === 0) {
     lines.push(`WARN ${label}: session exists but no WebRTC peer connection or stats metrics were captured`);
@@ -63,7 +78,14 @@ function warnMedia(lines, label, snapshot) {
     lines.push(`WARN ${label}: recent events do not include peer.signal.forwarded`);
   }
 
+  if (session && !publisherOnly && subscribed.length && diagnostics.length < subscribed.length) {
+    lines.push(
+      `WARN ${label}: only ${diagnostics.length}/${subscribed.length} subscribed channel diagnostics were captured`
+    );
+  }
+
   for (const diagnostic of diagnostics) {
+    if (publisherOnly) continue;
     if (diagnostic?.state === "waiting") {
       lines.push(`WARN ${label}: channel ${diagnostic.channelId || "unknown"} is still waiting for remote WebRTC video`);
     }

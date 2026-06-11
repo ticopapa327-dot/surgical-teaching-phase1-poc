@@ -15,6 +15,10 @@ const HEADERS = [
   "sessionId",
   "mediaRoomId",
   "mediaState",
+  "subscribedChannelCount",
+  "liveChannelCount",
+  "waitingChannelCount",
+  "endedChannelCount",
   "peerEndpointId",
   "peerEndpointName",
   "peerState",
@@ -40,10 +44,24 @@ function csvCell(value) {
   return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
+function channelCounts(snapshot) {
+  const subscribedChannels = Array.isArray(snapshot?.session?.subscribedChannels)
+    ? snapshot.session.subscribedChannels
+    : [];
+  const diagnostics = Array.isArray(snapshot?.media?.diagnostics) ? snapshot.media.diagnostics : [];
+  return {
+    subscribedChannelCount: subscribedChannels.length,
+    liveChannelCount: diagnostics.filter((item) => item?.state === "live").length,
+    waitingChannelCount: diagnostics.filter((item) => item?.state === "waiting").length,
+    endedChannelCount: diagnostics.filter((item) => item?.state === "ended").length
+  };
+}
+
 function metricRows(filePath, snapshot) {
   const metrics = Array.isArray(snapshot?.media?.statsMetrics) ? snapshot.media.statsMetrics : [];
   const peers = Array.isArray(snapshot?.media?.peerConnections) ? snapshot.media.peerConnections : [];
   const peersByEndpoint = new Map(peers.map((peer) => [peer.endpointId, peer]));
+  const counts = channelCounts(snapshot);
   const base = {
     file: path.basename(filePath),
     generatedAt: snapshot?.generatedAt || "",
@@ -57,7 +75,8 @@ function metricRows(filePath, snapshot) {
     setSinkId: snapshot?.runtime?.setSinkId,
     sessionId: snapshot?.session?.id || "",
     mediaRoomId: snapshot?.session?.mediaRoomId || "",
-    mediaState: snapshot?.media?.state || ""
+    mediaState: snapshot?.media?.state || "",
+    ...counts
   };
 
   if (!metrics.length) {

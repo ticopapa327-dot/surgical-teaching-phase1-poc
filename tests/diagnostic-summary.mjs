@@ -27,10 +27,21 @@ fs.writeFileSync(
     },
     session: {
       id: "session-1",
-      mediaRoomId: "media-room-1"
+      mediaRoomId: "media-room-1",
+      subscribedChannels: ["ch1", "ch2"]
     },
     media: {
       state: "receiving",
+      diagnostics: [
+        {
+          channelId: "ch1",
+          state: "live"
+        },
+        {
+          channelId: "ch2",
+          state: "live"
+        }
+      ],
       peerConnections: [
         {
           endpointId: "or-pc-a",
@@ -77,10 +88,17 @@ fs.writeFileSync(
     },
     session: {
       id: "session-2",
-      mediaRoomId: "media-room-2"
+      mediaRoomId: "media-room-2",
+      subscribedChannels: ["ch1"]
     },
     media: {
       state: "publishing",
+      diagnostics: [
+        {
+          channelId: "ch1",
+          state: "waiting"
+        }
+      ],
       peerConnections: [
         {
           endpointId: "or-pc-c",
@@ -125,10 +143,10 @@ const lines = result.stdout.trim().split(/\r?\n/);
 assert.equal(lines.length, 4);
 assert.equal(
   lines[0],
-  "file,generatedAt,endpointId,endpointName,endpointRole,locationHost,secureContext,getUserMedia,webRtc,setSinkId,sessionId,mediaRoomId,mediaState,peerEndpointId,peerEndpointName,peerState,connectionState,iceConnectionState,signalingState,localAudioTrackCount,remoteAudioTrackCount,sendBitrateBps,receiveBitrateBps,packetsSent,packetsReceived,packetsLost,audioBufferMs,audioJitterMs,rttMs,iceRoute"
+  "file,generatedAt,endpointId,endpointName,endpointRole,locationHost,secureContext,getUserMedia,webRtc,setSinkId,sessionId,mediaRoomId,mediaState,subscribedChannelCount,liveChannelCount,waitingChannelCount,endedChannelCount,peerEndpointId,peerEndpointName,peerState,connectionState,iceConnectionState,signalingState,localAudioTrackCount,remoteAudioTrackCount,sendBitrateBps,receiveBitrateBps,packetsSent,packetsReceived,packetsLost,audioBufferMs,audioJitterMs,rttMs,iceRoute"
 );
-assert.match(lines[1], /metric-snapshot\.json,2026-06-10T19:30:00\.000Z,teach-pc-b,示教室端 PC-B,teaching-room,192\.168\.1\.117:5173,false,false,true,true,session-1,media-room-1,receiving,or-pc-a,手术室端 PC-A,live,connected,connected,stable,1,1,,851200,,320,0,18,6,4,host->host/);
-assert.match(lines[2], /peer-only-snapshot\.json,,teach-pc-c,示教室端 PC-C,teaching-room,,,,,,session-2,media-room-2,publishing,or-pc-c,,waiting,connecting,checking,have-remote-offer,0,0,,,,,,,,,/);
-assert.match(lines[3], /empty-snapshot\.json,,or-pc-a,手术室端 PC-A,operating-room,,,,,,,,idle,,,,,,,,,,,,,,,,,/);
+assert.match(lines[1], /metric-snapshot\.json,2026-06-10T19:30:00\.000Z,teach-pc-b,示教室端 PC-B,teaching-room,192\.168\.1\.117:5173,false,false,true,true,session-1,media-room-1,receiving,2,2,0,0,or-pc-a,手术室端 PC-A,live,connected,connected,stable,1,1,,851200,,320,0,18,6,4,host->host/);
+assert.match(lines[2], /peer-only-snapshot\.json,,teach-pc-c,示教室端 PC-C,teaching-room,,,,,,session-2,media-room-2,publishing,1,0,1,0,or-pc-c,,waiting,connecting,checking,have-remote-offer,0,0,,,,,,,,,/);
+assert.match(lines[3], /empty-snapshot\.json,,or-pc-a,手术室端 PC-A,operating-room,,,,,,,,idle,0,0,0,0,,,,,,,,,,,,,,,,,/);
 
 console.log("diagnostic summary test passed");

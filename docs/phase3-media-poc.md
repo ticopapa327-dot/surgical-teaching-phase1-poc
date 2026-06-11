@@ -21,7 +21,7 @@
 13. 媒体诊断区显示每路远端媒体状态，以及每个远端 PeerConnection 的连接、ICE、协商状态、本地发送音频轨道数和远端接收音频轨道数。
 14. 示教室端或观摩端可点击“请求重发媒体”，通过 `media-refresh-request` 请求手术室端按当前订阅重新发布媒体。
 15. 断开信令、离会、结束会话或点击“停止媒体链路”时清理 PeerConnection 和远端流状态；手术室 owner 停止媒体时通知所有远端，示教室端或观摩端停止媒体时只通知手术室 owner 清理本端对应链路，不影响其他接收端。
-16. 状态区提供“复制诊断快照”，生成浏览器运行环境、本端控制面、音频、媒体、通道源模式、预览状态、结构化 WebRTC 统计、PeerConnection 连接/ICE/协商状态和最近信令事件摘要；已连接信令时会先限量刷新最近 10 条事件日志。快照包含会话和 `peer.signal` 摘要中的 `mediaRoomId`，不包含信令令牌、设备 ID、SDP、ICE candidate 原文、患者信息或媒体数据。
+16. 状态区提供“复制诊断快照”，生成浏览器运行环境、本端控制面、音频、媒体、通道源模式、预览状态、结构化 WebRTC 统计、PeerConnection 连接/ICE/协商状态和最近信令事件摘要；已连接信令时会先限量刷新最近 10 条事件日志。快照包含会话、会话事件摘要和 `peer.signal` 摘要中的 `mediaRoomId`，不包含信令令牌、设备 ID、SDP、ICE candidate 原文、患者信息或媒体数据。
 
 ## 三、当前边界
 
@@ -58,7 +58,7 @@ npm run verify
 
 其中 Playwright 烟测包含双页面和三页面 WebRTC 用例：启动真实信令服务，模拟手术室端、示教室端和观摩端完成呼叫、差异化订阅、动态追加订阅、发布后观摩端加入、观摩端停止自身媒体链路且不影响其他接收端、观摩端离会后重发布、观摩端异常断开后重发布、示教室端同 ID 重连后重发布、远端请求媒体重发、协商、多个远端视频轨道接收和双端远端音频轨道接收。
 
-现场保存两端诊断快照后，可执行 `npm run diagnostics:analyze -- snapshot-a.json snapshot-b.json` 自动提示媒体房间不一致、非安全上下文、缺少 `peer.signal`、远端画面等待、PeerConnection 异常、无视频码率、音频缓冲过高或 RTT 过高等常见问题。
+现场保存两端诊断快照后，可执行 `node scripts/summarize-diagnostics.cjs snapshot-a.json snapshot-b.json > diagnostics.csv` 汇总会话、媒体房间、订阅通道数、已到达/等待/异常通道数、PeerConnection、码率、音频缓冲、RTT 和 ICE 路由；也可执行 `npm run diagnostics:analyze -- snapshot-a.json snapshot-b.json` 自动提示媒体房间不一致、非安全上下文、缺少 `peer.signal`、订阅通道诊断未到齐、远端画面等待、PeerConnection 异常、无视频码率、音频缓冲过高或 RTT 过高等常见问题。手术室端处于发布状态时，分析器不会把本端默认远端画面等待误判为接收端黑屏。
 需要把快照分析纳入自动化复测时，可增加 `--fail-on-warn`，出现 `WARN` 时脚本返回非零退出码。
 
 ## 六、下一步建议

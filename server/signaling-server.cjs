@@ -406,6 +406,7 @@ function createSignalingServer(options = {}) {
     };
     recordEvent("session.ended", {
       sessionId: session.sessionId,
+      mediaRoomId: session.mediaRoomId,
       endedByEndpointId,
       reason
     });
@@ -423,6 +424,7 @@ function createSignalingServer(options = {}) {
     delete session.subscriptions[endpointId];
     recordEvent("session.participant_removed", {
       sessionId: session.sessionId,
+      mediaRoomId: session.mediaRoomId,
       endpointId,
       reason
     });
@@ -502,7 +504,11 @@ function createSignalingServer(options = {}) {
       for (const session of sessions.values()) {
         if (session.participants.includes(endpointId)) {
           send(ws, "session.resumed", { session: publicSession(session) });
-          recordEvent("session.resumed", { sessionId: session.sessionId, endpointId });
+          recordEvent("session.resumed", {
+            sessionId: session.sessionId,
+            mediaRoomId: session.mediaRoomId,
+            endpointId
+          });
         }
       }
       sendDirectory();
@@ -676,6 +682,7 @@ function createSignalingServer(options = {}) {
       session.subscriptions[fromEndpoint.endpointId] = channelIds;
       recordEvent("session.subscription.updated", {
         sessionId: session.sessionId,
+        mediaRoomId: session.mediaRoomId,
         byEndpointId: fromEndpoint.endpointId,
         channelIds
       });
@@ -702,6 +709,7 @@ function createSignalingServer(options = {}) {
       };
       recordEvent("session.annotation.updated", {
         sessionId: session.sessionId,
+        mediaRoomId: session.mediaRoomId,
         byEndpointId: fromEndpoint.endpointId
       });
       notifySession(session);
@@ -773,7 +781,11 @@ function createSignalingServer(options = {}) {
       }
       session.participants = session.participants.filter((endpointId) => endpointId !== fromEndpoint.endpointId);
       delete session.subscriptions[fromEndpoint.endpointId];
-      recordEvent("session.left", { sessionId: session.sessionId, endpointId: fromEndpoint.endpointId });
+      recordEvent("session.left", {
+        sessionId: session.sessionId,
+        mediaRoomId: session.mediaRoomId,
+        endpointId: fromEndpoint.endpointId
+      });
       send(ws, "session.left", { sessionId: session.sessionId }, requestId);
       if (fromEndpoint.endpointId === session.ownerEndpointId) {
         endSession(session, fromEndpoint.endpointId, "owner_left");
@@ -813,7 +825,11 @@ function createSignalingServer(options = {}) {
       }
       session.participants.push(fromEndpoint.endpointId);
       session.subscriptions[fromEndpoint.endpointId] = ["ch1"];
-      recordEvent("session.joined", { sessionId: session.sessionId, endpointId: fromEndpoint.endpointId });
+      recordEvent("session.joined", {
+        sessionId: session.sessionId,
+        mediaRoomId: session.mediaRoomId,
+        endpointId: fromEndpoint.endpointId
+      });
       notifySession(session);
       send(ws, "session.joined", { session: publicSession(session) }, requestId);
       sendSessions();

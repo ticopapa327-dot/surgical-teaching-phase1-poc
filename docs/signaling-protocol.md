@@ -273,7 +273,7 @@ HTTP `/events` 返回最近控制面事件摘要：
 }
 ```
 
-当前服务端最多保留 4 个订阅通道，并向会话参与方广播 `session.updated`。事件日志会记录 `session.subscription.updated`，只包含会话 ID、更新终端和归一化后的通道 ID 摘要。
+当前服务端最多保留 4 个订阅通道，并向会话参与方广播 `session.updated`。事件日志会记录 `session.subscription.updated`，只包含会话 ID、媒体房间 ID、更新终端和归一化后的通道 ID 摘要。
 订阅通道会被归一化：只保留非空字符串，去重，单个通道 ID 最长 32 个字符；如果没有有效通道，默认回落为 `ch1`。
 
 ### 2. 同步标注
@@ -291,7 +291,7 @@ HTTP `/events` 返回最近控制面事件摘要：
 }
 ```
 
-服务端会更新会话中的 `annotation` 字段，并向会话参与方广播 `session.updated`。发送方还会收到 `session.annotation.updated`。事件日志会记录 `session.annotation.updated`，只包含会话 ID 和更新终端，不记录标注正文。非手术室端发送该消息会返回 `annotation_forbidden`。
+服务端会更新会话中的 `annotation` 字段，并向会话参与方广播 `session.updated`。发送方还会收到 `session.annotation.updated`。事件日志会记录 `session.annotation.updated`，只包含会话 ID、媒体房间 ID 和更新终端，不记录标注正文。非手术室端发送该消息会返回 `annotation_forbidden`。
 
 `annotation` 字段包含：
 
@@ -315,7 +315,7 @@ HTTP `/events` 返回最近控制面事件摘要：
 }
 ```
 
-服务端删除该会话，并向原会话参与方广播 `session.ended`。多人会话中只有 `ownerEndpointId` 对应的会话控制方可以结束整场会议；其他参与方应使用 `session.leave` 离开。两人会话中任一方结束连接都会结束会话。
+服务端删除该会话，并向原会话参与方广播 `session.ended`。多人会话中只有 `ownerEndpointId` 对应的会话控制方可以结束整场会议；其他参与方应使用 `session.leave` 离开。两人会话中任一方结束连接都会结束会话。事件日志中的 `session.ended` 摘要会包含会话 ID、媒体房间 ID、结束方和结束原因。
 
 `session.ended` 包含：
 
@@ -368,7 +368,7 @@ HTTP `/events` 返回最近控制面事件摘要：
 }
 ```
 
-服务端向离会方返回 `session.left`，并向剩余参与方广播 `session.updated`。如果离会方是 `ownerEndpointId` 对应的会话控制方，服务端会结束该会话并广播 `reason` 为 `owner_left` 的 `session.ended`；如果离会后会话不足 2 人，服务端会结束该会话并广播 `reason` 为 `participant_left` 的 `session.ended`。
+服务端向离会方返回 `session.left`，并向剩余参与方广播 `session.updated`。如果离会方是 `ownerEndpointId` 对应的会话控制方，服务端会结束该会话并广播 `reason` 为 `owner_left` 的 `session.ended`；如果离会后会话不足 2 人，服务端会结束该会话并广播 `reason` 为 `participant_left` 的 `session.ended`。事件日志中的 `session.left`、`session.joined`、`session.participant_removed` 和 `session.resumed` 摘要会包含媒体房间 ID。
 
 ## 七、WebRTC 协商透传
 

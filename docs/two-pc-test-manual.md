@@ -395,8 +395,8 @@ npm run diagnostics:analyze -- .\pc-a-snapshot.json .\pc-b-snapshot.json
 npm run diagnostics:analyze -- --fail-on-warn .\pc-a-snapshot.json .\pc-b-snapshot.json
 ```
 
-输出列包含本端信息、访问主机、安全上下文、采集能力、WebRTC 能力、音频输出选择能力、会话 ID、媒体房间 ID、媒体状态、对端 ID、PeerConnection 连接/ICE/协商状态、本地/远端音频轨道数、视频发送/接收码率、包发/收/丢、音频缓冲、jitter、RTT 和 ICE 路由。
-分析脚本会输出 `WARN` / `INFO` / `OK` 行，用于快速定位媒体房间不一致、非安全上下文、缺少 `peer.signal`、远端画面等待、PeerConnection 异常、无视频码率、音频缓冲过高或 RTT 过高等常见问题。带 `--fail-on-warn` 时，出现 `WARN` 会返回非零退出码，便于后续自动化复测使用。
+输出列包含本端信息、访问主机、安全上下文、采集能力、WebRTC 能力、音频输出选择能力、会话 ID、媒体房间 ID、媒体状态、订阅通道数、已到达/等待/异常通道数、对端 ID、PeerConnection 连接/ICE/协商状态、本地/远端音频轨道数、视频发送/接收码率、包发/收/丢、音频缓冲、jitter、RTT 和 ICE 路由。
+分析脚本会输出 `WARN` / `INFO` / `OK` 行，用于快速定位媒体房间不一致、非安全上下文、缺少 `peer.signal`、订阅通道诊断未到齐、远端画面等待、PeerConnection 异常、无视频码率、音频缓冲过高或 RTT 过高等常见问题。手术室端处于发布状态时，脚本不会把本端默认远端画面等待误判为接收端黑屏；判断接收端黑屏应以示教室端或观摩端快照为主。带 `--fail-on-warn` 时，出现 `WARN` 会返回非零退出码，便于后续自动化复测使用。
 
 如果音频能听到但延时明显，先排除以下因素：
 

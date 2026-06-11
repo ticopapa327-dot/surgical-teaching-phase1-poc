@@ -589,10 +589,12 @@ async function main() {
     .filter((event) => event.type === "session.subscription.updated")
     .at(-1);
   assert.equal(subscriptionEvent.sessionId, session.sessionId);
+  assert.equal(subscriptionEvent.mediaRoomId, session.mediaRoomId);
   assert.equal(subscriptionEvent.byEndpointId, "teach-1");
   assert.deepEqual(subscriptionEvent.channelIds, ["ch4", longChannelId.slice(0, 32), "ch2", "ch3"]);
   const annotationEvent = eventsAfterAnnotation.find((event) => event.type === "session.annotation.updated");
   assert.equal(annotationEvent.sessionId, session.sessionId);
+  assert.equal(annotationEvent.mediaRoomId, session.mediaRoomId);
   assert.equal(annotationEvent.byEndpointId, "or-1");
   assert.equal(JSON.stringify(eventsAfterAnnotation).includes("Key anatomy"), false);
   const limitedEvents = await getJson(`${httpBase}/events?limit=2`);
@@ -615,6 +617,11 @@ async function main() {
   assert.equal(server.state.sessions.size, 0);
   const endedHealth = await getJson(`${httpBase}/health`);
   assert.equal(endedHealth.sessions, 0);
+  const eventsAfterSessionEnded = await getJson(`${httpBase}/events`);
+  const sessionEndedEvent = eventsAfterSessionEnded.find(
+    (event) => event.type === "session.ended" && event.sessionId === session.sessionId
+  );
+  assert.equal(sessionEndedEvent.mediaRoomId, session.mediaRoomId);
   debugMark("session ended");
 
   send(orClient, "call.request", {
