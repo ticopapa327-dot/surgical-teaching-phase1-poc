@@ -47,7 +47,9 @@ npm run test:remote:kylin:probe
 $env:UST_KYLIN_SUDO_PASSWORD = "<137 sudo 密码>"
 npm run test:remote:kylin:signal:lan
 npm run test:remote:kylin:media:lan
+npm run test:remote:kylin:audio:lan
 npm run test:remote:kylin:diagnostics
+npm run test:remote:kylin:audio:diagnostics
 Remove-Item Env:UST_KYLIN_SUDO_PASSWORD -ErrorAction SilentlyContinue
 ```
 
@@ -70,3 +72,28 @@ Remove-Item Env:UST_KYLIN_SUDO_PASSWORD -ErrorAction SilentlyContinue
 - 失败时保留诊断快照、控制台输出和远端浏览器版本。
 
 当前阶段的结论必须以自动化输出和诊断快照为准，不以单纯“页面看起来正常”作为通过依据。
+
+## 五、一键交叉验证
+
+118 上可以用统一入口按顺序执行 117 与 137 的交叉验证，并生成 JSON 报告：
+
+```powershell
+$env:UST_KYLIN_SUDO_PASSWORD = "<137 sudo 密码>"
+npm run test:remote:cross
+Remove-Item Env:UST_KYLIN_SUDO_PASSWORD -ErrorAction SilentlyContinue
+```
+
+报告默认写入 `test-results/cross-machine-validation/`。该目录不提交到仓库，只作为本地验证证据。
+
+如需临时跳过某台远端：
+
+```powershell
+$env:UST_CROSS_SKIP_WINDOWS_117 = "1"
+$env:UST_CROSS_SKIP_KYLIN_137 = "1"
+```
+
+如要求 137 必须执行而不是因为缺少 sudo 密码跳过：
+
+```powershell
+$env:UST_CROSS_REQUIRE_KYLIN_137 = "1"
+```
