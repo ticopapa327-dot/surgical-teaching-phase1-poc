@@ -10,6 +10,7 @@ const DEFAULTS = {
 };
 
 const REQUIRED_STRICT_STEPS = [
+  "lan-topology",
   "117-probe",
   "117-signal",
   "117-media",
@@ -254,6 +255,53 @@ function remoteResourcesStatus(report, reportPath) {
   };
 }
 
+function lanTopologyStatus(report, reportPath) {
+  const manifestPath = resolveArtifactManifestPath(report, reportPath);
+  if (!manifestPath) {
+    return {
+      available: false,
+      ok: false,
+      topologyOk: false,
+      warnings: [],
+      artifactPath: "",
+      error: "artifact manifest missing"
+    };
+  }
+  const manifest = readJson(manifestPath);
+  const artifact = readJsonArtifact(manifest, "remote-lan-topology");
+  if (!artifact) {
+    return {
+      available: false,
+      ok: false,
+      topologyOk: false,
+      warnings: [],
+      artifactPath: "",
+      error: "LAN topology artifact missing"
+    };
+  }
+  const localProbe = artifact.local?.probe || {};
+  const remoteProbe = artifact.remoteWindows?.probe || {};
+  return {
+    available: true,
+    ok: Boolean(artifact.ok),
+    bothProbesOk: artifact.bothProbesOk === true,
+    topologyOk: artifact.topologyOk === true,
+    warnings: Array.isArray(artifact.warnings) ? artifact.warnings : [],
+    local: {
+      routeSource: localProbe.routeHint?.sourceAddress || "",
+      routeInterface: localProbe.routeHint?.interfaceAlias || "",
+      boundTcpOk: localProbe.tcp?.bound?.ok ?? null
+    },
+    remoteWindows: {
+      routeSource: remoteProbe.routeHint?.sourceAddress || "",
+      routeInterface: remoteProbe.routeHint?.interfaceAlias || "",
+      boundTcpOk: remoteProbe.tcp?.bound?.ok ?? null
+    },
+    artifactPath: artifact.artifactPath || "",
+    error: ""
+  };
+}
+
 function kylinDiscoveryStatus(report, reportPath) {
   const manifestPath = resolveArtifactManifestPath(report, reportPath);
   if (!manifestPath) {
@@ -456,6 +504,7 @@ function buildStatus(options) {
   const localResources = report ? localResourcesStatus(report) : null;
   const remoteResources = report ? remoteResourcesStatus(report, reportPath) : null;
   const kylinDiscovery = report ? kylinDiscoveryStatus(report, reportPath) : null;
+  const lanTopology = report ? lanTopologyStatus(report, reportPath) : null;
   const effectiveFinishedAt = latest.ledger.finishedAt || cycle?.finishedAt || "";
   const age = ageStatus(effectiveFinishedAt, options.maxAgeMinutes);
   const healthAfter = report?.healthAfter || {};
@@ -481,6 +530,11 @@ function buildStatus(options) {
   if (remoteResources && !remoteResources.ok) failures.push("strict cross report remote resources missing");
   if (remoteResources && remoteResources.windowsLanTargetsOk === false) {
     failures.push("strict cross report Windows 117 LAN target route is not on expected LAN");
+  }
+  if (lanTopology && !lanTopology.available) {
+    failures.push("strict cross report LAN topology artifact missing");
+  } else if (lanTopology && lanTopology.topologyOk === false) {
+    failures.push("strict cross report LAN topology check has warnings");
   }
   if (kylinDiscovery?.available && !kylinDiscovery.ok) {
     failures.push(`strict cross report Kylin discovery failed: ${kylinDiscovery.classification || "unknown"}`);
@@ -534,6 +588,7 @@ function buildStatus(options) {
           localResources,
           remoteResources,
           kylinDiscovery,
+          lanTopology,
           steps
         }
       : null

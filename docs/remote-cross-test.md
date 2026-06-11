@@ -110,6 +110,7 @@ Remove-Item Env:UST_KYLIN_SUDO_PASSWORD -ErrorAction SilentlyContinue
 
 `137-discovery` 报告中的 `knownHostConnectivity` 会同时记录绑定 118 有线地址的 TCP 结果和系统默认路由的 TCP 结果。如果出现 `os-route-open-lan-bound-closed`，说明系统默认路由可能经由 VPN 或虚拟网卡触达了某个 `192.168.1.137`，但这不能证明 137 麒麟终端在当前有线 LAN 上可用于手术室-示教室交叉验证。
 新报告还会记录 `knownHostConnectivity.routeHint` 和 `routeOnExpectedLan`。当 `routeOnExpectedLan=false` 时，应以其中的 `interfaceAlias/sourceAddress/nextHop` 为准定位抢路由的接口；例如 `CMYNetwork/198.19.0.1` 表示系统默认路由没有走 118 的 `192.168.1.118` 有线地址。
+严格交叉验证会先运行 `lan-topology`，归档到 `test-results/remote-lan-topology`。该诊断同时采集 118 和 117 到 137 的路由提示、绑定 TCP、ping 文本、邻居表和 ARP 文本，只用于审计，不会自动增删路由或禁用网卡。
 
 117/137 媒体 smoke 会额外写入 `*-progress.json`，记录配置、浏览器连接、呼叫、订阅、发布、快照保存、诊断分析和 health 读取等阶段。若 Windows 进程出现 `3221226505` 一类异常退出，交叉验证报告会同时记录 `exitCodeHex` 和已知 Windows 状态名，用于判断是业务断言失败还是底层进程 fast-fail。
 

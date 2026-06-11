@@ -8,6 +8,7 @@ import { spawn } from "node:child_process";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const requiredStrictStepIds = [
+  "lan-topology",
   "117-probe",
   "117-signal",
   "117-media",
@@ -89,7 +90,15 @@ function splitRouteDiscovery() {
 async function writeCrossReport(
   reportDir,
   id,
-  { ok = true, withArtifact = true, strict = false, steps = null, kylinDiscovery = null, windowsLanTargets = [] } = {}
+  {
+    ok = true,
+    withArtifact = true,
+    strict = false,
+    steps = null,
+    kylinDiscovery = null,
+    windowsLanTargets = [],
+    lanTopology = null
+  } = {}
 ) {
   const artifactDir = path.join(reportDir, `${id}-artifacts`);
   const artifactPath = path.join(artifactDir, "snapshot.json");
@@ -109,8 +118,31 @@ async function writeCrossReport(
     });
 
     if (strict) {
+      const lanTopologyPath = path.join(artifactDir, "remote-lan-topology", "lan-topology.json");
       const windowsProbePath = path.join(artifactDir, "remote-windows-probe", "windows-probe.json");
       const kylinProbePath = path.join(artifactDir, "remote-kylin-probe", "kylin-probe.json");
+      const lanTopologyJson = `${JSON.stringify(
+        lanTopology || {
+          ok: true,
+          bothProbesOk: true,
+          topologyOk: true,
+          warnings: [],
+          local: {
+            probe: {
+              routeHint: { interfaceAlias: "以太网 2", sourceAddress: "192.168.1.118" },
+              tcp: { bound: { ok: true } }
+            }
+          },
+          remoteWindows: {
+            probe: {
+              routeHint: { interfaceAlias: "WLAN", sourceAddress: "192.168.1.117" },
+              tcp: { bound: { ok: true } }
+            }
+          }
+        },
+        null,
+        2
+      )}\n`;
       const windowsProbeJson = `${JSON.stringify(
         {
           checks: {
@@ -142,11 +174,19 @@ async function writeCrossReport(
         null,
         2
       )}\n`;
+      await mkdir(path.dirname(lanTopologyPath), { recursive: true });
       await mkdir(path.dirname(windowsProbePath), { recursive: true });
       await mkdir(path.dirname(kylinProbePath), { recursive: true });
+      await writeFile(lanTopologyPath, lanTopologyJson, "utf8");
       await writeFile(windowsProbePath, windowsProbeJson, "utf8");
       await writeFile(kylinProbePath, kylinProbeJson, "utf8");
       files.push(
+        {
+          sourcePath: "test-results/remote-lan-topology/lan-topology.json",
+          targetPath: lanTopologyPath,
+          bytes: Buffer.byteLength(lanTopologyJson),
+          sha256: sha256(lanTopologyJson)
+        },
         {
           sourcePath: "test-results/remote-windows-probe/windows-probe.json",
           targetPath: windowsProbePath,
@@ -465,6 +505,28 @@ try {
     ok: false,
     strict: true,
     kylinDiscovery: splitRouteDiscovery(),
+    lanTopology: {
+      ok: true,
+      bothProbesOk: true,
+      topologyOk: false,
+      warnings: [
+        "or118_kylin137_route_source_not_expected_lan",
+        "or118_kylin137_bound_tcp_unreachable",
+        "teach117_kylin137_neighbor_unresolved"
+      ],
+      local: {
+        probe: {
+          routeHint: { interfaceAlias: "CMYNetwork", sourceAddress: "198.19.0.1" },
+          tcp: { bound: { ok: false } }
+        }
+      },
+      remoteWindows: {
+        probe: {
+          routeHint: { interfaceAlias: "CMYNetwork", sourceAddress: "198.19.0.1" },
+          tcp: { bound: { ok: false } }
+        }
+      }
+    },
     windowsLanTargets: [
       {
         name: "kylin137",
@@ -511,6 +573,12 @@ try {
     true
   );
   assert.equal(splitRouteStatusJson.latestStrictReport.remoteResources.windowsLanTargetsOk, false);
+  assert.equal(splitRouteStatusJson.latestStrictReport.lanTopology.topologyOk, false);
+  assert.equal(splitRouteStatusJson.latestStrictReport.lanTopology.local.routeInterface, "CMYNetwork");
+  assert.equal(
+    splitRouteStatusJson.failures.includes("strict cross report LAN topology check has warnings"),
+    true
+  );
   assert.equal(
     splitRouteStatusJson.failures.includes(
       "strict cross report Windows 117 LAN target route is not on expected LAN"

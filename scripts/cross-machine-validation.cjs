@@ -256,6 +256,7 @@ function walkFiles(dir) {
 
 function archiveDiagnosticArtifacts(reportDir, reportId, startedAt) {
   const sources = [
+    path.join("test-results", "remote-lan-topology"),
     path.join("test-results", "remote-windows-probe"),
     path.join("test-results", "remote-kylin-probe"),
     path.join("test-results", "remote-kylin-discovery"),
@@ -584,6 +585,12 @@ async function main(argv = []) {
     "test:remote:kylin:discover",
     120000
   );
+  const lanTopologyStep = step(
+    "lan-topology",
+    "118/117/137 LAN topology diagnostic",
+    "test:remote:lan:topology",
+    90000
+  );
 
   const hasFailedStep = () => report.steps.some((item) => item.status === "failed");
   const runKylinDiscovery = () => {
@@ -593,6 +600,7 @@ async function main(argv = []) {
   };
 
   if (config.skipWindows117) {
+    skipStep(lanTopologyStep, report, "UST_CROSS_SKIP_WINDOWS_117 is enabled");
     windowsSteps.forEach((item) => skipStep(item, report, "UST_CROSS_SKIP_WINDOWS_117 is enabled"));
     if (config.requireWindows117) {
       failRequirement(
@@ -603,6 +611,7 @@ async function main(argv = []) {
       );
     }
   } else {
+    runStep(lanTopologyStep, report);
     for (const item of windowsSteps) {
       const entry = runStep(item, report);
       if (entry.status !== "passed") break;
