@@ -102,7 +102,9 @@ npm run test:remote:cross:strict
 Remove-Item Env:UST_KYLIN_SUDO_PASSWORD -ErrorAction SilentlyContinue
 ```
 
-报告默认写入 `validation-results/cross-machine-validation/`，同时生成 JSON 原始报告、Markdown 摘要、SHA256 校验文件和 artifacts 归档目录。归档目录会复制本轮 117/137 环境探测快照、远程媒体/音频诊断 JSON 与 CSV，避免只保留易被清理的 `test-results` 路径。`validation-results` 不提交到仓库，只作为本地验证证据。
+报告默认写入 `validation-results/cross-machine-validation/`，同时生成 JSON 原始报告、Markdown 摘要、SHA256 校验文件和 artifacts 归档目录。归档目录会复制本轮 117/137 环境探测快照、137 SSH host key 发现扫描结果、远程媒体/音频诊断 JSON 与 CSV，避免只保留易被清理的 `test-results` 路径。`validation-results` 不提交到仓库，只作为本地验证证据。
+
+当 137 探针失败，或严格验证缺少 137 临时授权时，交叉验证会自动追加 `137-discovery` 诊断步骤，扫描 118 有线网段并与 137 历史 host key 比对。该步骤不能替代 137 验证通过，只用于把“是否换 IP、是否仍在同一有线 LAN”写入可审计报告。
 
 多轮验证后可生成本地索引，快速查看最近报告、失败步骤、重试次数和证据完整性：
 

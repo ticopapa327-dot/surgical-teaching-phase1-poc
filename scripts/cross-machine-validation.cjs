@@ -258,6 +258,7 @@ function archiveDiagnosticArtifacts(reportDir, reportId, startedAt) {
   const sources = [
     path.join("test-results", "remote-windows-probe"),
     path.join("test-results", "remote-kylin-probe"),
+    path.join("test-results", "remote-kylin-discovery"),
     path.join("test-results", "remote-windows-media-smoke"),
     path.join("test-results", "remote-windows-audio-smoke"),
     path.join("test-results", "remote-kylin-media-smoke"),
@@ -553,8 +554,19 @@ async function main(argv = []) {
       360000
     )
   ];
+  const kylinDiscoveryStep = step(
+    "137-discovery",
+    "137 Kylin SSH host discovery diagnostic",
+    "test:remote:kylin:discover",
+    120000
+  );
 
   const hasFailedStep = () => report.steps.some((item) => item.status === "failed");
+  const runKylinDiscovery = () => {
+    if (!report.steps.some((item) => item.id === kylinDiscoveryStep.id)) {
+      runStep(kylinDiscoveryStep, report);
+    }
+  };
 
   if (config.skipWindows117) {
     windowsSteps.forEach((item) => skipStep(item, report, "UST_CROSS_SKIP_WINDOWS_117 is enabled"));
@@ -586,6 +598,7 @@ async function main(argv = []) {
   } else if (!config.hasKylinSudoPassword) {
     const reason = "UST_KYLIN_SUDO_PASSWORD is required for temporary 137 LAN DevTools firewall rule";
     kylinSteps.forEach((item) => skipStep(item, report, reason));
+    runKylinDiscovery();
     if (config.requireKylin137) {
       report.steps.push({
         id: "137-required-env",
@@ -597,6 +610,9 @@ async function main(argv = []) {
   } else {
     for (const item of kylinSteps) {
       const entry = runStep(item, report);
+      if (entry.status !== "passed" && item.id === "137-probe") {
+        runKylinDiscovery();
+      }
       if (entry.status !== "passed") break;
     }
   }
