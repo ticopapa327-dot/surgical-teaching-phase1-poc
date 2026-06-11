@@ -2890,6 +2890,18 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
         version: appInfo?.appVersion || "unknown",
         recordingStorage: appInfo?.recordingsDir || "-"
       },
+      runtime: {
+        userAgent: navigator.userAgent || "unknown",
+        secureContext: Boolean(window.isSecureContext),
+        locationProtocol: window.location?.protocol || "",
+        locationHost: window.location?.host || "",
+        mediaDevices: Boolean(navigator.mediaDevices),
+        getUserMedia: Boolean(navigator.mediaDevices?.getUserMedia),
+        enumerateDevices: Boolean(navigator.mediaDevices?.enumerateDevices),
+        webRtc: typeof window.RTCPeerConnection === "function",
+        webSocket: typeof window.WebSocket === "function",
+        setSinkId: typeof HTMLMediaElement !== "undefined" && typeof HTMLMediaElement.prototype.setSinkId === "function"
+      },
       endpoint: {
         id: signalingEndpointIdRef.current,
         name: localEndpointName,
