@@ -595,10 +595,10 @@ http://<PC-A局域网IP>:7077/events?limit=10
 2. PC-A 本端角色是否为“手术室端”；示教室端不能发布媒体。
 3. PC-A 被订阅通道是否能本地预览。
 4. PC-B “状态 / 媒体链路”是否显示正在接收或已收到手术室端媒体。
-5. PC-A 点击“刷新事件”，确认存在从 PC-A 到 PC-B 的 `peer.signal.forwarded` / `media-offer`，并且摘要里有订阅通道和轨道数；再确认有 PC-B 到 PC-A 的 `media-answer`。如果只有呼叫事件，没有 `media-offer`，优先检查 PC-A 是否点击了“发布订阅通道媒体”以及本端角色是否为手术室端。
+5. PC-A 点击“刷新事件”，确认存在从 PC-A 到 PC-B 的 `peer.signal.forwarded` / `media-offer`，并且摘要里有媒体房间 ID、订阅通道和轨道数；再确认有 PC-B 到 PC-A 的 `media-answer`。如果只有呼叫事件，没有 `media-offer`，优先检查 PC-A 是否点击了“发布订阅通道媒体”以及本端角色是否为手术室端。
 6. 两台电脑是否在同一局域网；当前 PoC 默认未配置 STUN/TURN，不保证跨 NAT、VPN 或复杂路由可用。如需跨网段联调，应先在 `public/config.json` 配置 `webrtc.iceServers`。
 7. 浏览器控制台是否出现 `WebRTC 协商失败`、`ICE` 或 `RTCPeerConnection` 相关错误。
-8. 两端分别点击“复制诊断快照”，确认 PC-A 快照的 `media.peerConnections` 有 PC-B，PC-B 快照的 `media.stats` 和 `media.statsMetrics` 有视频码率、包计数或 ICE 路由，`recentEvents` 中存在 `media-offer`、`media-answer` 和 `ice` 摘要。
+8. 两端分别点击“复制诊断快照”，确认 PC-A 快照的 `session.mediaRoomId` 与 `recentEvents` 中 `peer.signal.forwarded` 的 `mediaRoomId` 一致，`media.peerConnections` 有 PC-B，PC-B 快照的 `media.stats` 和 `media.statsMetrics` 有视频码率、包计数或 ICE 路由，`recentEvents` 中存在 `media-offer`、`media-answer` 和 `ice` 摘要。
 
 如果发布中继续勾选通道 2 至通道 4 后仍看不到真实远端画面，优先检查 PC-B“媒体诊断”是否仍停留在“等待远端”，以及“连接诊断”里的连接、ICE 和协商状态；正常情况下 PC-A 不需要再次点击“发布订阅通道媒体”。
 

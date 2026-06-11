@@ -177,7 +177,7 @@ HTTP `/events` 返回最近控制面事件摘要：
 ```
 
 当前事件日志只用于 PoC 调试和验收追踪，不提供不可抵赖审计、持久化、签名、防篡改或权限分级。
-`peer.signal.forwarded` 事件仅记录 `signalKind`、`channelIds`、`trackCount`、`descriptionType` 等摘要字段，用于判断媒体协商消息是否到达服务端，不记录原始 `signal` 负载。
+`peer.signal.forwarded` 事件仅记录 `sessionId`、`mediaRoomId`、`fromEndpointId`、`toEndpointId`、`signalKind`、`channelIds`、`trackCount`、`descriptionType` 等摘要字段，用于判断媒体协商消息是否到达服务端并对应到媒体房间，不记录原始 `signal` 负载。
 
 ## 五、呼叫流程
 
@@ -379,6 +379,7 @@ HTTP `/events` 返回最近控制面事件摘要：
   "type": "peer.signal",
   "payload": {
     "sessionId": "session-...",
+    "mediaRoomId": "media-room-...",
     "toEndpointId": "or-1",
     "signal": {
       "kind": "media-offer",
@@ -392,7 +393,7 @@ HTTP `/events` 返回最近控制面事件摘要：
 }
 ```
 
-服务端只做会话参与方校验和消息转发，不解析 SDP，不创建 PeerConnection，不转发媒体流。
+服务端只做会话参与方校验和消息转发，不解析 SDP，不创建 PeerConnection，不转发媒体流。`mediaRoomId` 为可选兼容字段；如果客户端提交该字段，服务端会校验它必须匹配 `sessionId` 对应会话，避免 stale session 或错误媒体房间继续协商。
 
 当前前端使用的 `signal.kind` 约定如下：
 
@@ -411,6 +412,7 @@ HTTP `/events` 返回最近控制面事件摘要：
   "type": "peer.signal",
   "payload": {
     "sessionId": "session-...",
+    "mediaRoomId": "media-room-...",
     "fromEndpointId": "teach-1",
     "signal": {
       "kind": "media-offer",
@@ -439,7 +441,7 @@ HTTP `/events` 返回最近控制面事件摘要：
 }
 ```
 
-发送方会收到 `peer.signal.sent`。如果目标不在会话内，服务端返回 `target_not_in_session`。
+发送方会收到 `peer.signal.sent`，其中包含 `sessionId`、`mediaRoomId` 和 `toEndpointId`。如果目标不在会话内，服务端返回 `target_not_in_session`；如果提交的 `mediaRoomId` 与会话不匹配，服务端返回 `media_room_mismatch`。
 
 ## 八、错误码
 
@@ -471,6 +473,7 @@ HTTP `/events` 返回最近控制面事件摘要：
 | `session_end_forbidden` | 非会话控制方尝试结束多人会话 |
 | `target_not_in_session` | `peer.signal` 的目标终端不在当前会话中 |
 | `bad_signal` | `peer.signal` 缺少有效 signal 负载 |
+| `media_room_mismatch` | `peer.signal` 提交的 `mediaRoomId` 与 `sessionId` 对应会话不一致 |
 | `participant_limit` | 会话参与人数已达到上限 |
 | `unauthorized` | 服务端启用共享令牌后，注册消息未提交正确 `authToken` |
 | `unknown_type` | 消息类型不在当前协议支持范围内 |

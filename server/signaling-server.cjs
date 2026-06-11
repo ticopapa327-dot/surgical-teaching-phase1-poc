@@ -731,6 +731,10 @@ function createSignalingServer(options = {}) {
         send(ws, "error", { code: "session_not_found", message: "session not found" }, requestId);
         return;
       }
+      if (payload.mediaRoomId && payload.mediaRoomId !== session.mediaRoomId) {
+        send(ws, "error", { code: "media_room_mismatch", message: "media room does not match session" }, requestId);
+        return;
+      }
       if (!session.participants.includes(payload.toEndpointId) || !targetSocket) {
         send(ws, "error", { code: "target_not_in_session", message: "target endpoint is not in session" }, requestId);
         return;
@@ -741,16 +745,23 @@ function createSignalingServer(options = {}) {
       }
       send(targetSocket, "peer.signal", {
         sessionId: session.sessionId,
+        mediaRoomId: session.mediaRoomId,
         fromEndpointId: fromEndpoint.endpointId,
         signal
       });
       recordEvent("peer.signal.forwarded", {
         sessionId: session.sessionId,
+        mediaRoomId: session.mediaRoomId,
         fromEndpointId: fromEndpoint.endpointId,
         toEndpointId: payload.toEndpointId,
         ...signalEventSummary(signal)
       });
-      send(ws, "peer.signal.sent", { sessionId: session.sessionId, toEndpointId: payload.toEndpointId }, requestId);
+      send(
+        ws,
+        "peer.signal.sent",
+        { sessionId: session.sessionId, mediaRoomId: session.mediaRoomId, toEndpointId: payload.toEndpointId },
+        requestId
+      );
       return;
     }
 

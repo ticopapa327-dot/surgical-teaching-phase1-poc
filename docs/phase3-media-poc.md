@@ -6,7 +6,7 @@
 
 ## 二、已实现能力
 
-1. 复用现有 WebSocket 信令服务的 `peer.signal` 消息透传。
+1. 复用现有 WebSocket 信令服务的 `peer.signal` 消息透传，并在透传消息与事件摘要中携带 `mediaRoomId`。
 2. 手术室端点击“发布订阅通道媒体”后，为会话内远端参与方创建 `RTCPeerConnection`。
 3. 手术室端根据每个远端在会话中的 `subscriptions` 加入对应通道的视频轨道；交互模式下同时尝试加入本地麦克风轨道。
 4. 发布中远端订阅集合、参与方或远端 endpoint 注册版本发生变化时，手术室端会自动按新的会话状态重新协商媒体链路。
@@ -21,7 +21,7 @@
 13. 媒体诊断区显示每路远端媒体状态，以及每个远端 PeerConnection 的连接、ICE、协商状态、本地发送音频轨道数和远端接收音频轨道数。
 14. 示教室端或观摩端可点击“请求重发媒体”，通过 `media-refresh-request` 请求手术室端按当前订阅重新发布媒体。
 15. 断开信令、离会、结束会话或点击“停止媒体链路”时清理 PeerConnection 和远端流状态；手术室 owner 停止媒体时通知所有远端，示教室端或观摩端停止媒体时只通知手术室 owner 清理本端对应链路，不影响其他接收端。
-16. 状态区提供“复制诊断快照”，生成本端控制面、音频、媒体、通道源模式、预览状态、结构化 WebRTC 统计、PeerConnection 和最近信令事件摘要；已连接信令时会先限量刷新最近 10 条事件日志。快照不包含信令令牌、设备 ID、SDP、ICE candidate 原文、患者信息或媒体数据。
+16. 状态区提供“复制诊断快照”，生成本端控制面、音频、媒体、通道源模式、预览状态、结构化 WebRTC 统计、PeerConnection 和最近信令事件摘要；已连接信令时会先限量刷新最近 10 条事件日志。快照包含会话和 `peer.signal` 摘要中的 `mediaRoomId`，不包含信令令牌、设备 ID、SDP、ICE candidate 原文、患者信息或媒体数据。
 
 ## 三、当前边界
 
@@ -46,7 +46,7 @@
 9. 如果示教室端黑屏或媒体诊断长期停留在等待状态，可点击“请求重发媒体”，手术室端应自动重新协商并发布当前订阅通道。
 10. 示教室端或观摩端点击“停止媒体链路”后，本端远端画面应清空，手术室端只关闭该终端对应的 PeerConnection；其他仍在线接收端应继续显示已订阅画面。
 11. “媒体统计”中视频发送或接收码率长期为 `-`、音频缓冲长期高于 200 ms、RTT 明显异常或 ICE 路由不是预期的 `host`/`relay` 时，应先排查浏览器、音频设备、网络和 STUN/TURN 配置。
-12. 出现黑屏、音频无声或延迟异常时，两端分别点击“复制诊断快照”，保存快照文本作为排障依据，重点比对 `signaling`、`session`、`channels`、`media.stats`、`media.statsMetrics`、`media.peerConnections` 和 `recentEvents`。
+12. 出现黑屏、音频无声或延迟异常时，两端分别点击“复制诊断快照”，保存快照文本作为排障依据，重点比对 `signaling`、`session.mediaRoomId`、`channels`、`media.stats`、`media.statsMetrics`、`media.peerConnections` 和 `recentEvents` 中的 `mediaRoomId`。
 
 ## 五、自动化验证
 

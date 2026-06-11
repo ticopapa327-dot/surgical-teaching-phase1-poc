@@ -415,6 +415,7 @@ function signalingEventDetails(event) {
   }
   if (event.byEndpointId) details.push(`处理端 ${event.byEndpointId}`);
   if (event.endedByEndpointId) details.push(`结束端 ${event.endedByEndpointId}`);
+  if (event.mediaRoomId) details.push(`媒体房间 ${event.mediaRoomId}`);
   if (event.role) details.push(`角色 ${event.role}`);
   if (event.mode) details.push(`模式 ${event.mode}`);
   if (event.requestedMode) details.push(`请求 ${event.requestedMode}`);
@@ -453,6 +454,7 @@ function diagnosticEventSummary(event) {
     eventId: event.eventId,
     endpointId: event.endpointId,
     sessionId: event.sessionId,
+    mediaRoomId: event.mediaRoomId,
     callId: event.callId,
     fromEndpointId: event.fromEndpointId,
     toEndpointId: event.toEndpointId,
@@ -1351,6 +1353,15 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     return true;
   }
 
+  function sendPeerSignal(session, toEndpointId, signal) {
+    return sendSignaling("peer.signal", {
+      sessionId: session.id,
+      mediaRoomId: session.mediaRoomId,
+      toEndpointId,
+      signal
+    });
+  }
+
   function applySignalingSession(session, resetLayout = false, allowNew = false) {
     if (!session) return;
     const currentSession = activeSessionRef.current;
@@ -1723,16 +1734,12 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     const normalizedChannelIds = normalizeChannelSelection(channelIds);
     const offer = await peerConnection.createOffer();
     await setLowLatencyLocalDescription(peerConnection, offer);
-    sendSignaling("peer.signal", {
-      sessionId: session.id,
-      toEndpointId: endpointId,
-      signal: {
-        kind: "media-offer",
-        channelId: normalizedChannelIds[0],
-        channelIds: normalizedChannelIds,
-        tracks: mediaPeerTrackMetadata.current.get(endpointId) || [],
-        description: peerConnection.localDescription
-      }
+    sendPeerSignal(session, endpointId, {
+      kind: "media-offer",
+      channelId: normalizedChannelIds[0],
+      channelIds: normalizedChannelIds,
+      tracks: mediaPeerTrackMetadata.current.get(endpointId) || [],
+      description: peerConnection.localDescription
     });
   }
 
@@ -1752,13 +1759,9 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       if (!event.candidate) return;
       const session = activeSessionRef.current;
       if (!session?.id) return;
-      sendSignaling("peer.signal", {
-        sessionId: session.id,
-        toEndpointId: endpointId,
-        signal: {
-          kind: "ice",
-          candidate: event.candidate.toJSON ? event.candidate.toJSON() : event.candidate
-        }
+      sendPeerSignal(session, endpointId, {
+        kind: "ice",
+        candidate: event.candidate.toJSON ? event.candidate.toJSON() : event.candidate
       });
     };
 
@@ -1908,11 +1911,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
           ? [session.ownerEndpointId]
           : activeRemoteEndpointIds();
       for (const endpointId of targetEndpointIds) {
-        sendSignaling("peer.signal", {
-          sessionId: session.id,
-          toEndpointId: endpointId,
-          signal: { kind: "media-stop" }
-        });
+        sendPeerSignal(session, endpointId, { kind: "media-stop" });
       }
     }
     cleanupWebRtcMedia(message);
@@ -1933,13 +1932,9 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       setStatus("当前会话没有手术室 owner，无法请求媒体重发。");
       return;
     }
-    sendSignaling("peer.signal", {
-      sessionId: session.id,
-      toEndpointId: session.ownerEndpointId,
-      signal: {
-        kind: "media-refresh-request",
-        channelIds: normalizeChannelSelection(session.subscribedChannels || ["ch1"])
-      }
+    sendPeerSignal(session, session.ownerEndpointId, {
+      kind: "media-refresh-request",
+      channelIds: normalizeChannelSelection(session.subscribedChannels || ["ch1"])
     });
     setStatus("已请求手术室端重新发布订阅媒体。");
   }
@@ -2122,6 +2117,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       const fromEndpointId = payload.fromEndpointId;
       const signal = payload.signal || {};
       if (!fromEndpointId || !signal.kind) return;
+      if (payload.mediaRoomId && session.mediaRoomId && payload.mediaRoomId !== session.mediaRoomId) return;
 
       if (signal.kind === "media-refresh-request") {
         if (localEndpointRole !== "operating-room" || session.ownerEndpointId !== signalingEndpointIdRef.current) {
@@ -2167,15 +2163,11 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
         }
         const answer = await peerConnection.createAnswer();
         await setLowLatencyLocalDescription(peerConnection, answer);
-        sendSignaling("peer.signal", {
-          sessionId: session.id,
-          toEndpointId: fromEndpointId,
-          signal: {
-            kind: "media-answer",
-            channelId,
-            channelIds,
-            description: peerConnection.localDescription
-          }
+        sendPeerSignal(session, fromEndpointId, {
+          kind: "media-answer",
+          channelId,
+          channelIds,
+          description: peerConnection.localDescription
         });
         setWebrtcMediaState({
           state: "receiving",

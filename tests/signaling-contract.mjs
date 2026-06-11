@@ -440,19 +440,23 @@ async function main() {
 
   send(teachingClient, "peer.signal", {
     sessionId: session.sessionId,
+    mediaRoomId: session.mediaRoomId,
     toEndpointId: "or-1",
     signal: { type: "offer", sdp: "v=0" }
   });
   const relayedOffer = await waitFor(orClient, "peer.signal");
+  assert.equal(relayedOffer.payload.mediaRoomId, session.mediaRoomId);
   assert.equal(relayedOffer.payload.fromEndpointId, "teach-1");
   assert.equal(relayedOffer.payload.signal.type, "offer");
   const signalSent = await waitFor(teachingClient, "peer.signal.sent");
+  assert.equal(signalSent.payload.mediaRoomId, session.mediaRoomId);
   assert.equal(signalSent.payload.toEndpointId, "or-1");
   const signalEvents = await getJson(`${httpBase}/events`);
   const peerSignalEvent = signalEvents.find(
     (event) =>
       event.type === "peer.signal.forwarded" &&
       event.sessionId === session.sessionId &&
+      event.mediaRoomId === session.mediaRoomId &&
       event.fromEndpointId === "teach-1" &&
       event.toEndpointId === "or-1"
   );
@@ -463,6 +467,7 @@ async function main() {
 
   send(teachingClient, "peer.signal", {
     sessionId: session.sessionId,
+    mediaRoomId: session.mediaRoomId,
     toEndpointId: "or-1",
     signal: { kind: "media-refresh-request", channelIds: ["ch1", "ch4"] }
   });
@@ -472,14 +477,17 @@ async function main() {
     (message) => message.payload.signal.kind === "media-refresh-request"
   );
   assert.equal(relayedRefreshRequest.payload.fromEndpointId, "teach-1");
+  assert.equal(relayedRefreshRequest.payload.mediaRoomId, session.mediaRoomId);
   assert.deepEqual(relayedRefreshRequest.payload.signal.channelIds, ["ch1", "ch4"]);
   const refreshSignalSent = await waitFor(teachingClient, "peer.signal.sent");
+  assert.equal(refreshSignalSent.payload.mediaRoomId, session.mediaRoomId);
   assert.equal(refreshSignalSent.payload.toEndpointId, "or-1");
   const refreshSignalEvents = await getJson(`${httpBase}/events`);
   const refreshEvent = refreshSignalEvents.find(
     (event) =>
       event.type === "peer.signal.forwarded" &&
       event.sessionId === session.sessionId &&
+      event.mediaRoomId === session.mediaRoomId &&
       event.fromEndpointId === "teach-1" &&
       event.toEndpointId === "or-1" &&
       event.signalKind === "media-refresh-request"
@@ -488,6 +496,19 @@ async function main() {
   assert.deepEqual(refreshEvent.channelIds, ["ch1", "ch4"]);
   assert.equal("signal" in refreshEvent, false);
   debugMark("peer signal events");
+
+  send(teachingClient, "peer.signal", {
+    sessionId: session.sessionId,
+    mediaRoomId: "media-room-wrong",
+    toEndpointId: "or-1",
+    signal: { kind: "media-refresh-request", channelIds: ["ch1"] }
+  });
+  const mediaRoomMismatch = await waitFor(
+    teachingClient,
+    "error",
+    (message) => message.payload.code === "media_room_mismatch"
+  );
+  assert.equal(mediaRoomMismatch.payload.code, "media_room_mismatch");
 
   send(teachingClient, "peer.signal", {
     sessionId: session.sessionId,
