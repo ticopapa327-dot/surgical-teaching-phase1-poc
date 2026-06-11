@@ -132,3 +132,25 @@ npm run test:remote:cross:loop:index
 ```
 
 该索引会校验 `continuous-*.sha256`，并反查每个周期引用的单次交叉验证报告及其 SHA256 文件，防止长期测试后只保留了不可审计的文本结论。
+
+## 七、三端并发会议验证
+
+顺序验证 117 和 137 只能证明两台远端分别可用，不能证明会议模式下多个远端同时接入同一手术室会话时订阅、媒体发布和清理逻辑可靠。因此在 117 与 137 均可用、且 137 已提供临时防火墙授权时，可执行三端并发 smoke：
+
+```powershell
+$env:UST_KYLIN_SUDO_PASSWORD = "<137 sudo 密码>"
+npm run test:remote:conference:lan
+Remove-Item Env:UST_KYLIN_SUDO_PASSWORD -ErrorAction SilentlyContinue
+```
+
+该用例会在 118 本机创建手术室端，在 117 创建示教室端，在 137 创建观摩端。117 加入同一会话后订阅通道 1 和通道 2，137 加入同一会话后订阅通道 1；118 发布订阅通道媒体后，脚本要求 117 至少收到 2 路 live 远端视频，137 至少收到 1 路 live 远端视频，并保存三端诊断快照。
+
+通过标准：
+
+1. 118 会话参与数量达到 `3 / 3`。
+2. 117 和 137 均加入同一个会话 ID。
+3. 117 的远端视频 live 数量不低于 2，137 的远端视频 live 数量不低于 1。
+4. 三端诊断快照通过 `diagnostics:analyze` 的 fail-on-warn 检查。
+5. 用例退出后 `/health` 返回 `endpoints=0`、`sessions=0`、`pendingCalls=0`。
+
+`npm run test:remote:cross` 会在 117、137 单机 smoke 均通过时自动追加该三端并发用例；如果任一前置验证失败，三端用例会以 skipped 记录到报告中，避免把基础连接问题误判为会议模式问题。

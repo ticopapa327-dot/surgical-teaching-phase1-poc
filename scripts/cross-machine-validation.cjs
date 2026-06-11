@@ -78,7 +78,8 @@ function archiveDiagnosticArtifacts(reportDir, reportId, startedAt) {
     path.join("test-results", "remote-windows-media-smoke"),
     path.join("test-results", "remote-windows-audio-smoke"),
     path.join("test-results", "remote-kylin-media-smoke"),
-    path.join("test-results", "remote-kylin-audio-smoke")
+    path.join("test-results", "remote-kylin-audio-smoke"),
+    path.join("test-results", "remote-cross-conference-smoke")
   ];
   const allowedExtensions = new Set([".json", ".csv"]);
   const artifactsDir = path.join(reportDir, `${reportId}-artifacts`);
@@ -312,6 +313,17 @@ async function main() {
     step("137-audio-diagnostics", "137 Kylin audio diagnostics", "test:remote:kylin:audio:diagnostics", 60000)
   ];
 
+  const conferenceSteps = [
+    retryingStep(
+      "117-137-conference",
+      "117 Windows + 137 Kylin concurrent conference smoke",
+      "test:remote:conference:lan",
+      360000
+    )
+  ];
+
+  const hasFailedStep = () => report.steps.some((item) => item.status === "failed");
+
   if (config.skipWindows117) {
     windowsSteps.forEach((item) => skipStep(item, report, "UST_CROSS_SKIP_WINDOWS_117 is enabled"));
   } else {
@@ -336,6 +348,23 @@ async function main() {
     }
   } else {
     for (const item of kylinSteps) {
+      const entry = runStep(item, report);
+      if (entry.status !== "passed") break;
+    }
+  }
+
+  if (config.skipWindows117) {
+    conferenceSteps.forEach((item) => skipStep(item, report, "UST_CROSS_SKIP_WINDOWS_117 is enabled"));
+  } else if (config.skipKylin137) {
+    conferenceSteps.forEach((item) => skipStep(item, report, "UST_CROSS_SKIP_KYLIN_137 is enabled"));
+  } else if (!config.hasKylinSudoPassword) {
+    conferenceSteps.forEach(
+      (item) => skipStep(item, report, "UST_KYLIN_SUDO_PASSWORD is required for concurrent 137 LAN DevTools validation")
+    );
+  } else if (hasFailedStep()) {
+    conferenceSteps.forEach((item) => skipStep(item, report, "a prerequisite remote validation step failed"));
+  } else {
+    for (const item of conferenceSteps) {
       const entry = runStep(item, report);
       if (entry.status !== "passed") break;
     }
