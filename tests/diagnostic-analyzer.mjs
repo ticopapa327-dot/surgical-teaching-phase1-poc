@@ -89,7 +89,13 @@ fs.writeFileSync(
         }
       ]
     },
-    recentEvents: []
+    recentEvents: [
+      {
+        type: "peer.signal.forwarded",
+        sessionId: "session-old",
+        mediaRoomId: "media-room-old"
+      }
+    ]
   })
 );
 

@@ -16,9 +16,17 @@ function metricHasVideo(metric) {
   );
 }
 
+function eventMatchesSession(event, session) {
+  if (!session) return true;
+  if (session.id && event.sessionId && event.sessionId !== session.id) return false;
+  if (session.mediaRoomId && event.mediaRoomId && event.mediaRoomId !== session.mediaRoomId) return false;
+  return true;
+}
+
 function hasPeerSignalEvent(snapshot) {
+  const session = snapshot?.session;
   return (Array.isArray(snapshot?.recentEvents) ? snapshot.recentEvents : []).some(
-    (event) => event?.type === "peer.signal.forwarded"
+    (event) => event?.type === "peer.signal.forwarded" && eventMatchesSession(event, session)
   );
 }
 
