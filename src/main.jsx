@@ -513,13 +513,15 @@ function sessionChannelsForRemoteEndpoint(session, endpointId) {
 
 function publicationSignatureForSession(session, selfEndpointId, directory = []) {
   const participantIds = Array.isArray(session?.participantIds) ? session.participantIds : [];
+  const sessionId = session?.id || session?.sessionId || "";
+  const mediaRoomId = session?.mediaRoomId || "";
   const endpointRevisions = new Map(
     (Array.isArray(directory) ? directory : []).map((endpoint) => [
       endpoint.endpointId,
       endpoint.registeredAt || endpoint.address || ""
     ])
   );
-  return participantIds
+  const participantSignature = participantIds
     .filter((endpointId) => endpointId && endpointId !== selfEndpointId)
     .sort()
     .map(
@@ -527,6 +529,7 @@ function publicationSignatureForSession(session, selfEndpointId, directory = [])
         `${endpointId}@${endpointRevisions.get(endpointId) || ""}:${sessionChannelsForRemoteEndpoint(session, endpointId).join(",")}`
     )
     .join("|");
+  return `${sessionId}@${mediaRoomId}|${participantSignature}`;
 }
 
 function interactionAudioConstraints(audioDeviceId) {
