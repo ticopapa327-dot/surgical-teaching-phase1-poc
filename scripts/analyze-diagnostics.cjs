@@ -73,8 +73,12 @@ function warnMedia(lines, label, snapshot) {
   }
 
   for (const peer of peers) {
-    if (peer?.state === "ended") {
-      lines.push(`WARN ${label}: peer ${peer.endpointId || "unknown"} connection is abnormal`);
+    const peerState = peer?.connectionState || peer?.state;
+    if (peerState === "failed" || peerState === "disconnected" || peerState === "closed" || peer?.state === "ended") {
+      lines.push(`WARN ${label}: peer ${peer.endpointId || "unknown"} connection is abnormal (${peerState || "unknown"})`);
+    }
+    if (peer?.state === "waiting" && peer?.iceConnectionState === "failed") {
+      lines.push(`WARN ${label}: peer ${peer.endpointId || "unknown"} ICE failed during negotiation`);
     }
   }
 

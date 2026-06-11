@@ -73,7 +73,9 @@ fs.writeFileSync(
       peerConnections: [
         {
           endpointId: "or-2",
-          state: "ended"
+          state: "waiting",
+          connectionState: "failed",
+          iceConnectionState: "failed"
         }
       ],
       statsMetrics: [
@@ -119,7 +121,8 @@ assert.match(warningResult.stdout, /INFO warning-snapshot\.json: audio output se
 assert.match(warningResult.stdout, /WARN warning-snapshot\.json: no positive WebRTC video bitrate/);
 assert.match(warningResult.stdout, /WARN warning-snapshot\.json: recent events do not include peer\.signal\.forwarded/);
 assert.match(warningResult.stdout, /WARN warning-snapshot\.json: channel ch1 is still waiting for remote WebRTC video/);
-assert.match(warningResult.stdout, /WARN warning-snapshot\.json: peer or-2 connection is abnormal/);
+assert.match(warningResult.stdout, /WARN warning-snapshot\.json: peer or-2 connection is abnormal \(failed\)/);
+assert.match(warningResult.stdout, /WARN warning-snapshot\.json: peer or-2 ICE failed during negotiation/);
 assert.match(warningResult.stdout, /WARN warning-snapshot\.json: audio buffer 260 ms for or-2/);
 assert.match(warningResult.stdout, /WARN warning-snapshot\.json: RTT 180 ms for or-2/);
 assert.match(warningResult.stdout, /WARN session mismatch/);

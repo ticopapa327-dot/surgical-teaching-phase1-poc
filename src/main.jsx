@@ -1479,6 +1479,11 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       endpointId,
       state,
       label,
+      connectionState,
+      iceConnectionState: iceState,
+      signalingState,
+      localAudioTrackCount,
+      remoteAudioTrackCount,
       detail: `${endpointLabelById(
         endpointId
       )}：连接 ${connectionState} / ICE ${iceState} / 协商 ${signalingState} / 音频 本地${localAudioTrackCount} 远端${remoteAudioTrackCount}`
@@ -2947,6 +2952,11 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
           endpointId: item.endpointId,
           state: item.state,
           label: item.label,
+          connectionState: item.connectionState,
+          iceConnectionState: item.iceConnectionState,
+          signalingState: item.signalingState,
+          localAudioTrackCount: item.localAudioTrackCount,
+          remoteAudioTrackCount: item.remoteAudioTrackCount,
           detail: item.detail
         }))
       },

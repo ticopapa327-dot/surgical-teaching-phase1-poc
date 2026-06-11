@@ -1168,6 +1168,19 @@ test("phase 3 UI sends subscribed videos over WebRTC signaling", async ({ page }
     const teachingSnapshot = JSON.parse(await teachingPage.getByLabel("诊断快照").inputValue());
     const mediaMetric = teachingSnapshot.media.statsMetrics.find((item) => item.endpointId === "or-media-ui");
     expect(mediaMetric).toBeTruthy();
+    const peerConnection = teachingSnapshot.media.peerConnections.find((item) => item.endpointId === "or-media-ui");
+    expect(peerConnection).toBeTruthy();
+    expect(Object.keys(peerConnection).sort()).toEqual([
+      "connectionState",
+      "detail",
+      "endpointId",
+      "iceConnectionState",
+      "label",
+      "localAudioTrackCount",
+      "remoteAudioTrackCount",
+      "signalingState",
+      "state"
+    ]);
     assert(
       teachingSnapshot.recentEvents.some(
         (event) =>
