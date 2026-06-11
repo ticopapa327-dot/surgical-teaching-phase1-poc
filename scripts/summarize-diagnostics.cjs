@@ -17,6 +17,12 @@ const HEADERS = [
   "mediaState",
   "peerEndpointId",
   "peerEndpointName",
+  "peerState",
+  "connectionState",
+  "iceConnectionState",
+  "signalingState",
+  "localAudioTrackCount",
+  "remoteAudioTrackCount",
   "sendBitrateBps",
   "receiveBitrateBps",
   "packetsSent",
@@ -36,6 +42,8 @@ function csvCell(value) {
 
 function metricRows(filePath, snapshot) {
   const metrics = Array.isArray(snapshot?.media?.statsMetrics) ? snapshot.media.statsMetrics : [];
+  const peers = Array.isArray(snapshot?.media?.peerConnections) ? snapshot.media.peerConnections : [];
+  const peersByEndpoint = new Map(peers.map((peer) => [peer.endpointId, peer]));
   const base = {
     file: path.basename(filePath),
     generatedAt: snapshot?.generatedAt || "",
@@ -53,23 +61,42 @@ function metricRows(filePath, snapshot) {
   };
 
   if (!metrics.length) {
-    return [{ ...base }];
+    if (!peers.length) return [{ ...base }];
+    return peers.map((peer) => ({
+      ...base,
+      peerEndpointId: peer.endpointId || "",
+      peerState: peer.state || "",
+      connectionState: peer.connectionState || "",
+      iceConnectionState: peer.iceConnectionState || "",
+      signalingState: peer.signalingState || "",
+      localAudioTrackCount: peer.localAudioTrackCount,
+      remoteAudioTrackCount: peer.remoteAudioTrackCount
+    }));
   }
 
-  return metrics.map((metric) => ({
-    ...base,
-    peerEndpointId: metric.endpointId || "",
-    peerEndpointName: metric.endpointName || "",
-    sendBitrateBps: metric.video?.sendBitrateBps,
-    receiveBitrateBps: metric.video?.receiveBitrateBps,
-    packetsSent: metric.video?.packetsSent,
-    packetsReceived: metric.video?.packetsReceived,
-    packetsLost: metric.video?.packetsLost,
-    audioBufferMs: metric.audio?.bufferMs,
-    audioJitterMs: metric.audio?.jitterMs,
-    rttMs: metric.network?.rttMs,
-    iceRoute: metric.network?.iceRoute || ""
-  }));
+  return metrics.map((metric) => {
+    const peer = peersByEndpoint.get(metric.endpointId) || {};
+    return {
+      ...base,
+      peerEndpointId: metric.endpointId || "",
+      peerEndpointName: metric.endpointName || "",
+      peerState: peer.state || "",
+      connectionState: peer.connectionState || "",
+      iceConnectionState: peer.iceConnectionState || "",
+      signalingState: peer.signalingState || "",
+      localAudioTrackCount: peer.localAudioTrackCount,
+      remoteAudioTrackCount: peer.remoteAudioTrackCount,
+      sendBitrateBps: metric.video?.sendBitrateBps,
+      receiveBitrateBps: metric.video?.receiveBitrateBps,
+      packetsSent: metric.video?.packetsSent,
+      packetsReceived: metric.video?.packetsReceived,
+      packetsLost: metric.video?.packetsLost,
+      audioBufferMs: metric.audio?.bufferMs,
+      audioJitterMs: metric.audio?.jitterMs,
+      rttMs: metric.network?.rttMs,
+      iceRoute: metric.network?.iceRoute || ""
+    };
+  });
 }
 
 function readSnapshot(filePath) {
