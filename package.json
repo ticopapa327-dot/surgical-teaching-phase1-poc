@@ -24,7 +24,7 @@
     "diagnostics:analyze": "node scripts/analyze-diagnostics.cjs"
   },
   "dependencies": {
-    "@vitejs/plugin-react": "^4.6.0",
+    "@vitejs/plugin-react": "^6.0.2",
     "basic-ftp": "^6.0.1",
     "concurrently": "^10.0.3",
     "electron": "^39.2.7",
