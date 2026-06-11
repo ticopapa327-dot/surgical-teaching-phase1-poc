@@ -6,7 +6,8 @@ const { spawnSync } = require("node:child_process");
 const DEFAULTS = {
   reportDir: path.join("validation-results", "cross-machine-validation"),
   intervalSeconds: 300,
-  iterations: 1
+  iterations: 1,
+  crossScript: "test:remote:cross"
 };
 
 function env(name, fallback) {
@@ -30,6 +31,7 @@ function usage() {
     "  --duration-minutes <minutes>   Stop when the duration limit is reached",
     "  --duration-hours <hours>       Stop when the duration limit is reached",
     "  --interval-seconds <seconds>   Delay between cycles",
+    "  --cross-script <npm-script>    Cross-machine validation npm script to run each cycle",
     "  --stop-on-failure              Stop the loop after the first failed cycle",
     "  --help                         Show this help",
     "",
@@ -39,6 +41,7 @@ function usage() {
     "  UST_CROSS_LOOP_ITERATIONS          Default cycle count",
     "  UST_CROSS_LOOP_DURATION_SECONDS    Default duration limit",
     "  UST_CROSS_LOOP_INTERVAL_SECONDS    Default interval",
+    "  UST_CROSS_LOOP_CROSS_SCRIPT        Default cross-machine npm script",
     "  UST_CROSS_LOOP_STOP_ON_FAILURE     Stop after first failed cycle"
   ].join("\n");
 }
@@ -85,6 +88,7 @@ function parseArgs(argv) {
   return {
     help,
     reportDir: env("UST_CROSS_LOOP_REPORT_DIR", env("UST_CROSS_REPORT_DIR", DEFAULTS.reportDir)),
+    crossScript: readArg(argv, "--cross-script") || env("UST_CROSS_LOOP_CROSS_SCRIPT", DEFAULTS.crossScript),
     iterations: normalizedIterations,
     durationMs,
     intervalSeconds,
@@ -199,6 +203,7 @@ function renderMarkdown(ledger) {
     `- Started: ${ledger.startedAt}`,
     `- Finished: ${ledger.finishedAt || "-"}`,
     `- Report directory: ${ledger.config.reportDir}`,
+    `- Cross script: ${ledger.config.crossScript}`,
     `- Cycles: ${ledger.cycles.length}`,
     `- Stop reason: ${ledger.stopReason || "-"}`,
     "",
@@ -267,6 +272,7 @@ async function main(argv) {
     stopReason: "",
     config: {
       reportDir: options.reportDir,
+      crossScript: options.crossScript,
       iterations: Number.isFinite(options.iterations) ? options.iterations : "unlimited",
       durationMs: options.durationMs,
       intervalSeconds: options.intervalSeconds,
@@ -290,7 +296,7 @@ async function main(argv) {
       crossReport: null
     };
 
-    cycle.cross = runNpmScript("test:remote:cross");
+    cycle.cross = runNpmScript(options.crossScript);
     cycle.crossReport = latestCrossReport(options.reportDir, cycleStartedMs);
     cycle.index = runNpmScript("test:remote:cross:index", ["--", "--json"], 120000);
     cycle.finishedAt = new Date().toISOString();

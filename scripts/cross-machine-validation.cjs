@@ -8,6 +8,31 @@ const DEFAULTS = {
   reportDir: path.join("validation-results", "cross-machine-validation")
 };
 
+function usage() {
+  return [
+    "Usage:",
+    "  node scripts/cross-machine-validation.cjs [options]",
+    "",
+    "Options:",
+    "  --strict                 Require 117, 137 and the concurrent conference smoke",
+    "  --require-windows-117    Fail if the 117 Windows validation path is skipped",
+    "  --require-kylin-137      Fail if the 137 Kylin validation path is skipped",
+    "  --require-conference     Fail if the 117+137 conference validation is skipped",
+    "  --help                   Show this help",
+    "",
+    "Environment:",
+    "  UST_CROSS_HEALTH_URL              Default: http://127.0.0.1:7077/health",
+    "  UST_CROSS_REPORT_DIR              Default validation report directory",
+    "  UST_CROSS_SKIP_WINDOWS_117        Skip 117 Windows steps",
+    "  UST_CROSS_SKIP_KYLIN_137          Skip 137 Kylin steps",
+    "  UST_CROSS_STRICT_REMOTE_COVERAGE  Same as --strict",
+    "  UST_CROSS_REQUIRE_WINDOWS_117     Same as --require-windows-117",
+    "  UST_CROSS_REQUIRE_KYLIN_137       Same as --require-kylin-137",
+    "  UST_CROSS_REQUIRE_CONFERENCE      Same as --require-conference",
+    "  UST_KYLIN_SUDO_PASSWORD           Required for restricted 137 LAN DevTools validation"
+  ].join("\n");
+}
+
 function env(name, fallback) {
   return String(process.env[name] || fallback).trim();
 }
@@ -15,6 +40,10 @@ function env(name, fallback) {
 function envFlag(name, fallback = "false") {
   const value = env(name, fallback).toLowerCase();
   return value === "1" || value === "true" || value === "yes" || value === "on";
+}
+
+function hasArg(argv, name) {
+  return argv.includes(name);
 }
 
 function npmCommandParts(script) {
@@ -243,6 +272,20 @@ function skipStep(step, report, reason) {
   console.log(`\n[${step.id}] skipped: ${reason}`);
 }
 
+function failRequirement(id, title, report, reason) {
+  const entry = {
+    id,
+    title,
+    startedAt: new Date().toISOString(),
+    finishedAt: new Date().toISOString(),
+    durationMs: 0,
+    status: "failed",
+    reason
+  };
+  report.steps.push(entry);
+  console.log(`\n[${id}] failed: ${reason}`);
+}
+
 function step(id, title, script, timeoutMs) {
   const commandParts = npmCommandParts(script);
   return {
@@ -262,13 +305,25 @@ function retryingStep(id, title, script, timeoutMs) {
   };
 }
 
-async function main() {
+async function main(argv = []) {
+  if (hasArg(argv, "--help") || hasArg(argv, "-h")) {
+    console.log(usage());
+    return;
+  }
+
+  const strictRemoteCoverage = hasArg(argv, "--strict") || envFlag("UST_CROSS_STRICT_REMOTE_COVERAGE");
   const config = {
     healthUrl: env("UST_CROSS_HEALTH_URL", DEFAULTS.healthUrl),
     reportDir: env("UST_CROSS_REPORT_DIR", DEFAULTS.reportDir),
     skipWindows117: envFlag("UST_CROSS_SKIP_WINDOWS_117"),
     skipKylin137: envFlag("UST_CROSS_SKIP_KYLIN_137"),
-    requireKylin137: envFlag("UST_CROSS_REQUIRE_KYLIN_137"),
+    strictRemoteCoverage,
+    requireWindows117:
+      strictRemoteCoverage || hasArg(argv, "--require-windows-117") || envFlag("UST_CROSS_REQUIRE_WINDOWS_117"),
+    requireKylin137:
+      strictRemoteCoverage || hasArg(argv, "--require-kylin-137") || envFlag("UST_CROSS_REQUIRE_KYLIN_137"),
+    requireConference:
+      strictRemoteCoverage || hasArg(argv, "--require-conference") || envFlag("UST_CROSS_REQUIRE_CONFERENCE"),
     hasKylinSudoPassword: Boolean(env("UST_KYLIN_SUDO_PASSWORD", ""))
   };
 
@@ -326,6 +381,14 @@ async function main() {
 
   if (config.skipWindows117) {
     windowsSteps.forEach((item) => skipStep(item, report, "UST_CROSS_SKIP_WINDOWS_117 is enabled"));
+    if (config.requireWindows117) {
+      failRequirement(
+        "117-required-coverage",
+        "117 Windows required coverage",
+        report,
+        "117 Windows validation is required but UST_CROSS_SKIP_WINDOWS_117 is enabled"
+      );
+    }
   } else {
     for (const item of windowsSteps) {
       const entry = runStep(item, report);
@@ -335,6 +398,14 @@ async function main() {
 
   if (config.skipKylin137) {
     kylinSteps.forEach((item) => skipStep(item, report, "UST_CROSS_SKIP_KYLIN_137 is enabled"));
+    if (config.requireKylin137) {
+      failRequirement(
+        "137-required-coverage",
+        "137 Kylin required coverage",
+        report,
+        "137 Kylin validation is required but UST_CROSS_SKIP_KYLIN_137 is enabled"
+      );
+    }
   } else if (!config.hasKylinSudoPassword) {
     const reason = "UST_KYLIN_SUDO_PASSWORD is required for temporary 137 LAN DevTools firewall rule";
     kylinSteps.forEach((item) => skipStep(item, report, reason));
@@ -355,12 +426,36 @@ async function main() {
 
   if (config.skipWindows117) {
     conferenceSteps.forEach((item) => skipStep(item, report, "UST_CROSS_SKIP_WINDOWS_117 is enabled"));
+    if (config.requireConference) {
+      failRequirement(
+        "conference-required-coverage",
+        "117+137 conference required coverage",
+        report,
+        "conference validation is required but 117 Windows validation is skipped"
+      );
+    }
   } else if (config.skipKylin137) {
     conferenceSteps.forEach((item) => skipStep(item, report, "UST_CROSS_SKIP_KYLIN_137 is enabled"));
+    if (config.requireConference) {
+      failRequirement(
+        "conference-required-coverage",
+        "117+137 conference required coverage",
+        report,
+        "conference validation is required but 137 Kylin validation is skipped"
+      );
+    }
   } else if (!config.hasKylinSudoPassword) {
     conferenceSteps.forEach(
       (item) => skipStep(item, report, "UST_KYLIN_SUDO_PASSWORD is required for concurrent 137 LAN DevTools validation")
     );
+    if (config.requireConference) {
+      failRequirement(
+        "conference-required-env",
+        "117+137 conference required environment",
+        report,
+        "UST_KYLIN_SUDO_PASSWORD is required for required concurrent 137 LAN DevTools validation"
+      );
+    }
   } else if (hasFailedStep()) {
     conferenceSteps.forEach((item) => skipStep(item, report, "a prerequisite remote validation step failed"));
   } else {
@@ -411,7 +506,7 @@ async function main() {
   if (!report.ok) process.exitCode = 1;
 }
 
-main().catch((error) => {
+main(process.argv.slice(2)).catch((error) => {
   console.error(`Cross-machine validation failed: ${error.message}`);
   process.exit(1);
 });

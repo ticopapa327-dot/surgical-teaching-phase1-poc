@@ -84,6 +84,14 @@ npm run test:remote:cross
 Remove-Item Env:UST_KYLIN_SUDO_PASSWORD -ErrorAction SilentlyContinue
 ```
 
+用于无人值守稳定性观察或阶段验收时，不应使用会跳过远端的普通口径，应使用严格入口。严格入口要求 117、137 和三端并发会议验证全部覆盖；如果 137 缺少临时授权、任一远端被跳过或三端会议未执行，报告必须失败：
+
+```powershell
+$env:UST_KYLIN_SUDO_PASSWORD = "<137 sudo 密码>"
+npm run test:remote:cross:strict
+Remove-Item Env:UST_KYLIN_SUDO_PASSWORD -ErrorAction SilentlyContinue
+```
+
 报告默认写入 `validation-results/cross-machine-validation/`，同时生成 JSON 原始报告、Markdown 摘要、SHA256 校验文件和 artifacts 归档目录。归档目录会复制本轮 117/137 环境探测快照、远程媒体/音频诊断 JSON 与 CSV，避免只保留易被清理的 `test-results` 路径。`validation-results` 不提交到仓库，只作为本地验证证据。
 
 多轮验证后可生成本地索引，快速查看最近报告、失败步骤、重试次数和证据完整性：
@@ -115,15 +123,24 @@ npm run test:remote:cross:loop -- --iterations 12 --interval-seconds 300
 Remove-Item Env:UST_KYLIN_SUDO_PASSWORD -ErrorAction SilentlyContinue
 ```
 
+严格长期观察入口：
+
+```powershell
+$env:UST_KYLIN_SUDO_PASSWORD = "<137 sudo 密码>"
+npm run test:remote:cross:loop:strict -- --iterations 12 --interval-seconds 300
+Remove-Item Env:UST_KYLIN_SUDO_PASSWORD -ErrorAction SilentlyContinue
+```
+
 常用参数：
 
 - `--once`：只执行 1 轮，用于快速验证脚本链路。
 - `--iterations <次数>`：限制轮次；`0` 表示在设置 duration 时不限制轮次。
 - `--duration-hours <小时>`：按时间限制运行，例如 7 小时或 16 小时。
 - `--interval-seconds <秒>`：两轮之间的等待时间。
+- `--cross-script <npm-script>`：指定每轮运行的交叉验证 npm script，例如 `test:remote:cross:strict`。
 - `--stop-on-failure`：发现失败后立即停止，适合定位问题；稳定性观察阶段建议不启用，以便收集连续失败证据。
 
-持续验证会在 `validation-results/cross-machine-validation/` 下生成 `continuous-*.json`、`continuous-*.md` 和 `continuous-*.sha256` 总账文件。总账记录每一轮对应的单次交叉验证报告、索引刷新结果和命令输出尾部；单次报告仍由 `npm run test:remote:cross` 生成，并继续由 `npm run test:remote:cross:index` 校验哈希和 artifact 完整性。
+持续验证会在 `validation-results/cross-machine-validation/` 下生成 `continuous-*.json`、`continuous-*.md` 和 `continuous-*.sha256` 总账文件。总账记录每一轮对应的单次交叉验证报告、索引刷新结果和命令输出尾部；单次报告由配置的交叉验证 npm script 生成，并继续由 `npm run test:remote:cross:index` 校验哈希和 artifact 完整性。
 
 持续验证完成后刷新总账索引：
 
