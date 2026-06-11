@@ -9,6 +9,7 @@ import { spawn } from "node:child_process";
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const requiredStrictStepIds = [
   "lan-topology",
+  "lan-route-plan",
   "117-probe",
   "117-signal",
   "117-media",
@@ -119,6 +120,11 @@ async function writeCrossReport(
 
     if (strict) {
       const lanTopologyPath = path.join(artifactDir, "remote-lan-topology", "lan-topology.json");
+      const lanRoutePlanPath = path.join(
+        artifactDir,
+        "cross-machine-validation",
+        "lan-route-remediation-plan.md"
+      );
       const windowsProbePath = path.join(artifactDir, "remote-windows-probe", "windows-probe.json");
       const kylinProbePath = path.join(artifactDir, "remote-kylin-probe", "kylin-probe.json");
       const lanTopologyJson = `${JSON.stringify(
@@ -149,6 +155,17 @@ async function writeCrossReport(
         null,
         2
       )}\n`;
+      const lanRoutePlanClassification = lanTopology?.diagnosis?.classification || "ok";
+      const lanRoutePlanRequiresManualAction = lanTopology?.topologyOk === false ? "true" : "false";
+      const lanRoutePlanText = [
+        "# LAN route remediation plan",
+        "",
+        "Generated at: 2026-06-11T00:00:01.000Z",
+        "Source artifact: test-results/remote-lan-topology/lan-topology.json",
+        `Classification: ${lanRoutePlanClassification}`,
+        `Requires manual action: ${lanRoutePlanRequiresManualAction}`,
+        ""
+      ].join("\n");
       const windowsProbeJson = `${JSON.stringify(
         {
           checks: {
@@ -181,9 +198,11 @@ async function writeCrossReport(
         2
       )}\n`;
       await mkdir(path.dirname(lanTopologyPath), { recursive: true });
+      await mkdir(path.dirname(lanRoutePlanPath), { recursive: true });
       await mkdir(path.dirname(windowsProbePath), { recursive: true });
       await mkdir(path.dirname(kylinProbePath), { recursive: true });
       await writeFile(lanTopologyPath, lanTopologyJson, "utf8");
+      await writeFile(lanRoutePlanPath, lanRoutePlanText, "utf8");
       await writeFile(windowsProbePath, windowsProbeJson, "utf8");
       await writeFile(kylinProbePath, kylinProbeJson, "utf8");
       files.push(
@@ -192,6 +211,12 @@ async function writeCrossReport(
           targetPath: lanTopologyPath,
           bytes: Buffer.byteLength(lanTopologyJson),
           sha256: sha256(lanTopologyJson)
+        },
+        {
+          sourcePath: "validation-results/cross-machine-validation/lan-route-remediation-plan.md",
+          targetPath: lanRoutePlanPath,
+          bytes: Buffer.byteLength(lanRoutePlanText),
+          sha256: sha256(lanRoutePlanText)
         },
         {
           sourcePath: "test-results/remote-windows-probe/windows-probe.json",
@@ -454,6 +479,9 @@ try {
   assert.equal(strictStatusJson.latestStrictReport.remoteResources.ok, true);
   assert.equal(strictStatusJson.latestStrictReport.steps.ok, true);
   assert.equal(strictStatusJson.latestStrictReport.artifacts.ok, true);
+  assert.equal(strictStatusJson.latestStrictReport.lanRoutePlan.available, true);
+  assert.equal(strictStatusJson.latestStrictReport.lanRoutePlan.classification, "ok");
+  assert.equal(strictStatusJson.latestStrictReport.lanRoutePlan.requiresManualAction, false);
 
   const resourceIndex = await runNode(
     "scripts/validation-resource-index.cjs",
@@ -598,6 +626,12 @@ try {
   );
   assert.equal(splitRouteStatusJson.latestStrictReport.remoteResources.windowsLanTargetsOk, false);
   assert.equal(splitRouteStatusJson.latestStrictReport.lanTopology.topologyOk, false);
+  assert.equal(splitRouteStatusJson.latestStrictReport.lanRoutePlan.available, true);
+  assert.equal(
+    splitRouteStatusJson.latestStrictReport.lanRoutePlan.classification,
+    "overlay_route_hijack_and_lan_target_unresolved"
+  );
+  assert.equal(splitRouteStatusJson.latestStrictReport.lanRoutePlan.requiresManualAction, true);
   assert.equal(
     splitRouteStatusJson.latestStrictReport.lanTopology.diagnosis.classification,
     "overlay_route_hijack_and_lan_target_unresolved"

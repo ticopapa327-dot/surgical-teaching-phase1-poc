@@ -11,6 +11,7 @@ const DEFAULTS = {
 
 const REQUIRED_STRICT_STEPS = [
   "lan-topology",
+  "lan-route-plan",
   "117-probe",
   "117-signal",
   "117-media",
@@ -207,6 +208,25 @@ function readJsonArtifact(manifest, sourceDirName) {
   }
 }
 
+function findArtifactFile(manifest, sourceName, extension = "") {
+  return (manifest.files || [])
+    .filter((item) => String(item.sourcePath || item.targetPath || "").includes(sourceName))
+    .filter((item) => !extension || String(item.targetPath || "").toLowerCase().endsWith(extension))
+    .sort((a, b) => String(b.targetPath || "").localeCompare(String(a.targetPath || "")))[0];
+}
+
+function readTextArtifact(manifest, sourceName) {
+  const file = findArtifactFile(manifest, sourceName);
+  if (!file?.targetPath) return { text: "", targetPath: "" };
+  const targetPath = path.resolve(file.targetPath);
+  if (!fs.existsSync(targetPath)) return { text: "", targetPath };
+  try {
+    return { text: fs.readFileSync(targetPath, "utf8"), targetPath };
+  } catch {
+    return { text: "", targetPath };
+  }
+}
+
 function remoteResourcesStatus(report, reportPath) {
   const manifestPath = resolveArtifactManifestPath(report, reportPath);
   if (!manifestPath) {
@@ -309,6 +329,43 @@ function lanTopologyStatus(report, reportPath) {
     },
     artifactPath: artifact.artifactPath || "",
     error: ""
+  };
+}
+
+function lanRoutePlanStatus(report, reportPath) {
+  const manifestPath = resolveArtifactManifestPath(report, reportPath);
+  if (!manifestPath) {
+    return {
+      available: false,
+      ok: false,
+      requiresManualAction: null,
+      classification: "",
+      artifactPath: "",
+      error: "artifact manifest missing"
+    };
+  }
+  const manifest = readJson(manifestPath);
+  const { text, targetPath } = readTextArtifact(manifest, "lan-route-remediation-plan");
+  if (!text) {
+    return {
+      available: false,
+      ok: false,
+      requiresManualAction: null,
+      classification: "",
+      artifactPath: targetPath,
+      error: targetPath ? "LAN route remediation plan unreadable" : "LAN route remediation plan missing"
+    };
+  }
+  const classification = /Classification:\s*([^\r\n]+)/.exec(text)?.[1]?.trim() || "";
+  const requiresManualActionText = /Requires manual action:\s*([^\r\n]+)/.exec(text)?.[1]?.trim().toLowerCase() || "";
+  return {
+    available: true,
+    ok: Boolean(classification && requiresManualActionText),
+    requiresManualAction:
+      requiresManualActionText === "true" ? true : requiresManualActionText === "false" ? false : null,
+    classification,
+    artifactPath: targetPath,
+    error: classification && requiresManualActionText ? "" : "LAN route remediation plan missing required fields"
   };
 }
 
@@ -515,6 +572,7 @@ function buildStatus(options) {
   const remoteResources = report ? remoteResourcesStatus(report, reportPath) : null;
   const kylinDiscovery = report ? kylinDiscoveryStatus(report, reportPath) : null;
   const lanTopology = report ? lanTopologyStatus(report, reportPath) : null;
+  const lanRoutePlan = report ? lanRoutePlanStatus(report, reportPath) : null;
   const effectiveFinishedAt = latest.ledger.finishedAt || cycle?.finishedAt || "";
   const age = ageStatus(effectiveFinishedAt, options.maxAgeMinutes);
   const healthAfter = report?.healthAfter || {};
@@ -547,6 +605,11 @@ function buildStatus(options) {
     failures.push(
       `strict cross report LAN topology check failed: ${lanTopology.diagnosis.classification || "warnings"}`
     );
+  }
+  if (lanRoutePlan && !lanRoutePlan.available) {
+    failures.push("strict cross report LAN route remediation plan missing");
+  } else if (lanRoutePlan && !lanRoutePlan.ok) {
+    failures.push("strict cross report LAN route remediation plan unreadable");
   }
   if (kylinDiscovery?.available && !kylinDiscovery.ok) {
     failures.push(`strict cross report Kylin discovery failed: ${kylinDiscovery.classification || "unknown"}`);
@@ -601,6 +664,7 @@ function buildStatus(options) {
           remoteResources,
           kylinDiscovery,
           lanTopology,
+          lanRoutePlan,
           steps
         }
       : null

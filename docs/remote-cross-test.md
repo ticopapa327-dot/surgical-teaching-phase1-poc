@@ -114,6 +114,7 @@ Remove-Item Env:UST_KYLIN_SUDO_PASSWORD -ErrorAction SilentlyContinue
 `lan-topology` 还会生成 `diagnosis.classification`。例如 `overlay_route_hijack_and_lan_target_unresolved` 表示默认 TCP 可能经由虚拟隧道成功，但绑定 LAN 地址失败且 137 的邻居/ARP 未解析，此时应先处理 137 的接入或隧道路由优先级。
 该报告同时保留 `routeHint.destinationPrefix` 和 `targetRoutes`，用于定位是否存在针对 137 的更高优先级主机路由或虚拟隧道路由。
 如需基于最新拓扑证据生成只读整改计划，可执行 `npm run test:remote:lan:route-plan`。该命令输出 `validation-results/cross-machine-validation/lan-route-remediation-plan.md`，其中的 `New-NetRoute` 仅作为现场人工验证候选命令，不会被脚本自动执行，也不应在无人值守远程会话中直接运行。
+严格交叉验证会在 `lan-topology` 后自动执行 `lan-route-plan`，并把该 Markdown 计划归档进本轮 `*-artifacts/cross-machine-validation/`，便于失败报告离线审计。
 
 117/137 媒体 smoke 会额外写入 `*-progress.json`，记录配置、浏览器连接、呼叫、订阅、发布、快照保存、诊断分析和 health 读取等阶段。若 Windows 进程出现 `3221226505` 一类异常退出，交叉验证报告会同时记录 `exitCodeHex` 和已知 Windows 状态名，用于判断是业务断言失败还是底层进程 fast-fail。
 

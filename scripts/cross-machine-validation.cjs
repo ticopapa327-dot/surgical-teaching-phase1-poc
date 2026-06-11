@@ -264,18 +264,22 @@ function archiveDiagnosticArtifacts(reportDir, reportId, startedAt) {
     path.join("test-results", "remote-windows-audio-smoke"),
     path.join("test-results", "remote-kylin-media-smoke"),
     path.join("test-results", "remote-kylin-audio-smoke"),
-    path.join("test-results", "remote-cross-conference-smoke")
+    path.join("test-results", "remote-cross-conference-smoke"),
+    path.join(reportDir, "lan-route-remediation-plan.md")
   ];
-  const allowedExtensions = new Set([".json", ".csv"]);
+  const allowedExtensions = new Set([".json", ".csv", ".md"]);
   const artifactsDir = path.join(reportDir, `${reportId}-artifacts`);
   const minMtimeMs = new Date(startedAt).getTime() - 5000;
   const files = [];
 
   for (const sourceDir of sources) {
-    for (const sourcePath of walkFiles(sourceDir)) {
+    const sourcePaths = fs.existsSync(sourceDir) && fs.statSync(sourceDir).isFile() ? [sourceDir] : walkFiles(sourceDir);
+    for (const sourcePath of sourcePaths) {
       if (!allowedExtensions.has(path.extname(sourcePath).toLowerCase())) continue;
       if (fs.statSync(sourcePath).mtimeMs < minMtimeMs) continue;
-      const relativeSource = path.relative("test-results", sourcePath);
+      const relativeSource = sourcePath.startsWith(`${reportDir}${path.sep}`)
+        ? path.join("cross-machine-validation", path.relative(reportDir, sourcePath))
+        : path.relative("test-results", sourcePath);
       const targetPath = path.join(artifactsDir, relativeSource);
       files.push(copyFileWithHash(sourcePath, targetPath));
     }
@@ -383,7 +387,7 @@ function renderSummary(report, paths) {
     "## Notes",
     "",
     "- Full stdout/stderr is retained in the JSON report for local audit.",
-    "- Probe snapshots, diagnostic snapshots and CSV reports are copied into the artifacts directory before this report is finalized.",
+    "- Probe snapshots, diagnostic snapshots, CSV reports and LAN route remediation plans are copied into the artifacts directory before this report is finalized.",
     "- The validation-results directory is intentionally ignored by Git because it may contain machine-specific runtime evidence.",
     "- Test snapshots under test-results remain volatile and may be cleaned by Playwright."
   );
@@ -401,7 +405,7 @@ function runStepAttempt(step, attempt, totalAttempts) {
   console.log(`\n[${step.id}] ${step.title} (attempt ${attempt}/${totalAttempts})`);
   const result = spawnSync(step.command, step.args, {
     cwd: process.cwd(),
-    env: process.env,
+    env: { ...process.env, ...(step.env || {}) },
     encoding: "utf8",
     timeout: step.timeoutMs || 300000,
     windowsHide: true
@@ -591,6 +595,15 @@ async function main(argv = []) {
     "test:remote:lan:topology",
     90000
   );
+  const lanRoutePlanStep = step(
+    "lan-route-plan",
+    "118/117/137 LAN route remediation plan",
+    "test:remote:lan:route-plan",
+    30000
+  );
+  lanRoutePlanStep.env = {
+    UST_LAN_REMEDIATION_OUTPUT: path.join(config.reportDir, "lan-route-remediation-plan.md")
+  };
 
   const hasFailedStep = () => report.steps.some((item) => item.status === "failed");
   const runKylinDiscovery = () => {
@@ -601,6 +614,7 @@ async function main(argv = []) {
 
   if (config.skipWindows117) {
     skipStep(lanTopologyStep, report, "UST_CROSS_SKIP_WINDOWS_117 is enabled");
+    skipStep(lanRoutePlanStep, report, "UST_CROSS_SKIP_WINDOWS_117 is enabled");
     windowsSteps.forEach((item) => skipStep(item, report, "UST_CROSS_SKIP_WINDOWS_117 is enabled"));
     if (config.requireWindows117) {
       failRequirement(
@@ -611,7 +625,12 @@ async function main(argv = []) {
       );
     }
   } else {
-    runStep(lanTopologyStep, report);
+    const lanTopologyEntry = runStep(lanTopologyStep, report);
+    if (lanTopologyEntry.status === "passed") {
+      runStep(lanRoutePlanStep, report);
+    } else {
+      skipStep(lanRoutePlanStep, report, "LAN topology diagnostic command failed");
+    }
     for (const item of windowsSteps) {
       const entry = runStep(item, report);
       if (entry.status !== "passed") break;
