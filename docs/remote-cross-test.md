@@ -32,6 +32,8 @@ npm run test:remote:audio:diagnostics
 3. 音频 smoke 至少验证 118 音频轨道可到达 117。
 4. 测试结束后 `health` 中 `endpoints=0`、`sessions=0`、`pendingCalls=0`。
 
+`117-probe` 默认还会检查 `kylin137=192.168.1.137:22`，结果写入 `checks.remote.checks.lanTargets`。该检查只作为三机网络拓扑证据，不会让 117 探针本身失败；如果出现 `lan_target_kylin137_unreachable`，说明 117 到 137 的 LAN 路径不通；如果出现 `lan_target_kylin137_non_lan_route`，说明 117 可以经由非预期源地址或虚拟网卡触达该地址，不能当作有线 LAN 三机验证通过。
+
 ## 三、137 麒麟自动化验证
 
 137 当前 SSHD 配置禁止端口转发，因此不能采用 117 的 SSH 隧道模式。现阶段使用临时 LAN DevTools 模式：118 通过 SSH 在 137 启动 headless 麒麟浏览器，并临时放行 137 的 `9334` 端口，仅允许 118 访问。

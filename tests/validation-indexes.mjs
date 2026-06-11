@@ -83,7 +83,7 @@ function splitRouteDiscovery() {
 async function writeCrossReport(
   reportDir,
   id,
-  { ok = true, withArtifact = true, strict = false, steps = null, kylinDiscovery = null } = {}
+  { ok = true, withArtifact = true, strict = false, steps = null, kylinDiscovery = null, windowsLanTargets = [] } = {}
 ) {
   const artifactDir = path.join(reportDir, `${id}-artifacts`);
   const artifactPath = path.join(artifactDir, "snapshot.json");
@@ -114,7 +114,8 @@ async function writeCrossReport(
                   capturedAt: "2026-06-11T00:00:01.000Z",
                   memory: { freeGiB: 8 },
                   processes: []
-                }
+                },
+                lanTargets: windowsLanTargets
               }
             }
           }
@@ -457,7 +458,21 @@ try {
   const splitRouteReport = await writeCrossReport(splitRouteStatusDir, "2026-06-11T00-07-40-000Z", {
     ok: false,
     strict: true,
-    kylinDiscovery: splitRouteDiscovery()
+    kylinDiscovery: splitRouteDiscovery(),
+    windowsLanTargets: [
+      {
+        name: "kylin137",
+        host: "192.168.1.137",
+        port: 22,
+        ok: true,
+        onExpectedLan: false,
+        expectedLanSourcePrefix: "192.168.1.",
+        route: {
+          interfaceAlias: "CMYNetwork",
+          sourceAddress: "198.19.0.1"
+        }
+      }
+    ]
   });
   await writeContinuousLedger(
     splitRouteStatusDir,
@@ -478,6 +493,13 @@ try {
   assert.equal(
     splitRouteStatusJson.failures.includes(
       "strict cross report Kylin discovery failed: os-route-open-lan-bound-closed"
+    ),
+    true
+  );
+  assert.equal(splitRouteStatusJson.latestStrictReport.remoteResources.windowsLanTargetsOk, false);
+  assert.equal(
+    splitRouteStatusJson.failures.includes(
+      "strict cross report Windows 117 LAN target route is not on expected LAN"
     ),
     true
   );

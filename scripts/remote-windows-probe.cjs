@@ -7,6 +7,9 @@ const DEFAULTS = {
   webUrl: "http://192.168.1.118:5173/",
   signalingHealthUrl: "http://192.168.1.118:7077/health",
   devToolsUrl: "http://127.0.0.1:9222/json/version",
+  lanTargets: "kylin137=192.168.1.137:22",
+  lanTargetTimeoutMs: "1500",
+  expectedLanSourcePrefix: "192.168.1.",
   artifactDir: path.join("test-results", "remote-windows-probe"),
   sshTimeoutMs: "20000"
 };
@@ -31,6 +34,46 @@ function parseJsonFromOutput(text) {
   }
 }
 
+function parseLanTargets(value) {
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => {
+      const [nameOrHost, address] = item.includes("=") ? item.split(/=(.*)/s).filter(Boolean) : ["", item];
+      const hostPort = String(address || "").trim();
+      const separator = hostPort.lastIndexOf(":");
+      if (separator <= 0 || separator === hostPort.length - 1) {
+        throw new Error(`invalid LAN target: ${item}`);
+      }
+      const host = hostPort.slice(0, separator).trim();
+      const port = Number(hostPort.slice(separator + 1));
+      if (!host || !Number.isInteger(port) || port <= 0 || port > 65535) {
+        throw new Error(`invalid LAN target: ${item}`);
+      }
+      return {
+        name: String(nameOrHost || `${host}:${port}`).trim(),
+        host,
+        port
+      };
+    });
+}
+
+function probeWarnings(remote) {
+  const warnings = [];
+  if (!remote?.checks?.runtime?.node) warnings.push("node_not_found_on_remote_windows");
+  if (!remote?.checks?.devTools?.ok) warnings.push("devtools_not_running_before_probe");
+  for (const target of remote?.checks?.lanTargets || []) {
+    const targetName = target.name || target.host || "unknown";
+    if (!target.ok) {
+      warnings.push(`lan_target_${targetName}_unreachable`);
+    } else if (target.onExpectedLan === false) {
+      warnings.push(`lan_target_${targetName}_non_lan_route`);
+    }
+  }
+  return warnings;
+}
+
 function nowStamp() {
   return new Date().toISOString().replace(/[:.]/g, "-");
 }
@@ -49,6 +92,9 @@ function configFromEnv() {
     webUrl: env("UST_REMOTE_WINDOWS_WEB_URL", DEFAULTS.webUrl),
     signalingHealthUrl: env("UST_REMOTE_WINDOWS_SIGNALING_HEALTH_URL", DEFAULTS.signalingHealthUrl),
     devToolsUrl: env("UST_REMOTE_WINDOWS_DEVTOOLS_URL", DEFAULTS.devToolsUrl),
+    lanTargets: parseLanTargets(env("UST_REMOTE_WINDOWS_LAN_TARGETS", DEFAULTS.lanTargets)),
+    lanTargetTimeoutMs: env("UST_REMOTE_WINDOWS_LAN_TARGET_TIMEOUT_MS", DEFAULTS.lanTargetTimeoutMs),
+    expectedLanSourcePrefix: env("UST_REMOTE_WINDOWS_EXPECTED_LAN_SOURCE_PREFIX", DEFAULTS.expectedLanSourcePrefix),
     artifactDir: env("UST_REMOTE_WINDOWS_PROBE_ARTIFACT_DIR", DEFAULTS.artifactDir),
     sshTimeoutMs: env("UST_REMOTE_WINDOWS_SSH_TIMEOUT_MS", DEFAULTS.sshTimeoutMs)
   };
@@ -64,12 +110,17 @@ function usage() {
     "  UST_REMOTE_WINDOWS_WEB_URL                Default: http://192.168.1.118:5173/",
     "  UST_REMOTE_WINDOWS_SIGNALING_HEALTH_URL   Default: http://192.168.1.118:7077/health",
     "  UST_REMOTE_WINDOWS_DEVTOOLS_URL           Default: http://127.0.0.1:9222/json/version",
+    "  UST_REMOTE_WINDOWS_LAN_TARGETS            Default: kylin137=192.168.1.137:22",
+    "  UST_REMOTE_WINDOWS_LAN_TARGET_TIMEOUT_MS  Default: 1500",
+    "  UST_REMOTE_WINDOWS_EXPECTED_LAN_SOURCE_PREFIX",
+    "                                            Default: 192.168.1.",
     "  UST_REMOTE_WINDOWS_PROBE_ARTIFACT_DIR     Default: test-results/remote-windows-probe",
     "  UST_REMOTE_WINDOWS_SSH_TIMEOUT_MS         Default: 20000"
   ].join("\n");
 }
 
 function remoteProbeScript(config) {
+  const lanTargetsJson = JSON.stringify(config.lanTargets);
   return `
 $ErrorActionPreference = "Stop"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -77,6 +128,9 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 $webUrl = ${psQuote(config.webUrl)}
 $healthUrl = ${psQuote(config.signalingHealthUrl)}
 $devToolsUrl = ${psQuote(config.devToolsUrl)}
+$lanTargetsJson = ${psQuote(lanTargetsJson)}
+$lanTargetTimeoutMs = [int]${Number(config.lanTargetTimeoutMs) || Number(DEFAULTS.lanTargetTimeoutMs)}
+$expectedLanSourcePrefix = ${psQuote(config.expectedLanSourcePrefix)}
 
 function Test-HttpStatus($Url) {
   try {
@@ -127,6 +181,69 @@ function Get-CommandVersion($Name, $CommandArgs) {
   return ""
 }
 
+function Get-RouteHint($HostName) {
+  try {
+    $route = Find-NetRoute -RemoteIPAddress $HostName -ErrorAction Stop | Select-Object -First 1
+    if ($route) {
+      return [ordered]@{
+        interfaceAlias = [string]$route.InterfaceAlias
+        interfaceIndex = if ($null -ne $route.InterfaceIndex) { [int]$route.InterfaceIndex } else { $null }
+        sourceAddress = [string]$route.IPAddress
+        prefixLength = if ($null -ne $route.PrefixLength) { [int]$route.PrefixLength } else { $null }
+      }
+    }
+  } catch {}
+  return [ordered]@{
+    interfaceAlias = ""
+    interfaceIndex = $null
+    sourceAddress = ""
+    prefixLength = $null
+  }
+}
+
+function Test-TcpTarget($Target) {
+  $client = New-Object System.Net.Sockets.TcpClient
+  $started = Get-Date
+  $ok = $false
+  $errorText = ""
+  try {
+    $async = $client.BeginConnect([string]$Target.host, [int]$Target.port, $null, $null)
+    $completed = $async.AsyncWaitHandle.WaitOne($lanTargetTimeoutMs, $false)
+    if ($completed) {
+      try {
+        $client.EndConnect($async)
+        $ok = $true
+      } catch {
+        $errorText = $_.Exception.Message
+      }
+    } else {
+      $errorText = "timeout"
+    }
+  } catch {
+    $errorText = $_.Exception.Message
+  } finally {
+    try { $client.Close() } catch {}
+  }
+  $finished = Get-Date
+  $route = Get-RouteHint ([string]$Target.host)
+  $onExpectedLan = $true
+  if ($expectedLanSourcePrefix) {
+    $onExpectedLan = ([string]$route.sourceAddress).StartsWith($expectedLanSourcePrefix)
+  }
+  return [ordered]@{
+    name = [string]$Target.name
+    host = [string]$Target.host
+    port = [int]$Target.port
+    ok = [bool]$ok
+    error = $errorText
+    timeoutMs = [int]$lanTargetTimeoutMs
+    durationMs = [int]([math]::Round(($finished - $started).TotalMilliseconds))
+    expectedLanSourcePrefix = $expectedLanSourcePrefix
+    onExpectedLan = [bool]$onExpectedLan
+    route = $route
+  }
+}
+
 $edgePaths = @(
   "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
   "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
@@ -145,6 +262,12 @@ $ipv4 = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
 $devTools = Test-HttpStatus $devToolsUrl
 $web = Test-HttpStatus $webUrl
 $health = Get-JsonHttp $healthUrl
+$lanTargets = @()
+try {
+  $parsedLanTargets = $lanTargetsJson | ConvertFrom-Json
+  if ($parsedLanTargets) { $lanTargets = @($parsedLanTargets) }
+} catch {}
+$lanTargetResults = @($lanTargets | ForEach-Object { Test-TcpTarget $_ })
 $edgeDebugProcesses = @(Get-CimInstance Win32_Process -Filter "Name = 'msedge.exe'" -ErrorAction SilentlyContinue |
   Where-Object { $_.CommandLine -like "*--remote-debugging-port=*" } |
   Select-Object ProcessId, CommandLine)
@@ -197,6 +320,7 @@ $result = [ordered]@{
       curlVersion = Get-CommandVersion "curl.exe" @("--version")
     }
     network = $ipv4
+    lanTargets = $lanTargetResults
     edgeDebugProcesses = $edgeDebugProcesses
     resources = [ordered]@{
       capturedAt = (Get-Date).ToUniversalTime().ToString("o")
@@ -260,9 +384,7 @@ function main(argv) {
   const config = configFromEnv();
   const ssh = runSsh(config);
   const remote = parseJsonFromOutput(ssh.stdout);
-  const warnings = [];
-  if (!remote?.checks?.runtime?.node) warnings.push("node_not_found_on_remote_windows");
-  if (!remote?.checks?.devTools?.ok) warnings.push("devtools_not_running_before_probe");
+  const warnings = probeWarnings(remote);
 
   const ok = ssh.ok && Boolean(remote?.ok);
   const payload = {
@@ -289,4 +411,11 @@ function main(argv) {
   if (!ok) process.exitCode = 1;
 }
 
-main(process.argv.slice(2));
+if (require.main === module) {
+  main(process.argv.slice(2));
+}
+
+module.exports = {
+  parseLanTargets,
+  probeWarnings
+};

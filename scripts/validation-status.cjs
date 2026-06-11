@@ -221,12 +221,32 @@ function remoteResourcesStatus(report, reportPath) {
   const kylinProbe = readJsonArtifact(manifest, "remote-kylin-probe");
   const windowsResources = windowsProbe?.checks?.remote?.checks?.resources || null;
   const kylinResources = kylinProbe?.checks?.resources || null;
+  const windowsLanTargets = Array.isArray(windowsProbe?.checks?.remote?.checks?.lanTargets)
+    ? windowsProbe.checks.remote.checks.lanTargets
+    : [];
   const windows117Ok = Boolean(windowsResources?.capturedAt && windowsResources?.memory && windowsResources?.processes);
   const kylin137Ok = Boolean(kylinResources?.capturedAt && kylinResources?.memory && kylinResources?.processes);
+  const windowsLanTargetsOk = windowsLanTargets.every(
+    (target) => target?.ok === true && target?.onExpectedLan !== false
+  );
   return {
-    ok: windows117Ok && kylin137Ok,
+    ok: windows117Ok && kylin137Ok && windowsLanTargetsOk,
     windows117Ok,
     kylin137Ok,
+    windowsLanTargetsOk,
+    windowsLanTargets: windowsLanTargets.map((target) => ({
+      name: target.name || "",
+      host: target.host || "",
+      port: target.port ?? null,
+      ok: target.ok === true,
+      onExpectedLan: target.onExpectedLan ?? null,
+      expectedLanSourcePrefix: target.expectedLanSourcePrefix || "",
+      route: {
+        interfaceAlias: target.route?.interfaceAlias || "",
+        sourceAddress: target.route?.sourceAddress || ""
+      },
+      error: target.error || ""
+    })),
     windowsCapturedAt: windowsResources?.capturedAt || "",
     kylinCapturedAt: kylinResources?.capturedAt || "",
     windowsMemoryFreeGiB: windowsResources?.memory?.freeGiB ?? null,
@@ -453,6 +473,9 @@ function buildStatus(options) {
   if (coverage && !coverage.ok) failures.push("strict cross report did not require full remote coverage");
   if (localResources && !localResources.ok) failures.push("strict cross report local resources missing");
   if (remoteResources && !remoteResources.ok) failures.push("strict cross report remote resources missing");
+  if (remoteResources && remoteResources.windowsLanTargetsOk === false) {
+    failures.push("strict cross report Windows 117 LAN target route is not on expected LAN");
+  }
   if (kylinDiscovery?.available && !kylinDiscovery.ok) {
     failures.push(`strict cross report Kylin discovery failed: ${kylinDiscovery.classification || "unknown"}`);
   }
