@@ -532,13 +532,21 @@ try {
       ],
       local: {
         probe: {
-          routeHint: { interfaceAlias: "CMYNetwork", sourceAddress: "198.19.0.1" },
+          routeHint: {
+            destinationPrefix: "192.168.1.137/32",
+            interfaceAlias: "CMYNetwork",
+            sourceAddress: "198.19.0.1"
+          },
           tcp: { bound: { ok: false } }
         }
       },
       remoteWindows: {
         probe: {
-          routeHint: { interfaceAlias: "CMYNetwork", sourceAddress: "198.19.0.1" },
+          routeHint: {
+            destinationPrefix: "192.168.1.137/32",
+            interfaceAlias: "CMYNetwork",
+            sourceAddress: "198.19.0.1"
+          },
           tcp: { bound: { ok: false } }
         }
       }
@@ -595,6 +603,7 @@ try {
     "overlay_route_hijack_and_lan_target_unresolved"
   );
   assert.equal(splitRouteStatusJson.latestStrictReport.lanTopology.local.routeInterface, "CMYNetwork");
+  assert.equal(splitRouteStatusJson.latestStrictReport.lanTopology.local.routeDestination, "192.168.1.137/32");
   assert.equal(
     splitRouteStatusJson.failures.includes(
       "strict cross report LAN topology check failed: overlay_route_hijack_and_lan_target_unresolved"

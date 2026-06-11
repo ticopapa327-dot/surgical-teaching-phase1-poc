@@ -296,11 +296,13 @@ function lanTopologyStatus(report, reportPath) {
         : []
     },
     local: {
+      routeDestination: localProbe.routeHint?.destinationPrefix || "",
       routeSource: localProbe.routeHint?.sourceAddress || "",
       routeInterface: localProbe.routeHint?.interfaceAlias || "",
       boundTcpOk: localProbe.tcp?.bound?.ok ?? null
     },
     remoteWindows: {
+      routeDestination: remoteProbe.routeHint?.destinationPrefix || "",
       routeSource: remoteProbe.routeHint?.sourceAddress || "",
       routeInterface: remoteProbe.routeHint?.interfaceAlias || "",
       boundTcpOk: remoteProbe.tcp?.bound?.ok ?? null

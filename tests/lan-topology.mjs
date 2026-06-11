@@ -12,6 +12,7 @@ const splitRouteProbe = {
     port: 22
   },
   routeHint: {
+    destinationPrefix: "192.168.1.137/32",
     interfaceAlias: "CMYNetwork",
     sourceAddress: "198.19.0.1"
   },
@@ -89,6 +90,7 @@ const splitRouteDiagnosis = diagnoseTopology({
       role: "teach117",
       localAddress: "192.168.1.117",
       routeHint: {
+        destinationPrefix: "192.168.1.137/32",
         interfaceAlias: "CMYNetwork",
         sourceAddress: "198.19.0.1"
       },
@@ -115,6 +117,7 @@ const splitRouteDiagnosis = diagnoseTopology({
 });
 assert.equal(splitRouteDiagnosis.classification, "overlay_route_hijack_and_lan_target_unresolved");
 assert.equal(splitRouteDiagnosis.blocking, true);
+assert.equal(splitRouteDiagnosis.local.routeDestination, "192.168.1.137/32");
 assert.equal(
   splitRouteDiagnosis.evidence.includes("default_route_tcp_works_but_lan_bound_tcp_fails"),
   true
@@ -158,6 +161,9 @@ const script = powershellProbeScript({
   peerAddresses: ["192.168.1.117"]
 });
 assert.match(script, /Find-NetRoute/);
+assert.match(script, /Get-TargetRoutes/);
+assert.match(script, /targetRoutes/);
+assert.match(script, /destinationPrefix/);
 assert.match(script, /Get-NetNeighbor/);
 assert.match(script, /Test-TcpTarget/);
 assert.match(script, /192\.168\.1\.137/);

@@ -112,6 +112,7 @@ Remove-Item Env:UST_KYLIN_SUDO_PASSWORD -ErrorAction SilentlyContinue
 新报告还会记录 `knownHostConnectivity.routeHint` 和 `routeOnExpectedLan`。当 `routeOnExpectedLan=false` 时，应以其中的 `interfaceAlias/sourceAddress/nextHop` 为准定位抢路由的接口；例如 `CMYNetwork/198.19.0.1` 表示系统默认路由没有走 118 的 `192.168.1.118` 有线地址。
 严格交叉验证会先运行 `lan-topology`，归档到 `test-results/remote-lan-topology`。该诊断同时采集 118 和 117 到 137 的路由提示、绑定 TCP、ping 文本、邻居表和 ARP 文本，只用于审计，不会自动增删路由或禁用网卡。
 `lan-topology` 还会生成 `diagnosis.classification`。例如 `overlay_route_hijack_and_lan_target_unresolved` 表示默认 TCP 可能经由虚拟隧道成功，但绑定 LAN 地址失败且 137 的邻居/ARP 未解析，此时应先处理 137 的接入或隧道路由优先级。
+该报告同时保留 `routeHint.destinationPrefix` 和 `targetRoutes`，用于定位是否存在针对 137 的更高优先级主机路由或虚拟隧道路由。
 
 117/137 媒体 smoke 会额外写入 `*-progress.json`，记录配置、浏览器连接、呼叫、订阅、发布、快照保存、诊断分析和 health 读取等阶段。若 Windows 进程出现 `3221226505` 一类异常退出，交叉验证报告会同时记录 `exitCodeHex` 和已知 Windows 状态名，用于判断是业务断言失败还是底层进程 fast-fail。
 

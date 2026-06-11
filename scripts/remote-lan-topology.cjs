@@ -98,6 +98,7 @@ function summarizeProbe(probe, peerAddress) {
     available: Boolean(probe),
     role: probe?.role || "",
     localAddress,
+    routeDestination: probe?.routeHint?.destinationPrefix || "",
     routeInterface: probe?.routeHint?.interfaceAlias || "",
     routeSource,
     routeSourceExpectedLan: Boolean(routeSource && localAddress && routeSource === localAddress),
@@ -183,27 +184,50 @@ $peerAddresses = @(${peerAddressList})
 
 function Get-RouteHint($HostName) {
   try {
-    $route = Find-NetRoute -RemoteIPAddress $HostName -ErrorAction Stop | Select-Object -First 1
-    if ($route) {
+    $matches = @(Find-NetRoute -RemoteIPAddress $HostName -ErrorAction Stop)
+    $source = $matches | Where-Object { $_.IPAddress } | Select-Object -First 1
+    $route = $matches | Where-Object { $_.DestinationPrefix } | Select-Object -First 1
+    if ($source -or $route) {
+      $interfaceAlias = if ($source -and $source.InterfaceAlias) { $source.InterfaceAlias } elseif ($route) { $route.InterfaceAlias } else { "" }
+      $interfaceIndex = if ($source -and $null -ne $source.InterfaceIndex) { $source.InterfaceIndex } elseif ($route) { $route.InterfaceIndex } else { $null }
       return [ordered]@{
-        interfaceAlias = [string]$route.InterfaceAlias
-        interfaceIndex = if ($null -ne $route.InterfaceIndex) { [int]$route.InterfaceIndex } else { $null }
-        sourceAddress = [string]$route.IPAddress
-        prefixLength = if ($null -ne $route.PrefixLength) { [int]$route.PrefixLength } else { $null }
+        interfaceAlias = [string]$interfaceAlias
+        interfaceIndex = if ($null -ne $interfaceIndex) { [int]$interfaceIndex } else { $null }
+        destinationPrefix = if ($route) { [string]$route.DestinationPrefix } else { "" }
+        sourceAddress = if ($source) { [string]$source.IPAddress } else { "" }
+        prefixLength = if ($source -and $null -ne $source.PrefixLength) { [int]$source.PrefixLength } else { $null }
         routeMetric = if ($null -ne $route.RouteMetric) { [int]$route.RouteMetric } else { $null }
         interfaceMetric = if ($null -ne $route.InterfaceMetric) { [int]$route.InterfaceMetric } else { $null }
-        nextHop = [string]$route.NextHop
+        nextHop = if ($route) { [string]$route.NextHop } else { "" }
       }
     }
   } catch {}
   return [ordered]@{
     interfaceAlias = ""
     interfaceIndex = $null
+    destinationPrefix = ""
     sourceAddress = ""
     prefixLength = $null
     routeMetric = $null
     interfaceMetric = $null
     nextHop = ""
+  }
+}
+
+function Get-TargetRoutes($HostName) {
+  try {
+    return @(Find-NetRoute -RemoteIPAddress $HostName -ErrorAction Stop |
+      Where-Object { $_.DestinationPrefix } |
+      Select-Object @{Name="destinationPrefix"; Expression={[string]$_.DestinationPrefix}},
+        @{Name="nextHop"; Expression={[string]$_.NextHop}},
+        @{Name="interfaceAlias"; Expression={[string]$_.InterfaceAlias}},
+        @{Name="interfaceIndex"; Expression={if ($null -ne $_.InterfaceIndex) { [int]$_.InterfaceIndex } else { $null }}},
+        @{Name="routeMetric"; Expression={if ($null -ne $_.RouteMetric) { [int]$_.RouteMetric } else { $null }}},
+        @{Name="interfaceMetric"; Expression={if ($null -ne $_.InterfaceMetric) { [int]$_.InterfaceMetric } else { $null }}},
+        @{Name="sourceAddress"; Expression={[string]$_.IPAddress}},
+        @{Name="sourcePrefixLength"; Expression={if ($null -ne $_.PrefixLength) { [int]$_.PrefixLength } else { $null }}})
+  } catch {
+    return @()
   }
 }
 
@@ -271,6 +295,7 @@ $routes = @(Get-NetRoute -AddressFamily IPv4 -ErrorAction SilentlyContinue |
 $interfaces = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
   Where-Object { $_.IPAddress -and $_.IPAddress -notlike "169.254.*" } |
   Select-Object InterfaceAlias, IPAddress, PrefixLength)
+$targetRoutes = Get-TargetRoutes $targetHost
 
 [ordered]@{
   ok = $true
@@ -284,6 +309,7 @@ $interfaces = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContin
     port = $targetPort
   }
   routeHint = Get-RouteHint $targetHost
+  targetRoutes = @($targetRoutes)
   interfaces = $interfaces
   routes = $routes
   tcp = [ordered]@{
