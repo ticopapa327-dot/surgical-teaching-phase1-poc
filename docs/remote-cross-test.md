@@ -150,6 +150,14 @@ npm run test:remote:cross:loop:index
 
 该索引会校验 `continuous-*.sha256`，并反查每个周期引用的单次交叉验证报告及其 SHA256 文件，防止长期测试后只保留了不可审计的文本结论。
 
+长期验证期间还应生成资源趋势索引：
+
+```powershell
+npm run test:remote:cross:resources -- --strict-only
+```
+
+该索引会读取严格交叉验证报告中的 118 本机资源快照，并从 artifact 中反查 117 Windows、137 麒麟探针资源快照，汇总每台机器的内存最低值、最新值、CPU 峰值、磁盘剩余空间和资源告警。该索引用于定位长稳测试期间的资源趋势，不等同于正式性能验收；如需把资源告警作为自动化失败条件，可增加 `--fail-on-warn`。
+
 长期测试期间还应定期执行当前状态门禁：
 
 ```powershell

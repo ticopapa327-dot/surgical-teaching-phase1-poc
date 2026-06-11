@@ -239,9 +239,9 @@ async function writeContinuousLedger(
   return { ledger, ledgerPath };
 }
 
-function runNode(script, env) {
+function runNode(script, env, args = []) {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [script, "--json", "--no-write"], {
+    const child = spawn(process.execPath, [script, "--json", "--no-write", ...args], {
       cwd: rootDir,
       env: { ...process.env, ...env },
       stdio: ["ignore", "pipe", "pipe"]
@@ -309,6 +309,22 @@ try {
   assert.equal(strictStatusJson.latestStrictReport.remoteResources.ok, true);
   assert.equal(strictStatusJson.latestStrictReport.steps.ok, true);
   assert.equal(strictStatusJson.latestStrictReport.artifacts.ok, true);
+
+  const resourceIndex = await runNode(
+    "scripts/validation-resource-index.cjs",
+    {
+      UST_VALIDATION_REPORT_DIR: strictStatusDir
+    },
+    ["--strict-only"]
+  );
+  assert.equal(resourceIndex.code, 0, `${resourceIndex.stdout}\n${resourceIndex.stderr}`);
+  const resourceIndexJson = JSON.parse(resourceIndex.stdout);
+  assert.equal(resourceIndexJson.totalReports, 1);
+  assert.equal(resourceIndexJson.reportsWithAllResources, 1);
+  assert.equal(resourceIndexJson.reportsWithWarnings, 0);
+  assert.equal(resourceIndexJson.machines.local118After.minMemoryFreeGiB, 20);
+  assert.equal(resourceIndexJson.machines.windows117.minMemoryFreeGiB, 8);
+  assert.equal(resourceIndexJson.machines.kylin137.minMemoryFreeGiB, 8);
 
   const noStrictLedgerDir = path.join(tempDir, "status-no-strict-ledger");
   await mkdir(noStrictLedgerDir, { recursive: true });
