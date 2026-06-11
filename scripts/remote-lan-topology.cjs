@@ -73,6 +73,99 @@ function topologyWarnings(probe, role) {
   return warnings;
 }
 
+function findNeighbor(probe, address) {
+  return Array.isArray(probe?.neighbors)
+    ? probe.neighbors.find((item) => String(item.ipAddress || item.IPAddress || "") === String(address || ""))
+    : null;
+}
+
+function hasResolvedNeighbor(neighbor) {
+  const mac = neighborMac(neighbor);
+  return Boolean(neighbor && mac && mac !== "00-00-00-00-00-00");
+}
+
+function neighborMac(neighbor) {
+  return String(neighbor?.linkLayerAddress || neighbor?.LinkLayerAddress || "");
+}
+
+function summarizeProbe(probe, peerAddress) {
+  const targetHost = probe?.target?.host || "";
+  const routeSource = String(probe?.routeHint?.sourceAddress || "");
+  const localAddress = String(probe?.localAddress || "");
+  const targetNeighbor = findNeighbor(probe, targetHost);
+  const peerNeighbor = findNeighbor(probe, peerAddress);
+  return {
+    available: Boolean(probe),
+    role: probe?.role || "",
+    localAddress,
+    routeInterface: probe?.routeHint?.interfaceAlias || "",
+    routeSource,
+    routeSourceExpectedLan: Boolean(routeSource && localAddress && routeSource === localAddress),
+    defaultTcpOk: probe?.tcp?.default?.ok ?? null,
+    boundTcpOk: probe?.tcp?.bound?.ok ?? null,
+    targetNeighborResolved: hasResolvedNeighbor(targetNeighbor),
+    targetNeighborMac: neighborMac(targetNeighbor),
+    peerNeighborResolved: hasResolvedNeighbor(peerNeighbor),
+    peerNeighborMac: neighborMac(peerNeighbor)
+  };
+}
+
+function diagnoseTopology({ config, local, remoteWindows, warnings }) {
+  const localSummary = summarizeProbe(local.probe, config.remoteWindowsAddress);
+  const remoteSummary = summarizeProbe(remoteWindows.probe, config.localAddress);
+  const summaries = [localSummary, remoteSummary].filter((item) => item.available);
+  const all = (predicate) => summaries.length > 0 && summaries.every(predicate);
+  const any = (predicate) => summaries.some(predicate);
+  const bothProbesOk = local.ok && remoteWindows.ok;
+  const bothRouteHijacked = all((item) => item.routeSourceExpectedLan === false && Boolean(item.routeSource));
+  const bothBoundUnreachable = all((item) => item.boundTcpOk === false);
+  const bothTargetNeighborUnresolved = all((item) => item.targetNeighborResolved === false);
+  const defaultRouteTcpWorks = any((item) => item.defaultTcpOk === true);
+  const peerLanVisible = any((item) => item.peerNeighborResolved === true);
+
+  let classification = "ok";
+  if (!bothProbesOk) {
+    classification = "partial_topology_evidence";
+  } else if (bothRouteHijacked && bothBoundUnreachable && bothTargetNeighborUnresolved) {
+    classification = "overlay_route_hijack_and_lan_target_unresolved";
+  } else if (bothTargetNeighborUnresolved && bothBoundUnreachable) {
+    classification = "lan_target_unresolved";
+  } else if (bothRouteHijacked) {
+    classification = "overlay_route_hijack";
+  } else if (warnings.length) {
+    classification = "topology_warning";
+  }
+
+  const blocking = classification !== "ok";
+  const evidence = [];
+  if (defaultRouteTcpWorks && bothBoundUnreachable) {
+    evidence.push("default_route_tcp_works_but_lan_bound_tcp_fails");
+  }
+  if (bothRouteHijacked) evidence.push("route_source_is_not_expected_lan_on_all_available_probes");
+  if (bothTargetNeighborUnresolved) evidence.push("target_neighbor_unresolved_on_all_available_probes");
+  if (peerLanVisible) evidence.push("117_and_118_can_resolve_each_other_on_lan");
+
+  const recommendations = blocking
+    ? [
+        `Confirm ${config.targetHost} is physically connected or associated to the same 192.168.1.0/24 LAN as ${config.localAddress} and ${config.remoteWindowsAddress}.`,
+        "Do not treat TCP success through CMYNetwork/Meta Tunnel as valid same-LAN surgical teaching evidence.",
+        "Disable or deprioritize the overlay tunnel for validation only after confirming remote access will not be lost.",
+        "Re-run npm run test:remote:lan:topology before strict cross-machine validation."
+      ]
+    : [];
+
+  return {
+    classification,
+    blocking,
+    targetHost: config.targetHost,
+    targetPort: Number(config.targetPort),
+    evidence,
+    recommendations,
+    local: localSummary,
+    remoteWindows: remoteSummary
+  };
+}
+
 function powershellProbeScript({ role, localAddress, targetName, targetHost, targetPort, timeoutMs, peerAddresses }) {
   const peerAddressList = (peerAddresses || []).map((item) => psQuote(item)).join(", ");
   return `
@@ -315,10 +408,12 @@ function buildReport(config) {
       ? topologyWarnings(remoteWindows.probe, config.remoteWindowsName)
       : [`${config.remoteWindowsName}_probe_missing`])
   ];
+  const uniqueWarnings = [...new Set(warnings)];
+  const diagnosis = diagnoseTopology({ config, local, remoteWindows, warnings: uniqueWarnings });
   return {
     ok: local.ok || remoteWindows.ok,
     bothProbesOk: local.ok && remoteWindows.ok,
-    topologyOk: warnings.length === 0,
+    topologyOk: !diagnosis.blocking,
     generatedAt: new Date().toISOString(),
     config: {
       localName: config.localName,
@@ -333,7 +428,8 @@ function buildReport(config) {
     },
     local,
     remoteWindows,
-    warnings: [...new Set(warnings)]
+    warnings: uniqueWarnings,
+    diagnosis
   };
 }
 
@@ -394,6 +490,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  diagnoseTopology,
   topologyWarnings,
   powershellProbeScript
 };

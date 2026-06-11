@@ -287,6 +287,14 @@ function lanTopologyStatus(report, reportPath) {
     bothProbesOk: artifact.bothProbesOk === true,
     topologyOk: artifact.topologyOk === true,
     warnings: Array.isArray(artifact.warnings) ? artifact.warnings : [],
+    diagnosis: {
+      classification: artifact.diagnosis?.classification || "",
+      blocking: artifact.diagnosis?.blocking === true,
+      evidence: Array.isArray(artifact.diagnosis?.evidence) ? artifact.diagnosis.evidence : [],
+      recommendations: Array.isArray(artifact.diagnosis?.recommendations)
+        ? artifact.diagnosis.recommendations
+        : []
+    },
     local: {
       routeSource: localProbe.routeHint?.sourceAddress || "",
       routeInterface: localProbe.routeHint?.interfaceAlias || "",
@@ -534,7 +542,9 @@ function buildStatus(options) {
   if (lanTopology && !lanTopology.available) {
     failures.push("strict cross report LAN topology artifact missing");
   } else if (lanTopology && lanTopology.topologyOk === false) {
-    failures.push("strict cross report LAN topology check has warnings");
+    failures.push(
+      `strict cross report LAN topology check failed: ${lanTopology.diagnosis.classification || "warnings"}`
+    );
   }
   if (kylinDiscovery?.available && !kylinDiscovery.ok) {
     failures.push(`strict cross report Kylin discovery failed: ${kylinDiscovery.classification || "unknown"}`);

@@ -126,6 +126,12 @@ async function writeCrossReport(
           ok: true,
           bothProbesOk: true,
           topologyOk: true,
+          diagnosis: {
+            classification: "ok",
+            blocking: false,
+            evidence: [],
+            recommendations: []
+          },
           warnings: [],
           local: {
             probe: {
@@ -509,6 +515,16 @@ try {
       ok: true,
       bothProbesOk: true,
       topologyOk: false,
+      diagnosis: {
+        classification: "overlay_route_hijack_and_lan_target_unresolved",
+        blocking: true,
+        evidence: [
+          "default_route_tcp_works_but_lan_bound_tcp_fails",
+          "route_source_is_not_expected_lan_on_all_available_probes",
+          "target_neighbor_unresolved_on_all_available_probes"
+        ],
+        recommendations: ["Re-run npm run test:remote:lan:topology before strict cross-machine validation."]
+      },
       warnings: [
         "or118_kylin137_route_source_not_expected_lan",
         "or118_kylin137_bound_tcp_unreachable",
@@ -574,9 +590,15 @@ try {
   );
   assert.equal(splitRouteStatusJson.latestStrictReport.remoteResources.windowsLanTargetsOk, false);
   assert.equal(splitRouteStatusJson.latestStrictReport.lanTopology.topologyOk, false);
+  assert.equal(
+    splitRouteStatusJson.latestStrictReport.lanTopology.diagnosis.classification,
+    "overlay_route_hijack_and_lan_target_unresolved"
+  );
   assert.equal(splitRouteStatusJson.latestStrictReport.lanTopology.local.routeInterface, "CMYNetwork");
   assert.equal(
-    splitRouteStatusJson.failures.includes("strict cross report LAN topology check has warnings"),
+    splitRouteStatusJson.failures.includes(
+      "strict cross report LAN topology check failed: overlay_route_hijack_and_lan_target_unresolved"
+    ),
     true
   );
   assert.equal(
