@@ -165,6 +165,7 @@ try {
   assert.equal(continuousIndexJson.passingLedgers, 1);
   assert.equal(continuousIndexJson.evidenceFailures, 0);
   assert.equal(continuousIndexJson.ledgers[0].cycles[0].crossReport.reportOk, true);
+  assert.equal(continuousIndexJson.ledgers[0].cycles[0].crossReport.artifacts.ok, true);
 
   const tamperedDir = path.join(tempDir, "reports-tampered");
   await mkdir(tamperedDir, { recursive: true });
@@ -196,6 +197,25 @@ try {
   const missingCrossIndexJson = JSON.parse(missingCrossIndex.stdout);
   assert.equal(missingCrossIndexJson.evidenceFailures, 1);
   assert.equal(missingCrossIndexJson.ledgers[0].cycles[0].crossReport.error, "cross report missing");
+
+  const tamperedArtifactDir = path.join(tempDir, "continuous-tampered-artifact");
+  await mkdir(tamperedArtifactDir, { recursive: true });
+  const artifactTampered = await writeCrossReport(tamperedArtifactDir, "2026-06-11T00-05-00-000Z");
+  const artifactPath = path.join(tamperedArtifactDir, "2026-06-11T00-05-00-000Z-artifacts", "snapshot.json");
+  await writeFile(artifactPath, `${JSON.stringify({ id: "changed", kind: "snapshot" }, null, 2)}\n`, "utf8");
+  await writeContinuousLedger(
+    tamperedArtifactDir,
+    "continuous-2026-06-11T00-05-30-000Z",
+    artifactTampered.reportPath
+  );
+
+  const tamperedArtifactIndex = await runNode("scripts/continuous-validation-index.cjs", {
+    UST_VALIDATION_REPORT_DIR: tamperedArtifactDir
+  });
+  assert.equal(tamperedArtifactIndex.code, 1);
+  const tamperedArtifactIndexJson = JSON.parse(tamperedArtifactIndex.stdout);
+  assert.equal(tamperedArtifactIndexJson.evidenceFailures, 1);
+  assert.equal(tamperedArtifactIndexJson.ledgers[0].cycles[0].crossReport.artifacts.hashMismatches, 1);
 } finally {
   await rm(tempDir, { recursive: true, force: true });
 }

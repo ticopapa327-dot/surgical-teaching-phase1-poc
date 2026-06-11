@@ -68,6 +68,68 @@ function readChecksum(jsonPath) {
   };
 }
 
+function inspectArtifactArchive(report, reportPath) {
+  const archive = report.artifactArchive || {};
+  const manifestPath = archive.manifestPath || "";
+  if (!report.artifactArchive) {
+    return {
+      ok: true,
+      legacy: true,
+      manifestPath: "",
+      fileCount: 0,
+      verifiedFiles: 0,
+      missingFiles: 0,
+      hashMismatches: 0,
+      error: "legacy report without artifact archive"
+    };
+  }
+
+  const resolvedManifestPath = manifestPath ? path.resolve(path.dirname(reportPath), "..", "..", manifestPath) : "";
+  const directManifestPath = manifestPath ? path.resolve(manifestPath) : "";
+  const candidateManifestPath = fs.existsSync(directManifestPath) ? directManifestPath : resolvedManifestPath;
+  if (!manifestPath || !fs.existsSync(candidateManifestPath)) {
+    return {
+      ok: false,
+      legacy: false,
+      manifestPath,
+      fileCount: Number(archive.fileCount || 0),
+      verifiedFiles: 0,
+      missingFiles: Number(archive.fileCount || 0),
+      hashMismatches: 0,
+      error: "artifact manifest missing"
+    };
+  }
+
+  const manifest = readJson(candidateManifestPath);
+  let missingFiles = 0;
+  let hashMismatches = 0;
+  let verifiedFiles = 0;
+  for (const file of manifest.files || []) {
+    const targetPath = path.resolve(file.targetPath);
+    if (!fs.existsSync(targetPath)) {
+      missingFiles += 1;
+      continue;
+    }
+    const actual = sha256File(targetPath);
+    if (actual !== file.sha256) {
+      hashMismatches += 1;
+      continue;
+    }
+    verifiedFiles += 1;
+  }
+
+  return {
+    ok: missingFiles === 0 && hashMismatches === 0 && verifiedFiles === Number(manifest.fileCount || 0),
+    legacy: false,
+    manifestPath,
+    fileCount: Number(manifest.fileCount || 0),
+    verifiedFiles,
+    missingFiles,
+    hashMismatches,
+    error: missingFiles || hashMismatches ? "artifact verification failed" : ""
+  };
+}
+
 function resolveReportPath(reportDir, reportPath) {
   if (!reportPath) return "";
   const direct = path.resolve(reportPath);
@@ -91,14 +153,16 @@ function inspectCrossReport(reportDir, reportPath) {
 
   const report = readJson(resolvedPath);
   const checksum = readChecksum(resolvedPath);
+  const artifacts = inspectArtifactArchive(report, resolvedPath);
   return {
-    ok: checksum.ok,
+    ok: checksum.ok && artifacts.ok,
     reportPath: reportPath || resolvedPath,
     resolvedPath,
     checksum,
+    artifacts,
     reportOk: Boolean(report.ok),
     failedSteps: (report.steps || []).filter((step) => step.status === "failed").map((step) => step.id),
-    error: checksum.ok ? "" : checksum.error
+    error: checksum.ok ? artifacts.error : checksum.error
   };
 }
 
