@@ -3488,6 +3488,12 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
                   <dt>会话 ID</dt>
                   <dd>{activeSession.id}</dd>
                 </div>
+                {activeSession.mediaRoomId && (
+                  <div>
+                    <dt>媒体房间</dt>
+                    <dd>{activeSession.mediaRoomId}</dd>
+                  </div>
+                )}
                 <div>
                   <dt>最终模式</dt>
                   <dd>{modeLabel(activeSession.mode)}</dd>

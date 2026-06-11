@@ -155,6 +155,7 @@ test("phase 2 UI connects to signaling server and enters accepted session", asyn
     await expect(page.locator(".session-list dd").filter({ hasText: "交互模式" })).toBeVisible();
     await expect(page.locator(".session-list dd").filter({ hasText: "Teaching Remote" })).toBeVisible();
     await expect(page.locator(".session-list dd").filter({ hasText: "2 / 4" })).toBeVisible();
+    await expect(page.locator(".session-list div", { hasText: "媒体房间" })).toContainText("media-room-");
     await expect(page.getByText("信令会话已建立")).toBeVisible();
 
     const subscriptionUpdate = waitFor(
