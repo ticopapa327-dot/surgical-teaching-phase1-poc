@@ -60,6 +60,8 @@ npm run verify
 
 现场保存两端诊断快照后，可执行 `node scripts/summarize-diagnostics.cjs snapshot-a.json snapshot-b.json > diagnostics.csv` 汇总会话、媒体房间、订阅通道数、已到达/等待/异常通道数、PeerConnection、码率、音频缓冲、RTT 和 ICE 路由；也可执行 `npm run diagnostics:analyze -- snapshot-a.json snapshot-b.json` 自动提示媒体房间不一致、非安全上下文、缺少 `peer.signal`、订阅通道诊断未到齐、远端画面等待、PeerConnection 异常、无视频码率、音频缓冲过高或 RTT 过高等常见问题。手术室端处于发布状态时，分析器不会把本端默认远端画面等待误判为接收端黑屏。
 需要把快照分析纳入自动化复测时，可增加 `--fail-on-warn`，出现 `WARN` 时脚本返回非零退出码。
+如果复测是仅收看模式，并且接收端通过 PC-A 的局域网 HTTP 地址打开页面，可额外使用 `--allow-receive-only-runtime-warn`，将接收端非安全上下文和本地麦克风不可用降为 `INFO`；该开关不放宽 WebRTC、视频码率、订阅通道、PeerConnection 或媒体房间一致性检查。
+117 Windows 远程浏览器已支持本地自动化媒体 smoke：PC-A 执行 `npm run test:remote:media` 可通过 117 的 Edge DevTools 完成 4 路订阅、发布媒体、远端 live 检查、双端快照保存和诊断分析。
 
 ## 六、下一步建议
 

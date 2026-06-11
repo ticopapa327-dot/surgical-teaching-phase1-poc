@@ -166,6 +166,47 @@ npm run test:remote:signal
 
 该测试依赖局域网、PC-B 在线状态和浏览器调试端口，不纳入 GitHub Actions CI；它是本地双机开发门禁，用于证明 118 能自动控制 117 完成信令呼叫闭环。
 
+### 3. 使用 117 Windows 远程浏览器做媒体 smoke
+
+信令 smoke 通过后，可继续执行远程媒体 smoke。该测试会自动完成信令会话，PC-B 勾选订阅通道，PC-A 发布订阅通道媒体，随后在 PC-B 远程 Edge 上验证远端视频轨道为 live，并复制双端诊断快照。
+
+默认验证 4 路订阅：
+
+```powershell
+npm run test:remote:media
+```
+
+如需先做单路快速定位，可覆盖订阅通道：
+
+```powershell
+$env:UST_REMOTE_MEDIA_CHANNELS = "ch1"
+npm run test:remote:media
+```
+
+也可以指定 2 路或 3 路：
+
+```powershell
+$env:UST_REMOTE_MEDIA_CHANNELS = "ch1,ch2"
+npm run test:remote:media
+```
+
+测试输出中会包含：
+
+1. 本次自动生成的手术室端 ID 和示教室端 ID。
+2. 实际验证的通道列表。
+3. PC-A 与 PC-B 诊断快照路径，默认保存在 `test-results\remote-windows-media-smoke\`。
+4. 诊断分析器输出。仅收看模式下，PC-B 通过 `http://192.168.1.118:5173` 访问导致的非安全上下文和本地麦克风不可用会显示为 `INFO`；视频、PeerConnection、订阅通道、媒体房间或事件不一致仍会触发 `WARN` 并使测试失败。
+
+通过标准：
+
+1. 脚本输出 `ok: true`。
+2. `channels` 与预期一致。
+3. PC-B 页面上的订阅通道均达到 live 状态。
+4. 诊断分析器没有 `WARN`。
+5. 测试结束后远程测试页面关闭，会话自动清理为 `sessions=0`。
+
+该测试仍属于 PoC 媒体闭环验证，默认使用浏览器模拟源；真实 USB 采集卡、真实声卡、双向交互音频、长稳运行和资源占用仍需后续专项验证。
+
 如果需要分开启动，也可以在 PC-A 执行：
 
 ```powershell

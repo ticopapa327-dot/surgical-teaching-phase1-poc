@@ -7,6 +7,7 @@ import { spawnSync } from "node:child_process";
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ust-diagnostic-analyzer-"));
 const okSnapshotPath = path.join(tmpDir, "ok-snapshot.json");
 const publisherSnapshotPath = path.join(tmpDir, "publisher-snapshot.json");
+const receiveOnlySnapshotPath = path.join(tmpDir, "receive-only-snapshot.json");
 const warningSnapshotPath = path.join(tmpDir, "warning-snapshot.json");
 
 fs.writeFileSync(
@@ -173,6 +174,66 @@ fs.writeFileSync(
   })
 );
 
+fs.writeFileSync(
+  receiveOnlySnapshotPath,
+  JSON.stringify({
+    runtime: {
+      secureContext: false,
+      getUserMedia: false,
+      webRtc: true,
+      setSinkId: true
+    },
+    endpoint: {
+      role: "teaching-room"
+    },
+    session: {
+      id: "session-view",
+      mediaRoomId: "media-room-view",
+      mode: "view",
+      subscribedChannels: ["ch1"]
+    },
+    media: {
+      iceServerCount: 1,
+      diagnostics: [
+        {
+          channelId: "ch1",
+          state: "live"
+        }
+      ],
+      peerConnections: [
+        {
+          endpointId: "or-view",
+          state: "live",
+          connectionState: "connected",
+          iceConnectionState: "connected"
+        }
+      ],
+      statsMetrics: [
+        {
+          endpointId: "or-view",
+          video: {
+            receiveBitrateBps: 640000,
+            packetsReceived: 300
+          },
+          audio: {
+            bufferMs: 40
+          },
+          network: {
+            rttMs: 10
+          }
+        }
+      ]
+    },
+    recentEvents: [
+      {
+        type: "peer.signal.forwarded",
+        sessionId: "session-view",
+        mediaRoomId: "media-room-view"
+      }
+    ]
+  })
+);
+
 const okResult = spawnSync(process.execPath, ["scripts/analyze-diagnostics.cjs", okSnapshotPath], {
   encoding: "utf8"
 });
@@ -187,6 +248,21 @@ const publisherResult = spawnSync(process.execPath, ["scripts/analyze-diagnostic
 assert.equal(publisherResult.status, 0, publisherResult.stderr);
 assert.match(publisherResult.stdout, /OK diagnostics look consistent across 1 snapshot/);
 assert.doesNotMatch(publisherResult.stdout, /channel ch1 is still waiting/);
+
+const receiveOnlyResult = spawnSync(
+  process.execPath,
+  [
+    "scripts/analyze-diagnostics.cjs",
+    "--fail-on-warn",
+    "--allow-receive-only-runtime-warn",
+    receiveOnlySnapshotPath
+  ],
+  { encoding: "utf8" }
+);
+
+assert.equal(receiveOnlyResult.status, 0, receiveOnlyResult.stderr);
+assert.match(receiveOnlyResult.stdout, /INFO receive-only-snapshot\.json: insecure context/);
+assert.match(receiveOnlyResult.stdout, /INFO receive-only-snapshot\.json: getUserMedia unavailable/);
 
 const warningResult = spawnSync(
   process.execPath,

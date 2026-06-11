@@ -43,13 +43,21 @@ function hasPeerSignalEvent(snapshot) {
   );
 }
 
-function warnRuntime(lines, label, snapshot) {
+function isReceiveOnlyEndpoint(snapshot) {
+  return snapshot?.endpoint?.role !== "operating-room" && snapshot?.session?.mode === "view";
+}
+
+function runtimeLevel(snapshot, options) {
+  return options.allowReceiveOnlyRuntimeWarn && isReceiveOnlyEndpoint(snapshot) ? "INFO" : "WARN";
+}
+
+function warnRuntime(lines, label, snapshot, options = {}) {
   const runtime = snapshot?.runtime || {};
   if (runtime.secureContext === false) {
-    lines.push(`WARN ${label}: insecure context; local microphone capture may be blocked`);
+    lines.push(`${runtimeLevel(snapshot, options)} ${label}: insecure context; local microphone capture may be blocked`);
   }
   if (runtime.getUserMedia === false) {
-    lines.push(`WARN ${label}: getUserMedia unavailable; local capture cannot start`);
+    lines.push(`${runtimeLevel(snapshot, options)} ${label}: getUserMedia unavailable; local capture cannot start`);
   }
   if (runtime.webRtc === false) {
     lines.push(`WARN ${label}: RTCPeerConnection unavailable; WebRTC media cannot start`);
@@ -117,7 +125,7 @@ function warnMedia(lines, label, snapshot) {
   }
 }
 
-function analyze(entries) {
+function analyze(entries, options = {}) {
   const lines = [];
   const sessionIds = new Map();
   const mediaRoomIds = new Map();
@@ -131,7 +139,7 @@ function analyze(entries) {
     if (Number.isFinite(snapshot?.media?.iceServerCount)) {
       iceServerCount = Math.max(iceServerCount || 0, snapshot.media.iceServerCount);
     }
-    warnRuntime(lines, label, snapshot);
+    warnRuntime(lines, label, snapshot, options);
     warnMedia(lines, label, snapshot);
   }
 
@@ -162,9 +170,12 @@ function analyze(entries) {
 
 function main(argv) {
   const failOnWarn = argv.includes("--fail-on-warn");
-  const filePaths = argv.filter((item) => item !== "--fail-on-warn");
+  const allowReceiveOnlyRuntimeWarn = argv.includes("--allow-receive-only-runtime-warn");
+  const filePaths = argv.filter((item) => item !== "--fail-on-warn" && item !== "--allow-receive-only-runtime-warn");
   if (!filePaths.length) {
-    console.error("Usage: node scripts/analyze-diagnostics.cjs [--fail-on-warn] <snapshot.json> [snapshot2.json ...]");
+    console.error(
+      "Usage: node scripts/analyze-diagnostics.cjs [--fail-on-warn] [--allow-receive-only-runtime-warn] <snapshot.json> [snapshot2.json ...]"
+    );
     process.exitCode = 1;
     return;
   }
@@ -173,7 +184,7 @@ function main(argv) {
     label: fileLabel(filePath),
     snapshot: readSnapshot(filePath)
   }));
-  const lines = analyze(entries);
+  const lines = analyze(entries, { allowReceiveOnlyRuntimeWarn });
   console.log(lines.join("\n"));
   if (failOnWarn && lines.some((line) => line.startsWith("WARN "))) {
     process.exitCode = 2;
