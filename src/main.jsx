@@ -2730,14 +2730,10 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     clearLocalSession("已离开互动连接。");
   }
 
-  async function toggleRemoteChannel(channelId, checked) {
+  function toggleRemoteChannel(channelId, checked) {
     if (!activeSession) return;
     let nextChannels;
     if (checked) {
-      const channel = CHANNELS.find((item) => item.id === channelId);
-      if (channel && !previewStreams.current[channelId]) {
-        await startPreview(channel);
-      }
       nextChannels = Array.from(new Set([...activeSession.subscribedChannels, channelId]));
       setActiveSession((session) => ({
         ...session,

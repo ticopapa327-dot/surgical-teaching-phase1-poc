@@ -197,6 +197,26 @@ npm run test:remote:media
 3. PC-A 与 PC-B 诊断快照路径，默认保存在 `test-results\remote-windows-media-smoke\`。
 4. 诊断分析器输出。仅收看模式下，PC-B 通过 `http://192.168.1.118:5173` 访问导致的非安全上下文和本地麦克风不可用会显示为 `INFO`；视频、PeerConnection、订阅通道、媒体房间或事件不一致仍会触发 `WARN` 并使测试失败。
 
+媒体 smoke 通过后，可在 PC-A 生成本轮远程诊断报告：
+
+```powershell
+npm run test:remote:diagnostics
+```
+
+该命令默认从 `test-results\remote-windows-media-smoke\` 中查找最近一组 `*-or-118.json` 与 `*-teach-117.json` 快照，输出同名前缀的 `*-diagnostics.csv`，并再次执行诊断分析。默认出现 `WARN` 会返回非零退出码，便于把双机媒体复测纳入本地门禁。
+
+如需分析手工保存或指定路径的快照，可显式传入文件：
+
+```powershell
+npm run test:remote:diagnostics -- .\pc-a-snapshot.json .\pc-b-snapshot.json
+```
+
+如只需要生成报告、不希望 `WARN` 使命令失败，可使用：
+
+```powershell
+npm run test:remote:diagnostics -- --no-fail-on-warn .\pc-a-snapshot.json .\pc-b-snapshot.json
+```
+
 通过标准：
 
 1. 脚本输出 `ok: true`。

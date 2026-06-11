@@ -1093,6 +1093,51 @@ test("phase 2 UI clears signaling session when server disconnects", async ({ pag
   }
 });
 
+test("phase 3 UI updates receive-only subscriptions without local preview playback", async ({ page }) => {
+  const server = createSignalingServer({ port: 0 });
+  const address = await server.start();
+  const url = `ws://127.0.0.1:${address.port}/signal`;
+  const teachingPage = await page.context().newPage();
+
+  try {
+    await teachingPage.addInitScript(() => {
+      HTMLMediaElement.prototype.play = () => Promise.reject(new Error("receiver preview playback blocked"));
+    });
+
+    await page.goto("/");
+    await teachingPage.goto("/");
+
+    await page.getByLabel("信令地址").fill(url);
+    await page.getByLabel("本端 ID").fill("or-subscribe-ui");
+    await page.getByLabel("本端名称").fill("Subscribe OR");
+    await page.getByRole("button", { name: "连接信令" }).click();
+    await expect(page.getByText("已注册 Subscribe OR")).toBeVisible();
+
+    await teachingPage.getByLabel("信令地址").fill(url);
+    await teachingPage.getByLabel("本端 ID").fill("teach-subscribe-ui");
+    await teachingPage.getByLabel("本端名称").fill("Subscribe Teaching");
+    await teachingPage.getByLabel("本端角色").selectOption("teaching-room");
+    await teachingPage.getByRole("button", { name: "连接信令" }).click();
+    await expect(teachingPage.getByText("已注册 Subscribe Teaching")).toBeVisible();
+    await expect(page.locator("option[value='teach-subscribe-ui']")).toHaveCount(1);
+
+    await page.getByLabel("信令目标").selectOption("teach-subscribe-ui");
+    await page.getByRole("button", { name: "信令呼叫选中终端" }).click();
+    await expect(teachingPage.getByText("待确认呼叫")).toBeVisible();
+    await teachingPage.getByRole("button", { name: "接受呼叫" }).click();
+    await expect(teachingPage.locator(".session-list dd").filter({ hasText: "Subscribe OR" })).toBeVisible();
+
+    await teachingPage.getByLabel("通道 2 术野").click();
+    await expect(teachingPage.getByLabel("通道 2 术野")).toBeChecked();
+    await expect
+      .poll(() => server.state.sessions.values().next().value?.subscriptions["teach-subscribe-ui"]?.join(","))
+      .toBe("ch1,ch2");
+  } finally {
+    await teachingPage.close();
+    await server.stop();
+  }
+});
+
 test("phase 3 UI sends subscribed videos over WebRTC signaling", async ({ page }) => {
   const server = createSignalingServer({ port: 0 });
   const address = await server.start();
