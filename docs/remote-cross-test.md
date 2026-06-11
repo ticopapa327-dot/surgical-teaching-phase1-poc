@@ -83,7 +83,7 @@ npm run test:remote:cross
 Remove-Item Env:UST_KYLIN_SUDO_PASSWORD -ErrorAction SilentlyContinue
 ```
 
-报告默认写入 `validation-results/cross-machine-validation/`，同时生成 JSON 原始报告、Markdown 摘要和 SHA256 校验文件。该目录不提交到仓库，只作为本地验证证据；`test-results` 下的媒体诊断快照仍属于临时测试输出，后续运行 Playwright 时可能被清理。
+报告默认写入 `validation-results/cross-machine-validation/`，同时生成 JSON 原始报告、Markdown 摘要、SHA256 校验文件和 artifacts 归档目录。归档目录会复制本轮远程媒体/音频诊断 JSON 与 CSV，避免只保留易被清理的 `test-results` 路径。`validation-results` 不提交到仓库，只作为本地验证证据。
 
 如需临时跳过某台远端：
 
