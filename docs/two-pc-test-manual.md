@@ -393,7 +393,7 @@ Test-NetConnection <PC-A局域网IP> -Port 7077
 node scripts/summarize-diagnostics.cjs .\pc-a-snapshot.json .\pc-b-snapshot.json > .\diagnostics.csv
 ```
 
-输出列包含本端信息、会话 ID、媒体状态、对端 ID、视频发送/接收码率、包发/收/丢、音频缓冲、jitter、RTT 和 ICE 路由。
+输出列包含本端信息、会话 ID、媒体房间 ID、媒体状态、对端 ID、视频发送/接收码率、包发/收/丢、音频缓冲、jitter、RTT 和 ICE 路由。
 
 如果音频能听到但延时明显，先排除以下因素：
 

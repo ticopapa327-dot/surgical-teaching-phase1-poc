@@ -8,6 +8,7 @@ const HEADERS = [
   "endpointName",
   "endpointRole",
   "sessionId",
+  "mediaRoomId",
   "mediaState",
   "peerEndpointId",
   "peerEndpointName",
@@ -37,6 +38,7 @@ function metricRows(filePath, snapshot) {
     endpointName: snapshot?.endpoint?.name || "",
     endpointRole: snapshot?.endpoint?.role || "",
     sessionId: snapshot?.session?.id || "",
+    mediaRoomId: snapshot?.session?.mediaRoomId || "",
     mediaState: snapshot?.media?.state || ""
   };
 
