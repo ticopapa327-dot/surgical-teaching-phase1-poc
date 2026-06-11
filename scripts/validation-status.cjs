@@ -234,6 +234,87 @@ function remoteResourcesStatus(report, reportPath) {
   };
 }
 
+function kylinDiscoveryStatus(report, reportPath) {
+  const manifestPath = resolveArtifactManifestPath(report, reportPath);
+  if (!manifestPath) {
+    return {
+      available: false,
+      ok: false,
+      classification: "",
+      matchCount: null,
+      boundTcpOpen: null,
+      osRouteTcpOpen: null,
+      warnings: [],
+      artifactPath: "",
+      error: ""
+    };
+  }
+  const manifest = readJson(manifestPath);
+  const file = (manifest.files || [])
+    .filter((item) => String(item.sourcePath || item.targetPath || "").includes("remote-kylin-discovery"))
+    .filter((item) => String(item.targetPath || "").toLowerCase().endsWith(".json"))
+    .sort((a, b) => String(b.targetPath || "").localeCompare(String(a.targetPath || "")))[0];
+  if (!file?.targetPath) {
+    return {
+      available: false,
+      ok: false,
+      classification: "",
+      matchCount: null,
+      boundTcpOpen: null,
+      osRouteTcpOpen: null,
+      warnings: [],
+      artifactPath: "",
+      error: ""
+    };
+  }
+  const artifactPath = path.resolve(file.targetPath);
+  if (!fs.existsSync(artifactPath)) {
+    return {
+      available: false,
+      ok: false,
+      classification: "",
+      matchCount: null,
+      boundTcpOpen: null,
+      osRouteTcpOpen: null,
+      warnings: [],
+      artifactPath,
+      error: "kylin discovery artifact missing"
+    };
+  }
+  let artifact;
+  try {
+    artifact = readJson(artifactPath);
+  } catch {
+    return {
+      available: false,
+      ok: false,
+      classification: "",
+      matchCount: null,
+      boundTcpOpen: null,
+      osRouteTcpOpen: null,
+      warnings: [],
+      artifactPath,
+      error: "kylin discovery artifact unreadable"
+    };
+  }
+  const connectivity = artifact.knownHostConnectivity || {};
+  const warnings = [
+    ...(Array.isArray(artifact.warnings) ? artifact.warnings : []),
+    ...(Array.isArray(connectivity.warnings) ? connectivity.warnings : [])
+  ].filter(Boolean);
+  return {
+    available: true,
+    ok: Boolean(artifact.ok),
+    classification: connectivity.classification || "",
+    matchCount: Number(artifact.matchCount ?? 0),
+    boundTcpOpen: connectivity.bound?.tcpOpen ?? null,
+    osRouteTcpOpen: connectivity.osRoute?.tcpOpen ?? null,
+    warnings: [...new Set(warnings)],
+    artifactPath,
+    error: ""
+  };
+}
+
 function collectLedgers(reportDir, expectedCrossScript) {
   if (!fs.existsSync(reportDir) || !fs.statSync(reportDir).isDirectory()) return [];
   return fs
@@ -348,6 +429,7 @@ function buildStatus(options) {
   const coverage = report ? strictCoverage(report) : null;
   const localResources = report ? localResourcesStatus(report) : null;
   const remoteResources = report ? remoteResourcesStatus(report, reportPath) : null;
+  const kylinDiscovery = report ? kylinDiscoveryStatus(report, reportPath) : null;
   const effectiveFinishedAt = latest.ledger.finishedAt || cycle?.finishedAt || "";
   const age = ageStatus(effectiveFinishedAt, options.maxAgeMinutes);
   const healthAfter = report?.healthAfter || {};
@@ -371,6 +453,9 @@ function buildStatus(options) {
   if (coverage && !coverage.ok) failures.push("strict cross report did not require full remote coverage");
   if (localResources && !localResources.ok) failures.push("strict cross report local resources missing");
   if (remoteResources && !remoteResources.ok) failures.push("strict cross report remote resources missing");
+  if (kylinDiscovery?.available && !kylinDiscovery.ok) {
+    failures.push(`strict cross report Kylin discovery failed: ${kylinDiscovery.classification || "unknown"}`);
+  }
   if (!age.ok) failures.push(age.error);
 
   return {
@@ -416,6 +501,7 @@ function buildStatus(options) {
           strictCoverage: coverage,
           localResources,
           remoteResources,
+          kylinDiscovery,
           steps
         }
       : null

@@ -116,6 +116,8 @@ Remove-Item Env:UST_KYLIN_SUDO_PASSWORD -ErrorAction SilentlyContinue
 npm run test:remote:cross:index
 ```
 
+索引文件会显示 `137 Route` 列，并在最新报告摘要中列出 `Latest 137 discovery`。当该列为 `os-route-open-lan-bound-closed` 时，应先处理 137 的有线 LAN 可达性，而不是继续排查媒体或信令层。
+
 如需临时跳过某台远端：
 
 ```powershell

@@ -126,6 +126,83 @@ function inspectArtifactArchive(report, reportPath) {
   };
 }
 
+function resolveArtifactManifestPath(report, reportPath) {
+  const manifestPath = report?.artifactArchive?.manifestPath || "";
+  if (!manifestPath) return "";
+  const directManifestPath = path.resolve(manifestPath);
+  if (fs.existsSync(directManifestPath)) return directManifestPath;
+  const relativeManifestPath = path.resolve(path.dirname(reportPath), "..", "..", manifestPath);
+  return fs.existsSync(relativeManifestPath) ? relativeManifestPath : "";
+}
+
+function readJsonArtifact(manifest, sourceDirName) {
+  const file = (manifest.files || [])
+    .filter((item) => String(item.sourcePath || item.targetPath || "").includes(sourceDirName))
+    .filter((item) => String(item.targetPath || "").toLowerCase().endsWith(".json"))
+    .sort((a, b) => String(b.targetPath || "").localeCompare(String(a.targetPath || "")))[0];
+  if (!file?.targetPath) return { artifact: null, targetPath: "" };
+  const targetPath = path.resolve(file.targetPath);
+  if (!fs.existsSync(targetPath)) return { artifact: null, targetPath };
+  try {
+    return { artifact: readJson(targetPath), targetPath };
+  } catch {
+    return { artifact: null, targetPath };
+  }
+}
+
+function kylinDiscoveryStatus(report, reportPath) {
+  const manifestPath = resolveArtifactManifestPath(report, reportPath);
+  if (!manifestPath) {
+    return {
+      available: false,
+      ok: false,
+      classification: "",
+      matchCount: null,
+      boundTcpOpen: null,
+      osRouteTcpOpen: null,
+      warningCount: 0,
+      warnings: [],
+      artifactPath: "",
+      error: ""
+    };
+  }
+  const manifest = readJson(manifestPath);
+  const { artifact, targetPath } = readJsonArtifact(manifest, "remote-kylin-discovery");
+  if (!artifact) {
+    return {
+      available: false,
+      ok: false,
+      classification: "",
+      matchCount: null,
+      boundTcpOpen: null,
+      osRouteTcpOpen: null,
+      warningCount: 0,
+      warnings: [],
+      artifactPath: targetPath,
+      error: targetPath ? "kylin discovery artifact unreadable" : ""
+    };
+  }
+
+  const connectivity = artifact.knownHostConnectivity || {};
+  const warnings = [
+    ...(Array.isArray(artifact.warnings) ? artifact.warnings : []),
+    ...(Array.isArray(connectivity.warnings) ? connectivity.warnings : [])
+  ].filter(Boolean);
+  const uniqueWarnings = [...new Set(warnings)];
+  return {
+    available: true,
+    ok: Boolean(artifact.ok),
+    classification: connectivity.classification || "",
+    matchCount: Number(artifact.matchCount ?? 0),
+    boundTcpOpen: connectivity.bound?.tcpOpen ?? null,
+    osRouteTcpOpen: connectivity.osRoute?.tcpOpen ?? null,
+    warningCount: uniqueWarnings.length,
+    warnings: uniqueWarnings,
+    artifactPath: targetPath,
+    error: ""
+  };
+}
+
 function summarizeReport(reportPath) {
   const report = readJson(reportPath);
   const checksum = readChecksum(reportPath);
@@ -159,6 +236,7 @@ function summarizeReport(reportPath) {
     maxAttemptsUsed,
     checksum,
     artifacts,
+    kylinDiscovery: kylinDiscoveryStatus(report, reportPath),
     evidenceOk: checksum.ok && artifacts.ok,
     legacyEvidence: Boolean(artifacts.legacy),
     resultOk: Boolean(report.ok) && checksum.ok && artifacts.ok
@@ -197,16 +275,20 @@ function renderMarkdown(index) {
     `- Evidence failures: ${index.evidenceFailures}`,
     `- Legacy reports without artifact archive: ${index.legacyReports}`,
     latest ? `- Latest report: ${latest.id} (${latest.ok ? "PASS" : "FAIL"})` : "- Latest report: none",
+    latest?.kylinDiscovery?.available
+      ? `- Latest 137 discovery: ${latest.kylinDiscovery.classification || "-"} (bound=${latest.kylinDiscovery.boundTcpOpen}, osRoute=${latest.kylinDiscovery.osRouteTcpOpen}, matches=${latest.kylinDiscovery.matchCount})`
+      : "- Latest 137 discovery: none",
     "",
     "## Reports",
     "",
-    "| Started | Result | Evidence | Steps | Retries | Artifacts | Report |",
-    "|---|---:|---:|---:|---:|---:|---|"
+    "| Started | Result | Evidence | 137 Route | Steps | Retries | Artifacts | Report |",
+    "|---|---:|---:|---|---:|---:|---:|---|"
   ];
 
   for (const report of index.reports) {
+    const route = report.kylinDiscovery.available ? report.kylinDiscovery.classification || "discovery" : "";
     lines.push(
-      `| ${markdownCell(report.startedAt)} | ${report.ok ? "PASS" : "FAIL"} | ${report.legacyEvidence ? "LEGACY" : report.evidenceOk ? "OK" : "BAD"} | ${report.stepCount} | ${report.retriedSteps.length} | ${report.artifacts.verifiedFiles}/${report.artifacts.fileCount} | ${markdownCell(report.reportPath)} |`
+      `| ${markdownCell(report.startedAt)} | ${report.ok ? "PASS" : "FAIL"} | ${report.legacyEvidence ? "LEGACY" : report.evidenceOk ? "OK" : "BAD"} | ${markdownCell(route)} | ${report.stepCount} | ${report.retriedSteps.length} | ${report.artifacts.verifiedFiles}/${report.artifacts.fileCount} | ${markdownCell(report.reportPath)} |`
     );
   }
 
@@ -216,6 +298,9 @@ function renderMarkdown(index) {
     for (const report of problemReports) {
       const problems = [];
       if (report.failedSteps.length) problems.push(`failed steps: ${report.failedSteps.join(", ")}`);
+      if (report.kylinDiscovery.available && !report.kylinDiscovery.ok) {
+        problems.push(`137 discovery: ${report.kylinDiscovery.classification || "failed"}`);
+      }
       if (!report.checksum.ok) problems.push(report.checksum.error);
       if (!report.artifacts.ok && !report.artifacts.legacy) problems.push(report.artifacts.error);
       if (report.artifacts.legacy) problems.push(report.artifacts.error);

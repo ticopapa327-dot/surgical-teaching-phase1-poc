@@ -59,7 +59,32 @@ async function writeJsonWithChecksum(filePath, value) {
   await writeFile(filePath.replace(/\.json$/i, ".sha256"), `${sha256(json)}  ${path.basename(filePath)}\n`, "utf8");
 }
 
-async function writeCrossReport(reportDir, id, { ok = true, withArtifact = true, strict = false, steps = null } = {}) {
+function splitRouteDiscovery() {
+  return {
+    ok: false,
+    matchCount: 0,
+    knownHostConnectivity: {
+      classification: "os-route-open-lan-bound-closed",
+      bound: {
+        localAddress: "192.168.1.118",
+        tcpOpen: false,
+        error: "timeout"
+      },
+      osRoute: {
+        tcpOpen: true,
+        error: ""
+      },
+      warnings: ["known host 192.168.1.137:22 is reachable only without LAN bind"]
+    },
+    warnings: ["known host 192.168.1.137:22 is not reachable from local address 192.168.1.118"]
+  };
+}
+
+async function writeCrossReport(
+  reportDir,
+  id,
+  { ok = true, withArtifact = true, strict = false, steps = null, kylinDiscovery = null } = {}
+) {
   const artifactDir = path.join(reportDir, `${id}-artifacts`);
   const artifactPath = path.join(artifactDir, "snapshot.json");
   const manifestPath = path.join(artifactDir, "artifact-manifest.json");
@@ -128,6 +153,19 @@ async function writeCrossReport(reportDir, id, { ok = true, withArtifact = true,
           sha256: sha256(kylinProbeJson)
         }
       );
+    }
+
+    if (kylinDiscovery) {
+      const kylinDiscoveryPath = path.join(artifactDir, "remote-kylin-discovery", "kylin-discovery.json");
+      const kylinDiscoveryJson = `${JSON.stringify(kylinDiscovery, null, 2)}\n`;
+      await mkdir(path.dirname(kylinDiscoveryPath), { recursive: true });
+      await writeFile(kylinDiscoveryPath, kylinDiscoveryJson, "utf8");
+      files.push({
+        sourcePath: "test-results/remote-kylin-discovery/kylin-discovery.json",
+        targetPath: kylinDiscoveryPath,
+        bytes: Buffer.byteLength(kylinDiscoveryJson),
+        sha256: sha256(kylinDiscoveryJson)
+      });
     }
 
     const manifest = {
@@ -289,7 +327,10 @@ try {
   const reportDir = path.join(tempDir, "reports-ok");
   await mkdir(reportDir, { recursive: true });
   const pass = await writeCrossReport(reportDir, "2026-06-11T00-00-01-000Z");
-  await writeCrossReport(reportDir, "2026-06-11T00-00-02-000Z-fail", { ok: false });
+  await writeCrossReport(reportDir, "2026-06-11T00-00-02-000Z-fail", {
+    ok: false,
+    kylinDiscovery: splitRouteDiscovery()
+  });
   await writeFile(path.join(reportDir, "status.json"), `${JSON.stringify({ ok: true }, null, 2)}\n`, "utf8");
   await writeContinuousLedger(reportDir, "continuous-2026-06-11T00-01-00-000Z", pass.reportPath);
 
@@ -303,6 +344,11 @@ try {
   assert.equal(crossIndexJson.failingReports, 1);
   assert.equal(crossIndexJson.evidenceFailures, 0);
   assert.equal(crossIndexJson.reports.some((report) => report.id.startsWith("continuous-")), false);
+  const failedReportIndex = crossIndexJson.reports.find((report) => report.id.endsWith("fail"));
+  assert.equal(failedReportIndex.kylinDiscovery.available, true);
+  assert.equal(failedReportIndex.kylinDiscovery.classification, "os-route-open-lan-bound-closed");
+  assert.equal(failedReportIndex.kylinDiscovery.boundTcpOpen, false);
+  assert.equal(failedReportIndex.kylinDiscovery.osRouteTcpOpen, true);
 
   const continuousIndex = await runNode("scripts/continuous-validation-index.cjs", {
     UST_VALIDATION_REPORT_DIR: reportDir
@@ -405,6 +451,36 @@ try {
   assert.equal(noStrictStatus.code, 1);
   const noStrictStatusJson = JSON.parse(noStrictStatus.stdout);
   assert.equal(noStrictStatusJson.failures.includes("no strict continuous ledger found"), true);
+
+  const splitRouteStatusDir = path.join(tempDir, "status-kylin-split-route");
+  await mkdir(splitRouteStatusDir, { recursive: true });
+  const splitRouteReport = await writeCrossReport(splitRouteStatusDir, "2026-06-11T00-07-40-000Z", {
+    ok: false,
+    strict: true,
+    kylinDiscovery: splitRouteDiscovery()
+  });
+  await writeContinuousLedger(
+    splitRouteStatusDir,
+    "continuous-2026-06-11T00-07-50-000Z",
+    splitRouteReport.reportPath,
+    { ok: false }
+  );
+  const splitRouteStatus = await runNode("scripts/validation-status.cjs", {
+    UST_VALIDATION_REPORT_DIR: splitRouteStatusDir,
+    UST_VALIDATION_STATUS_MAX_AGE_MINUTES: "0"
+  });
+  assert.equal(splitRouteStatus.code, 1);
+  const splitRouteStatusJson = JSON.parse(splitRouteStatus.stdout);
+  assert.equal(
+    splitRouteStatusJson.latestStrictReport.kylinDiscovery.classification,
+    "os-route-open-lan-bound-closed"
+  );
+  assert.equal(
+    splitRouteStatusJson.failures.includes(
+      "strict cross report Kylin discovery failed: os-route-open-lan-bound-closed"
+    ),
+    true
+  );
 
   const missingStrictStepDir = path.join(tempDir, "status-missing-strict-step");
   await mkdir(missingStrictStepDir, { recursive: true });
