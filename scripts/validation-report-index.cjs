@@ -150,6 +150,25 @@ function readJsonArtifact(manifest, sourceDirName) {
   }
 }
 
+function findArtifactFile(manifest, sourceName, extension = "") {
+  return (manifest.files || [])
+    .filter((item) => String(item.sourcePath || item.targetPath || "").includes(sourceName))
+    .filter((item) => !extension || String(item.targetPath || "").toLowerCase().endsWith(extension))
+    .sort((a, b) => String(b.targetPath || "").localeCompare(String(a.targetPath || "")))[0];
+}
+
+function readTextArtifact(manifest, sourceName) {
+  const file = findArtifactFile(manifest, sourceName);
+  if (!file?.targetPath) return { text: "", targetPath: "" };
+  const targetPath = path.resolve(file.targetPath);
+  if (!fs.existsSync(targetPath)) return { text: "", targetPath };
+  try {
+    return { text: fs.readFileSync(targetPath, "utf8"), targetPath };
+  } catch {
+    return { text: "", targetPath };
+  }
+}
+
 function kylinDiscoveryStatus(report, reportPath) {
   const manifestPath = resolveArtifactManifestPath(report, reportPath);
   if (!manifestPath) {
@@ -209,6 +228,94 @@ function kylinDiscoveryStatus(report, reportPath) {
   };
 }
 
+function lanTopologyStatus(report, reportPath) {
+  const manifestPath = resolveArtifactManifestPath(report, reportPath);
+  if (!manifestPath) {
+    return {
+      available: false,
+      topologyOk: null,
+      classification: "",
+      localRoute: "",
+      remoteWindowsRoute: "",
+      artifactPath: "",
+      error: ""
+    };
+  }
+  const manifest = readJson(manifestPath);
+  const { artifact, targetPath } = readJsonArtifact(manifest, "remote-lan-topology");
+  if (!artifact) {
+    return {
+      available: false,
+      topologyOk: null,
+      classification: "",
+      localRoute: "",
+      remoteWindowsRoute: "",
+      artifactPath: targetPath,
+      error: targetPath ? "LAN topology artifact unreadable" : ""
+    };
+  }
+  const localRoute = artifact.diagnosis?.local || {};
+  const remoteRoute = artifact.diagnosis?.remoteWindows || {};
+  const routeText = (route) => {
+    const destination = route.routeDestination || "";
+    const routeInterface = route.routeInterface || "";
+    const routeSource = route.routeSource || "";
+    return [
+      destination,
+      routeInterface ? `via ${routeInterface}` : "",
+      routeSource ? `src ${routeSource}` : ""
+    ]
+      .filter(Boolean)
+      .join(" ");
+  };
+  return {
+    available: true,
+    topologyOk: artifact.topologyOk === true,
+    classification: artifact.diagnosis?.classification || (artifact.topologyOk === true ? "ok" : "unknown"),
+    localRoute: routeText(localRoute),
+    remoteWindowsRoute: routeText(remoteRoute),
+    artifactPath: targetPath,
+    error: ""
+  };
+}
+
+function lanRoutePlanStatus(report, reportPath) {
+  const manifestPath = resolveArtifactManifestPath(report, reportPath);
+  if (!manifestPath) {
+    return {
+      available: false,
+      ok: false,
+      classification: "",
+      requiresManualAction: null,
+      artifactPath: "",
+      error: ""
+    };
+  }
+  const manifest = readJson(manifestPath);
+  const { text, targetPath } = readTextArtifact(manifest, "lan-route-remediation-plan");
+  if (!text) {
+    return {
+      available: false,
+      ok: false,
+      classification: "",
+      requiresManualAction: null,
+      artifactPath: targetPath,
+      error: targetPath ? "LAN route remediation plan unreadable" : ""
+    };
+  }
+  const classification = /Classification:\s*([^\r\n]+)/.exec(text)?.[1]?.trim() || "";
+  const requiresManualActionText = /Requires manual action:\s*([^\r\n]+)/.exec(text)?.[1]?.trim().toLowerCase() || "";
+  return {
+    available: true,
+    ok: Boolean(classification && requiresManualActionText),
+    classification,
+    requiresManualAction:
+      requiresManualActionText === "true" ? true : requiresManualActionText === "false" ? false : null,
+    artifactPath: targetPath,
+    error: classification && requiresManualActionText ? "" : "LAN route remediation plan missing required fields"
+  };
+}
+
 function routeSummary(discovery) {
   if (!discovery?.available) return "";
   const classification = discovery.classification || "discovery";
@@ -216,6 +323,17 @@ function routeSummary(discovery) {
   const interfaceAlias = discovery.routeHint?.interfaceAlias || "";
   if (!sourceAddress && !interfaceAlias) return classification;
   return `${classification} via ${interfaceAlias || "-"} ${sourceAddress || "-"}`;
+}
+
+function topologySummary(topology) {
+  if (!topology?.available) return "";
+  return topology.classification || (topology.topologyOk ? "ok" : "unknown");
+}
+
+function routePlanSummary(plan) {
+  if (!plan?.available) return "";
+  if (!plan.ok) return "unreadable";
+  return `${plan.classification || "plan"} manual=${plan.requiresManualAction}`;
 }
 
 function summarizeReport(reportPath) {
@@ -252,6 +370,8 @@ function summarizeReport(reportPath) {
     checksum,
     artifacts,
     kylinDiscovery: kylinDiscoveryStatus(report, reportPath),
+    lanTopology: lanTopologyStatus(report, reportPath),
+    lanRoutePlan: lanRoutePlanStatus(report, reportPath),
     evidenceOk: checksum.ok && artifacts.ok,
     legacyEvidence: Boolean(artifacts.legacy),
     resultOk: Boolean(report.ok) && checksum.ok && artifacts.ok
@@ -289,21 +409,30 @@ function renderMarkdown(index) {
     `- Failing reports: ${index.failingReports}`,
     `- Evidence failures: ${index.evidenceFailures}`,
     `- Legacy reports without artifact archive: ${index.legacyReports}`,
+    `- Reports with LAN route plans: ${index.routePlanReports}`,
     latest ? `- Latest report: ${latest.id} (${latest.ok ? "PASS" : "FAIL"})` : "- Latest report: none",
     latest?.kylinDiscovery?.available
       ? `- Latest 137 discovery: ${routeSummary(latest.kylinDiscovery)} (bound=${latest.kylinDiscovery.boundTcpOpen}, osRoute=${latest.kylinDiscovery.osRouteTcpOpen}, matches=${latest.kylinDiscovery.matchCount})`
       : "- Latest 137 discovery: none",
+    latest?.lanTopology?.available
+      ? `- Latest LAN topology: ${topologySummary(latest.lanTopology)} (118=${latest.lanTopology.localRoute || "-"}, 117=${latest.lanTopology.remoteWindowsRoute || "-"})`
+      : "- Latest LAN topology: none",
+    latest?.lanRoutePlan?.available
+      ? `- Latest LAN route plan: ${routePlanSummary(latest.lanRoutePlan)}`
+      : "- Latest LAN route plan: none",
     "",
     "## Reports",
     "",
-    "| Started | Result | Evidence | 137 Route | Steps | Retries | Artifacts | Report |",
-    "|---|---:|---:|---|---:|---:|---:|---|"
+    "| Started | Result | Evidence | 137 Route | LAN Topology | Route Plan | Steps | Retries | Artifacts | Report |",
+    "|---|---:|---:|---|---|---|---:|---:|---:|---|"
   ];
 
   for (const report of index.reports) {
     const route = routeSummary(report.kylinDiscovery);
+    const topology = topologySummary(report.lanTopology);
+    const routePlan = routePlanSummary(report.lanRoutePlan);
     lines.push(
-      `| ${markdownCell(report.startedAt)} | ${report.ok ? "PASS" : "FAIL"} | ${report.legacyEvidence ? "LEGACY" : report.evidenceOk ? "OK" : "BAD"} | ${markdownCell(route)} | ${report.stepCount} | ${report.retriedSteps.length} | ${report.artifacts.verifiedFiles}/${report.artifacts.fileCount} | ${markdownCell(report.reportPath)} |`
+      `| ${markdownCell(report.startedAt)} | ${report.ok ? "PASS" : "FAIL"} | ${report.legacyEvidence ? "LEGACY" : report.evidenceOk ? "OK" : "BAD"} | ${markdownCell(route)} | ${markdownCell(topology)} | ${markdownCell(routePlan)} | ${report.stepCount} | ${report.retriedSteps.length} | ${report.artifacts.verifiedFiles}/${report.artifacts.fileCount} | ${markdownCell(report.reportPath)} |`
     );
   }
 
@@ -315,6 +444,12 @@ function renderMarkdown(index) {
       if (report.failedSteps.length) problems.push(`failed steps: ${report.failedSteps.join(", ")}`);
       if (report.kylinDiscovery.available && !report.kylinDiscovery.ok) {
         problems.push(`137 discovery: ${report.kylinDiscovery.classification || "failed"}`);
+      }
+      if (report.lanTopology.available && report.lanTopology.topologyOk === false) {
+        problems.push(`LAN topology: ${report.lanTopology.classification || "failed"}`);
+      }
+      if (report.lanRoutePlan.available && !report.lanRoutePlan.ok) {
+        problems.push(`LAN route plan: ${report.lanRoutePlan.error || "unreadable"}`);
       }
       if (!report.checksum.ok) problems.push(report.checksum.error);
       if (!report.artifacts.ok && !report.artifacts.legacy) problems.push(report.artifacts.error);
@@ -343,6 +478,7 @@ function main(argv) {
     failingReports: reports.filter((report) => !report.ok).length,
     evidenceFailures: reports.filter((report) => !report.evidenceOk).length,
     legacyReports: reports.filter((report) => report.legacyEvidence).length,
+    routePlanReports: reports.filter((report) => report.lanRoutePlan.available).length,
     reports
   };
 
@@ -364,6 +500,7 @@ function main(argv) {
           failingReports: index.failingReports,
           evidenceFailures: index.evidenceFailures,
           legacyReports: index.legacyReports,
+          routePlanReports: index.routePlanReports,
           latestReport: reports[0]?.id || ""
         },
         null,

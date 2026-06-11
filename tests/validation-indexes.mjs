@@ -427,6 +427,7 @@ try {
   assert.equal(failedReportIndex.kylinDiscovery.classification, "os-route-open-lan-bound-closed");
   assert.equal(failedReportIndex.kylinDiscovery.boundTcpOpen, false);
   assert.equal(failedReportIndex.kylinDiscovery.osRouteTcpOpen, true);
+  assert.equal(crossIndexJson.routePlanReports, 0);
 
   const continuousIndex = await runNode("scripts/continuous-validation-index.cjs", {
     UST_VALIDATION_REPORT_DIR: reportDir
@@ -498,6 +499,16 @@ try {
   assert.equal(resourceIndexJson.machines.local118After.minMemoryFreeGiB, 20);
   assert.equal(resourceIndexJson.machines.windows117.minMemoryFreeGiB, 8);
   assert.equal(resourceIndexJson.machines.kylin137.minMemoryFreeGiB, 8);
+
+  const strictReportIndex = await runNode("scripts/validation-report-index.cjs", {
+    UST_VALIDATION_REPORT_DIR: strictStatusDir
+  });
+  assert.equal(strictReportIndex.code, 0, `${strictReportIndex.stdout}\n${strictReportIndex.stderr}`);
+  const strictReportIndexJson = JSON.parse(strictReportIndex.stdout);
+  assert.equal(strictReportIndexJson.routePlanReports, 1);
+  assert.equal(strictReportIndexJson.reports[0].lanTopology.classification, "ok");
+  assert.equal(strictReportIndexJson.reports[0].lanRoutePlan.classification, "ok");
+  assert.equal(strictReportIndexJson.reports[0].lanRoutePlan.requiresManualAction, false);
 
   const activeLedgerDir = path.join(tempDir, "status-active-ledger");
   await mkdir(activeLedgerDir, { recursive: true });
@@ -632,6 +643,21 @@ try {
     "overlay_route_hijack_and_lan_target_unresolved"
   );
   assert.equal(splitRouteStatusJson.latestStrictReport.lanRoutePlan.requiresManualAction, true);
+  const splitRouteIndex = await runNode("scripts/validation-report-index.cjs", {
+    UST_VALIDATION_REPORT_DIR: splitRouteStatusDir
+  });
+  assert.equal(splitRouteIndex.code, 0, `${splitRouteIndex.stdout}\n${splitRouteIndex.stderr}`);
+  const splitRouteIndexJson = JSON.parse(splitRouteIndex.stdout);
+  assert.equal(splitRouteIndexJson.routePlanReports, 1);
+  assert.equal(
+    splitRouteIndexJson.reports[0].lanTopology.classification,
+    "overlay_route_hijack_and_lan_target_unresolved"
+  );
+  assert.equal(
+    splitRouteIndexJson.reports[0].lanRoutePlan.classification,
+    "overlay_route_hijack_and_lan_target_unresolved"
+  );
+  assert.equal(splitRouteIndexJson.reports[0].lanRoutePlan.requiresManualAction, true);
   assert.equal(
     splitRouteStatusJson.latestStrictReport.lanTopology.diagnosis.classification,
     "overlay_route_hijack_and_lan_target_unresolved"
