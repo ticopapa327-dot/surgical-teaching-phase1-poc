@@ -38,6 +38,14 @@ npm run test:remote:audio:diagnostics
 
 麒麟端 SSH 默认通过 `UST_KYLIN_SSH_BIND_ADDRESS=192.168.1.118` 绑定 118 的有线地址，避免 Windows 上 VPN、Meta Tunnel 或其他虚拟网卡抢占到 `192.168.1.137` 的路由。若 118 的测试网 IP 发生变化，必须同步调整该环境变量；如确需交给操作系统自动选路，可将该变量设为空。
 
+如果 `192.168.1.137` 不可达，先用发现脚本扫描 118 所在网段的 SSH 主机，并与 `~/.ssh/known_hosts` 中 137 的历史 host key 比对：
+
+```powershell
+npm run test:remote:kylin:discover
+```
+
+若输出 `recommendedTargets`，说明 137 可能更换了 IP，应按推荐目标临时设置 `UST_KYLIN_SSH_TARGET` 和 `UST_KYLIN_HOST` 后再验证；若没有匹配项，按“137 未接入当前有线 LAN、SSH 服务未启动或 host key 已变化”处理，不应把 `CMYNetwork` 等虚拟网卡上的连通结果作为通过依据。
+
 先做环境探测：
 
 ```powershell
