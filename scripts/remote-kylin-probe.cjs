@@ -53,6 +53,75 @@ function commandValue(result) {
   return result.stdout || result.stderr || result.error || "";
 }
 
+function parseKylinResources(text) {
+  const resources = {
+    raw: String(text || ""),
+    capturedAt: "",
+    loadavg: "",
+    memory: {
+      totalGiB: 0,
+      availableGiB: 0,
+      availablePercent: 0
+    },
+    diskRoot: {
+      sizeGiB: 0,
+      usedGiB: 0,
+      availableGiB: 0,
+      usedPercent: ""
+    },
+    processes: []
+  };
+  let inProcesses = false;
+  for (const rawLine of resources.raw.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (line === "processes=") {
+      inProcesses = true;
+      continue;
+    }
+    if (!inProcesses && line.includes("=")) {
+      const index = line.indexOf("=");
+      const key = line.slice(0, index);
+      const value = line.slice(index + 1).trim();
+      if (key === "capturedAt") resources.capturedAt = value;
+      if (key === "loadavg") resources.loadavg = value;
+      if (key === "memTotalKb") {
+        resources.memory.totalGiB = Math.round((Number(value) / 1024 / 1024) * 100) / 100;
+      }
+      if (key === "memAvailableKb") {
+        resources.memory.availableGiB = Math.round((Number(value) / 1024 / 1024) * 100) / 100;
+      }
+      if (key === "diskRoot") {
+        const [sizeKb, usedKb, availableKb, usedPercent] = value.split(",");
+        resources.diskRoot = {
+          sizeGiB: Math.round((Number(sizeKb) / 1024 / 1024) * 100) / 100,
+          usedGiB: Math.round((Number(usedKb) / 1024 / 1024) * 100) / 100,
+          availableGiB: Math.round((Number(availableKb) / 1024 / 1024) * 100) / 100,
+          usedPercent: usedPercent || ""
+        };
+      }
+      continue;
+    }
+
+    if (inProcesses || /^\d+\s+/.test(line)) {
+      const [pid, command, rssKb, cpuPercent, memoryPercent] = line.split(/\s+/);
+      if (!pid || !/^\d+$/.test(pid)) continue;
+      resources.processes.push({
+        pid: Number(pid),
+        command: command || "",
+        rssMiB: Math.round((Number(rssKb) / 1024) * 10) / 10,
+        cpuPercent: Number(cpuPercent) || 0,
+        memoryPercent: Number(memoryPercent) || 0
+      });
+    }
+  }
+  if (resources.memory.totalGiB > 0) {
+    resources.memory.availablePercent =
+      Math.round((resources.memory.availableGiB / resources.memory.totalGiB) * 1000) / 10;
+  }
+  return resources;
+}
+
 function nowStamp() {
   return new Date().toISOString().replace(/[:.]/g, "-");
 }
@@ -128,6 +197,19 @@ function main(argv) {
         "printf 'DISPLAY='; printenv DISPLAY || true; printf '\\n'; ps -ef | grep -Ei 'kylin-browser|chrome|chromium|firefox' | grep -v grep | head -n 10"
       )
     : { ok: false, stdout: "" };
+  const resources = ssh.ok
+    ? runSsh(
+        config,
+        [
+          "printf 'capturedAt='; date -Iseconds; printf '\\n'",
+          "printf 'loadavg='; cat /proc/loadavg; printf '\\n'",
+          "printf 'memTotalKb='; awk '/MemTotal/ {print $2}' /proc/meminfo; printf '\\n'",
+          "printf 'memAvailableKb='; awk '/MemAvailable/ {print $2}' /proc/meminfo; printf '\\n'",
+          "printf 'diskRoot='; df -Pk / | awk 'NR==2 {print $2\",\"$3\",\"$4\",\"$5}'; printf '\\n'",
+          "printf 'processes=\\n'; ps -eo pid=,comm=,rss=,pcpu=,pmem= --sort=-rss | grep -Ei 'kylin-browser|chrome|chromium|node|electron' | head -n 12 | sed 's/^[[:space:]]*//; s/[[:space:]][[:space:]]*/ /g'"
+        ].join("; ")
+      )
+    : { ok: false, stdout: "" };
 
   const healthJson = parseJson(signalingHealth.stdout);
   const statusCode = Number(webStatus.stdout);
@@ -168,7 +250,8 @@ function main(argv) {
         version: commandValue(browserVersion)
       },
       runtime: runtime.stdout,
-      desktop: desktop.stdout
+      desktop: desktop.stdout,
+      resources: parseKylinResources(resources.stdout)
     },
     warnings
   };

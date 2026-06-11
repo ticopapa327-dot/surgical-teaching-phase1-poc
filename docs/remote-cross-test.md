@@ -156,7 +156,7 @@ npm run test:remote:cross:loop:index
 npm run test:remote:cross:status
 ```
 
-该命令只认可最新的严格持续验证台账，默认要求最近一次严格台账不超过 720 分钟，并反查其引用的严格单次报告。检查内容包括：台账 SHA256、单次报告 SHA256、artifact manifest 和文件哈希、`strictRemoteCoverage` 配置、117/137/三端会议必需步骤、报告健康清理状态。若只存在普通交叉验证报告、严格台账过期、三端会议被跳过或任何证据损坏，该命令返回非零退出码。
+该命令只认可最新的严格持续验证台账，默认要求最近一次严格台账不超过 720 分钟，并反查其引用的严格单次报告。检查内容包括：台账 SHA256、单次报告 SHA256、artifact manifest 和文件哈希、`strictRemoteCoverage` 配置、117/137/三端会议必需步骤、118 本机资源前后快照、报告健康清理状态。若只存在普通交叉验证报告、严格台账过期、三端会议被跳过、本机资源漏采或任何证据损坏，该命令返回非零退出码。
 
 如只需要离线审计旧报告，可临时关闭新鲜度检查：
 
@@ -185,3 +185,5 @@ Remove-Item Env:UST_KYLIN_SUDO_PASSWORD -ErrorAction SilentlyContinue
 5. 用例退出后 `/health` 返回 `endpoints=0`、`sessions=0`、`pendingCalls=0`。
 
 `npm run test:remote:cross` 会在 117、137 单机 smoke 均通过时自动追加该三端并发用例；如果任一前置验证失败，三端用例会以 skipped 记录到报告中，避免把基础连接问题误判为会议模式问题。
+
+严格交叉验证报告会同时记录 118 本机验证前后的 CPU、内存、磁盘和关键进程摘要；117 Windows、137 麒麟的资源摘要分别随各自环境探针写入 artifact。该数据只作为工程诊断依据，不等同于最终性能验收指标；正式指标仍需要在真实 USB 采集源、真实音频设备和约定时长下单独压测。

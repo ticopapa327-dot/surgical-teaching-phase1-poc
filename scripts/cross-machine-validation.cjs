@@ -1,6 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const os = require("node:os");
 const { spawnSync } = require("node:child_process");
 
 const DEFAULTS = {
@@ -35,6 +36,18 @@ function usage() {
 
 function env(name, fallback) {
   return String(process.env[name] || fallback).trim();
+}
+
+function parseJsonFromOutput(text) {
+  const value = String(text || "").trim();
+  const start = value.indexOf("{");
+  const end = value.lastIndexOf("}");
+  if (start === -1 || end === -1 || end <= start) return null;
+  try {
+    return JSON.parse(value.slice(start, end + 1));
+  } catch {
+    return null;
+  }
 }
 
 function envFlag(name, fallback = "false") {
@@ -73,6 +86,147 @@ function sha256(text) {
 
 function sha256File(filePath) {
   return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
+}
+
+function round(value, digits = 1) {
+  const factor = 10 ** digits;
+  return Math.round(Number(value || 0) * factor) / factor;
+}
+
+function bytesToGiB(bytes) {
+  return round(Number(bytes || 0) / 1024 / 1024 / 1024, 2);
+}
+
+function captureLocalWindowsResources() {
+  const script = `
+$ErrorActionPreference = "Stop"
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+$os = Get-CimInstance Win32_OperatingSystem
+$cpuLoad = @(Get-CimInstance Win32_Processor -ErrorAction SilentlyContinue |
+  Measure-Object -Property LoadPercentage -Average).Average
+$disks = @(Get-CimInstance Win32_LogicalDisk -Filter "DriveType = 3" -ErrorAction SilentlyContinue |
+  Select-Object DeviceID,
+    @{Name="SizeGiB"; Expression={ if ($_.Size) { [math]::Round($_.Size / 1GB, 2) } else { 0 } }},
+    @{Name="FreeGiB"; Expression={ if ($_.FreeSpace) { [math]::Round($_.FreeSpace / 1GB, 2) } else { 0 } }},
+    @{Name="FreePercent"; Expression={ if ($_.Size) { [math]::Round(($_.FreeSpace / $_.Size) * 100, 1) } else { 0 } }})
+$processes = @(Get-Process -ErrorAction SilentlyContinue |
+  Where-Object { @("chrome", "msedge", "node", "electron") -contains $_.ProcessName } |
+  Sort-Object WorkingSet64 -Descending |
+  Select-Object -First 16 Id, ProcessName,
+    @{Name="WorkingSetMiB"; Expression={ [math]::Round($_.WorkingSet64 / 1MB, 1) }},
+    @{Name="CpuSeconds"; Expression={ if ($_.CPU) { [math]::Round($_.CPU, 1) } else { 0 } }})
+[ordered]@{
+  ok = $true
+  capturedAt = (Get-Date).ToUniversalTime().ToString("o")
+  cpu = [ordered]@{
+    logicalProcessors = [int]$env:NUMBER_OF_PROCESSORS
+    loadPercent = if ($null -ne $cpuLoad) { [math]::Round([double]$cpuLoad, 1) } else { $null }
+  }
+  memory = [ordered]@{
+    totalGiB = if ($os.TotalVisibleMemorySize) { [math]::Round(([double]$os.TotalVisibleMemorySize * 1KB) / 1GB, 2) } else { 0 }
+    freeGiB = if ($os.FreePhysicalMemory) { [math]::Round(([double]$os.FreePhysicalMemory * 1KB) / 1GB, 2) } else { 0 }
+    freePercent = if ($os.TotalVisibleMemorySize) { [math]::Round(([double]$os.FreePhysicalMemory / [double]$os.TotalVisibleMemorySize) * 100, 1) } else { 0 }
+  }
+  disks = $disks
+  processes = $processes
+} | ConvertTo-Json -Depth 8
+`.trim();
+
+  const encodedCommand = Buffer.from(script, "utf16le").toString("base64");
+  const result = spawnSync("powershell", ["-NoProfile", "-NonInteractive", "-EncodedCommand", encodedCommand], {
+    encoding: "utf8",
+    timeout: 15000,
+    windowsHide: true
+  });
+  const parsed = parseJsonFromOutput(result.stdout);
+  return (
+    parsed || {
+      ok: false,
+      error: result.error?.message || result.stderr || "local Windows resource probe did not return JSON"
+    }
+  );
+}
+
+function captureLocalUnixResources() {
+  const df = spawnSync("df", ["-Pk", "/"], { encoding: "utf8", timeout: 5000, windowsHide: true });
+  const ps = spawnSync("ps", ["-eo", "pid=,comm=,rss=,pcpu=,pmem=", "--sort=-rss"], {
+    encoding: "utf8",
+    timeout: 5000,
+    windowsHide: true
+  });
+  const diskLine = String(df.stdout || "")
+    .trim()
+    .split(/\r?\n/)
+    .slice(1)[0];
+  const [, sizeKb, usedKb, availableKb, usedPercent] = diskLine ? diskLine.trim().split(/\s+/) : [];
+  const processes = String(ps.stdout || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => /(?:chrome|chromium|node|electron)/i.test(line))
+    .slice(0, 16)
+    .map((line) => {
+      const [pid, command, rssKb, cpuPercent, memoryPercent] = line.split(/\s+/);
+      return {
+        pid: Number(pid) || 0,
+        command: command || "",
+        rssMiB: round(Number(rssKb || 0) / 1024, 1),
+        cpuPercent: Number(cpuPercent) || 0,
+        memoryPercent: Number(memoryPercent) || 0
+      };
+    });
+  return {
+    ok: true,
+    capturedAt: new Date().toISOString(),
+    memory: {
+      totalGiB: bytesToGiB(os.totalmem()),
+      freeGiB: bytesToGiB(os.freemem()),
+      freePercent: round((os.freemem() / os.totalmem()) * 100, 1)
+    },
+    diskRoot: {
+      sizeGiB: round(Number(sizeKb || 0) / 1024 / 1024, 2),
+      usedGiB: round(Number(usedKb || 0) / 1024 / 1024, 2),
+      availableGiB: round(Number(availableKb || 0) / 1024 / 1024, 2),
+      usedPercent: usedPercent || ""
+    },
+    processes
+  };
+}
+
+function captureLocalResources(label) {
+  const snapshot = {
+    label,
+    capturedAt: new Date().toISOString(),
+    host: {
+      hostname: os.hostname(),
+      platform: os.platform(),
+      release: os.release(),
+      arch: os.arch(),
+      logicalProcessors: os.cpus().length,
+      loadavg: os.loadavg()
+    },
+    node: {
+      version: process.version,
+      pid: process.pid,
+      memory: {
+        rssMiB: round(process.memoryUsage().rss / 1024 / 1024, 1),
+        heapUsedMiB: round(process.memoryUsage().heapUsed / 1024 / 1024, 1)
+      }
+    },
+    memory: {
+      totalGiB: bytesToGiB(os.totalmem()),
+      freeGiB: bytesToGiB(os.freemem()),
+      freePercent: round((os.freemem() / os.totalmem()) * 100, 1)
+    }
+  };
+
+  try {
+    snapshot.system = process.platform === "win32" ? captureLocalWindowsResources() : captureLocalUnixResources();
+  } catch (error) {
+    snapshot.system = { ok: false, error: error.message };
+  }
+
+  return snapshot;
 }
 
 function copyFileWithHash(sourcePath, targetPath) {
@@ -149,6 +303,20 @@ function markdownCell(value) {
     .replace(/\|/g, "\\|");
 }
 
+function resourceSummary(snapshot) {
+  const system = snapshot?.system || {};
+  const memory = system.memory || snapshot?.memory || {};
+  const cpu = system.cpu || {};
+  const processes = Array.isArray(system.processes) ? system.processes.length : 0;
+  return [
+    `captured=${snapshot?.capturedAt || "-"}`,
+    `cpu=${cpu.loadPercent ?? "-"}`,
+    `memoryFreeGiB=${memory.freeGiB ?? "-"}`,
+    `memoryFreePercent=${memory.freePercent ?? "-"}`,
+    `processes=${processes}`
+  ].join(", ");
+}
+
 function renderSummary(report, paths) {
   const lines = [
     "# UST Cross-Machine Validation Report",
@@ -166,6 +334,11 @@ function renderSummary(report, paths) {
     `- Before: endpoints=${report.healthBefore?.endpoints ?? "-"}, sessions=${report.healthBefore?.sessions ?? "-"}, pendingCalls=${report.healthBefore?.pendingCalls ?? "-"}`,
     `- After: endpoints=${report.healthAfter?.endpoints ?? "-"}, sessions=${report.healthAfter?.sessions ?? "-"}, pendingCalls=${report.healthAfter?.pendingCalls ?? "-"}`,
     `- Health clean: ${report.healthClean ? "yes" : "no"}`,
+    "",
+    "## Local Resources",
+    "",
+    `- Before: ${resourceSummary(report.systemResources?.before)}`,
+    `- After: ${resourceSummary(report.systemResources?.after)}`,
     "",
     "## Steps",
     "",
@@ -341,6 +514,10 @@ async function main(argv = []) {
     healthAfter: null,
     healthClean: false,
     artifactArchive: null,
+    systemResources: {
+      before: captureLocalResources("before"),
+      after: null
+    },
     steps: []
   };
 
@@ -470,6 +647,7 @@ async function main(argv = []) {
   } catch (error) {
     report.healthAfter = { ok: false, error: error.message };
   }
+  report.systemResources.after = captureLocalResources("after");
 
   report.finishedAt = new Date().toISOString();
   const failed = report.steps.filter((item) => item.status === "failed");

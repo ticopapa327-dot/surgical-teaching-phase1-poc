@@ -148,6 +148,19 @@ $health = Get-JsonHttp $healthUrl
 $edgeDebugProcesses = @(Get-CimInstance Win32_Process -Filter "Name = 'msedge.exe'" -ErrorAction SilentlyContinue |
   Where-Object { $_.CommandLine -like "*--remote-debugging-port=*" } |
   Select-Object ProcessId, CommandLine)
+$cpuLoad = @(Get-CimInstance Win32_Processor -ErrorAction SilentlyContinue |
+  Measure-Object -Property LoadPercentage -Average).Average
+$disks = @(Get-CimInstance Win32_LogicalDisk -Filter "DriveType = 3" -ErrorAction SilentlyContinue |
+  Select-Object DeviceID,
+    @{Name="SizeGiB"; Expression={ if ($_.Size) { [math]::Round($_.Size / 1GB, 2) } else { 0 } }},
+    @{Name="FreeGiB"; Expression={ if ($_.FreeSpace) { [math]::Round($_.FreeSpace / 1GB, 2) } else { 0 } }},
+    @{Name="FreePercent"; Expression={ if ($_.Size) { [math]::Round(($_.FreeSpace / $_.Size) * 100, 1) } else { 0 } }})
+$resourceProcesses = @(Get-Process -ErrorAction SilentlyContinue |
+  Where-Object { @("msedge", "node", "electron") -contains $_.ProcessName } |
+  Sort-Object WorkingSet64 -Descending |
+  Select-Object -First 12 Id, ProcessName,
+    @{Name="WorkingSetMiB"; Expression={ [math]::Round($_.WorkingSet64 / 1MB, 1) }},
+    @{Name="CpuSeconds"; Expression={ if ($_.CPU) { [math]::Round($_.CPU, 1) } else { 0 } }})
 
 $result = [ordered]@{
   ok = ($web.ok -and $health.ok -and [bool]$edge)
@@ -185,6 +198,20 @@ $result = [ordered]@{
     }
     network = $ipv4
     edgeDebugProcesses = $edgeDebugProcesses
+    resources = [ordered]@{
+      capturedAt = (Get-Date).ToUniversalTime().ToString("o")
+      cpu = [ordered]@{
+        logicalProcessors = [int]$env:NUMBER_OF_PROCESSORS
+        loadPercent = if ($null -ne $cpuLoad) { [math]::Round([double]$cpuLoad, 1) } else { $null }
+      }
+      memory = [ordered]@{
+        totalGiB = if ($os.TotalVisibleMemorySize) { [math]::Round(([double]$os.TotalVisibleMemorySize * 1KB) / 1GB, 2) } else { 0 }
+        freeGiB = if ($os.FreePhysicalMemory) { [math]::Round(([double]$os.FreePhysicalMemory * 1KB) / 1GB, 2) } else { 0 }
+        freePercent = if ($os.TotalVisibleMemorySize) { [math]::Round(([double]$os.FreePhysicalMemory / [double]$os.TotalVisibleMemorySize) * 100, 1) } else { 0 }
+      }
+      disks = $disks
+      processes = $resourceProcesses
+    }
   }
 }
 

@@ -236,6 +236,23 @@ function strictCoverage(report) {
   };
 }
 
+function localResourcesStatus(report) {
+  const resources = report.systemResources || {};
+  const before = resources.before || null;
+  const after = resources.after || null;
+  const beforeOk = Boolean(before?.capturedAt && before?.memory && before?.system?.ok === true);
+  const afterOk = Boolean(after?.capturedAt && after?.memory && after?.system?.ok === true);
+  return {
+    ok: beforeOk && afterOk,
+    beforeOk,
+    afterOk,
+    beforeCapturedAt: before?.capturedAt || "",
+    afterCapturedAt: after?.capturedAt || "",
+    beforeMemoryFreeGiB: before?.system?.memory?.freeGiB ?? before?.memory?.freeGiB ?? null,
+    afterMemoryFreeGiB: after?.system?.memory?.freeGiB ?? after?.memory?.freeGiB ?? null
+  };
+}
+
 function ageStatus(finishedAt, maxAgeMinutes) {
   if (!maxAgeMinutes) {
     return { ok: true, disabled: true, ageMinutes: null, maxAgeMinutes };
@@ -277,6 +294,7 @@ function buildStatus(options) {
   const artifacts = report ? inspectArtifactArchive(report, reportPath) : null;
   const steps = report ? stepStatus(report) : null;
   const coverage = report ? strictCoverage(report) : null;
+  const localResources = report ? localResourcesStatus(report) : null;
   const age = ageStatus(latest.ledger.finishedAt, options.maxAgeMinutes);
   const healthAfter = report?.healthAfter || {};
 
@@ -297,6 +315,7 @@ function buildStatus(options) {
   if (artifacts && !artifacts.ok) failures.push(artifacts.error);
   if (steps && !steps.ok) failures.push("strict cross report did not pass every required step");
   if (coverage && !coverage.ok) failures.push("strict cross report did not require full remote coverage");
+  if (localResources && !localResources.ok) failures.push("strict cross report local resources missing");
   if (!age.ok) failures.push(age.error);
 
   return {
@@ -340,6 +359,7 @@ function buildStatus(options) {
           checksum: reportChecksum,
           artifacts,
           strictCoverage: coverage,
+          localResources,
           steps
         }
       : null

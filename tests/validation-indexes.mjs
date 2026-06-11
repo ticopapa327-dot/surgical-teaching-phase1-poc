@@ -27,6 +27,32 @@ function sha256(textOrBuffer) {
   return crypto.createHash("sha256").update(textOrBuffer).digest("hex");
 }
 
+function resourceSnapshot(label) {
+  return {
+    label,
+    capturedAt: "2026-06-11T00:00:01.000Z",
+    memory: {
+      totalGiB: 32,
+      freeGiB: 20,
+      freePercent: 62.5
+    },
+    system: {
+      ok: true,
+      capturedAt: "2026-06-11T00:00:01.000Z",
+      cpu: {
+        logicalProcessors: 16,
+        loadPercent: 12.5
+      },
+      memory: {
+        totalGiB: 32,
+        freeGiB: 20,
+        freePercent: 62.5
+      },
+      processes: []
+    }
+  };
+}
+
 async function writeJsonWithChecksum(filePath, value) {
   const json = `${JSON.stringify(value, null, 2)}\n`;
   await writeFile(filePath, json, "utf8");
@@ -85,6 +111,10 @@ async function writeCrossReport(reportDir, id, { ok = true, withArtifact = true,
       endpoints: 0,
       sessions: 0,
       pendingCalls: 0
+    },
+    systemResources: {
+      before: resourceSnapshot("before"),
+      after: resourceSnapshot("after")
     },
     artifactArchive,
     steps:
@@ -221,6 +251,7 @@ try {
   assert.equal(strictStatusJson.ok, true);
   assert.equal(strictStatusJson.latestStrictLedger.latestCycle.crossStatus, "passed");
   assert.equal(strictStatusJson.latestStrictReport.strictCoverage.ok, true);
+  assert.equal(strictStatusJson.latestStrictReport.localResources.ok, true);
   assert.equal(strictStatusJson.latestStrictReport.steps.ok, true);
   assert.equal(strictStatusJson.latestStrictReport.artifacts.ok, true);
 
