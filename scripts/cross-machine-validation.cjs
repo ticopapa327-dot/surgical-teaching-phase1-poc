@@ -304,6 +304,30 @@ function markdownCell(value) {
     .replace(/\|/g, "\\|");
 }
 
+function describeExitCode(exitCode) {
+  if (!Number.isInteger(exitCode)) {
+    return {
+      exitCode: exitCode ?? null,
+      exitCodeHex: "",
+      exitCodeName: ""
+    };
+  }
+  const normalized = exitCode >>> 0;
+  const exitCodeHex = `0x${normalized.toString(16).padStart(8, "0").toUpperCase()}`;
+  const knownNames = new Map([
+    [0xc0000409, "STATUS_STACK_BUFFER_OVERRUN"],
+    [0xc0000005, "STATUS_ACCESS_VIOLATION"],
+    [0xc000001d, "STATUS_ILLEGAL_INSTRUCTION"],
+    [0xc0000135, "STATUS_DLL_NOT_FOUND"],
+    [0xc0000139, "STATUS_ENTRYPOINT_NOT_FOUND"]
+  ]);
+  return {
+    exitCode,
+    exitCodeHex,
+    exitCodeName: knownNames.get(normalized) || ""
+  };
+}
+
 function resourceSummary(snapshot) {
   const system = snapshot?.system || {};
   const memory = system.memory || snapshot?.memory || {};
@@ -391,7 +415,7 @@ function runStepAttempt(step, attempt, totalAttempts) {
     finishedAt: finishedAt.toISOString(),
     durationMs: finishedAt - startedAt,
     status: result.status === 0 ? "passed" : "failed",
-    exitCode: result.status,
+    ...describeExitCode(result.status),
     signal: result.signal || "",
     stdout: result.stdout || "",
     stderr: result.stderr || "",
@@ -700,7 +724,13 @@ async function main(argv = []) {
   if (!report.ok) process.exitCode = 1;
 }
 
-main(process.argv.slice(2)).catch((error) => {
-  console.error(`Cross-machine validation failed: ${error.message}`);
-  process.exit(1);
-});
+if (require.main === module) {
+  main(process.argv.slice(2)).catch((error) => {
+    console.error(`Cross-machine validation failed: ${error.message}`);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  describeExitCode
+};

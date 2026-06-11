@@ -204,6 +204,40 @@ function saveJson(filePath, value) {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
+function createProgressRecorder(filePath, base = {}) {
+  const progress = {
+    ok: false,
+    startedAt: new Date().toISOString(),
+    updatedAt: "",
+    finishedAt: "",
+    base,
+    stages: []
+  };
+  const write = () => saveJson(filePath, progress);
+  const mark = (stage, extra = {}) => {
+    progress.updatedAt = new Date().toISOString();
+    progress.stages.push({
+      stage,
+      at: progress.updatedAt,
+      ...extra
+    });
+    write();
+  };
+  const finish = (ok, extra = {}) => {
+    progress.ok = Boolean(ok);
+    progress.finishedAt = new Date().toISOString();
+    progress.updatedAt = progress.finishedAt;
+    progress.stages.push({
+      stage: ok ? "finished" : "failed",
+      at: progress.finishedAt,
+      ...extra
+    });
+    write();
+  };
+  write();
+  return { mark, finish, filePath };
+}
+
 function safeSnapshotSuffix(value, fallback) {
   const normalized = String(value || "")
     .trim()
@@ -271,6 +305,7 @@ async function main() {
 
   let localBrowser;
   let remotePage;
+  let progress;
   const suffix = Date.now().toString(36).slice(-6);
   const operatingRoom = {
     id: `${config.localEndpointIdPrefix}-${suffix}`,
@@ -282,8 +317,21 @@ async function main() {
     name: `${config.remoteEndpointNamePrefix} ${suffix}`,
     role: "teaching-room"
   };
+  const progressPath = path.join(config.artifactDir, `${suffix}-progress.json`);
+  progress = createProgressRecorder(progressPath, {
+    requestMode: config.requestMode,
+    expectAudio: config.expectAudio,
+    channels: config.channels,
+    remoteDebugUrl: config.remoteDebugUrl,
+    signalingUrl: config.signalingUrl
+  });
+  progress.mark("configured", {
+    operatingRoomId: operatingRoom.id,
+    teachingRoomId: teachingRoom.id
+  });
 
   try {
+    progress.mark("launch-local-browser");
     localBrowser = await chromium.launch({
       channel: process.env.CI ? undefined : "chrome",
       headless: true,
@@ -291,6 +339,7 @@ async function main() {
     });
     const localPage = await localBrowser.newPage({ viewport: { width: 1440, height: 1100 } });
 
+    progress.mark("connect-remote-browser");
     const remoteBrowser = await connectRemoteBrowser(config.remoteDebugUrl);
     const remoteContext = remoteBrowser.contexts()[0] || (await remoteBrowser.newContext());
     remotePage = await remoteContext.newPage();
@@ -299,12 +348,16 @@ async function main() {
     await localPage.goto(config.localWebUrl, { waitUntil: "domcontentloaded", timeout: 15000 });
     await remotePage.goto(config.remoteWebUrl, { waitUntil: "domcontentloaded", timeout: 15000 });
 
+    progress.mark("register-endpoints");
     await registerEndpoint(remotePage, config, teachingRoom);
     await registerEndpoint(localPage, config, operatingRoom);
+    progress.mark("start-call");
     await startCall(localPage, remotePage, teachingRoom, config.requestMode);
     await assertSessionVisible(localPage, remotePage, operatingRoom, teachingRoom);
+    progress.mark("configure-subscriptions");
     await configureRemoteSubscriptions(remotePage, config.channels);
 
+    progress.mark("publish-media");
     await localPage.getByRole("button", { name: LABELS.publishSubscribedMedia }).click();
     await expectLiveRemoteVideoCount(remotePage, config.channels.length);
     await expect(remotePage.locator(".remote-health-live")).toHaveCount(config.channels.length, { timeout: 20000 });
@@ -324,6 +377,10 @@ async function main() {
           snapshot?.media?.peerConnections?.some((peer) => Number(peer.remoteAudioTrackCount) >= 1)),
       "remote"
     );
+    progress.mark("remote-snapshot-ready", {
+      liveDiagnostics: remoteSnapshot?.media?.diagnostics?.filter((item) => item.state === "live").length || 0,
+      statsMetrics: remoteSnapshot?.media?.statsMetrics?.length || 0
+    });
     const localSnapshot = await waitForDiagnosticSnapshot(
       localPage,
       (snapshot) =>
@@ -333,16 +390,28 @@ async function main() {
           snapshot?.media?.peerConnections?.some((peer) => Number(peer.localAudioTrackCount) >= 1)),
       "local"
     );
+    progress.mark("local-snapshot-ready", {
+      peerConnections: localSnapshot?.media?.peerConnections?.length || 0,
+      statsMetrics: localSnapshot?.media?.statsMetrics?.length || 0
+    });
 
     const localSnapshotPath = path.join(config.artifactDir, `${suffix}-${config.localSnapshotSuffix}.json`);
     const remoteSnapshotPath = path.join(config.artifactDir, `${suffix}-${config.remoteSnapshotSuffix}.json`);
     saveJson(localSnapshotPath, localSnapshot);
     saveJson(remoteSnapshotPath, remoteSnapshot);
+    progress.mark("snapshots-saved", { localSnapshotPath, remoteSnapshotPath });
     runDiagnosticAnalyzer(localSnapshotPath, remoteSnapshotPath, {
       allowNonPublisherRuntimeWarn: config.allowNonPublisherRuntimeWarn
     });
+    progress.mark("diagnostics-analyzed");
 
     const health = await (await requireHttpOk(config.signalingHealthUrl, "Signaling health endpoint")).json();
+    progress.mark("health-read", {
+      endpoints: health.endpoints,
+      sessions: health.sessions,
+      pendingCalls: health.pendingCalls
+    });
+    progress.finish(true, { localSnapshotPath, remoteSnapshotPath });
     console.log(
       JSON.stringify(
         {
@@ -355,6 +424,7 @@ async function main() {
           channels: config.channels,
           localSnapshotPath,
           remoteSnapshotPath,
+          progressPath,
           endpoints: health.endpoints,
           sessions: health.sessions,
           pendingCalls: health.pendingCalls
@@ -363,6 +433,13 @@ async function main() {
         2
       )
     );
+  } catch (error) {
+    if (progress) {
+      progress.finish(false, {
+        error: error.message
+      });
+    }
+    throw error;
   } finally {
     if (remotePage) await remotePage.close().catch(() => {});
     if (localBrowser) await localBrowser.close().catch(() => {});
