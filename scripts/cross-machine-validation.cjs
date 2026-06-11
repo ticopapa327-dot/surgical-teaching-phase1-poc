@@ -71,7 +71,7 @@ function walkFiles(dir) {
   return files;
 }
 
-function archiveDiagnosticArtifacts(reportDir, reportId) {
+function archiveDiagnosticArtifacts(reportDir, reportId, startedAt) {
   const sources = [
     path.join("test-results", "remote-windows-media-smoke"),
     path.join("test-results", "remote-windows-audio-smoke"),
@@ -80,11 +80,13 @@ function archiveDiagnosticArtifacts(reportDir, reportId) {
   ];
   const allowedExtensions = new Set([".json", ".csv"]);
   const artifactsDir = path.join(reportDir, `${reportId}-artifacts`);
+  const minMtimeMs = new Date(startedAt).getTime() - 5000;
   const files = [];
 
   for (const sourceDir of sources) {
     for (const sourcePath of walkFiles(sourceDir)) {
       if (!allowedExtensions.has(path.extname(sourcePath).toLowerCase())) continue;
+      if (fs.statSync(sourcePath).mtimeMs < minMtimeMs) continue;
       const relativeSource = path.relative("test-results", sourcePath);
       const targetPath = path.join(artifactsDir, relativeSource);
       files.push(copyFileWithHash(sourcePath, targetPath));
@@ -94,6 +96,7 @@ function archiveDiagnosticArtifacts(reportDir, reportId) {
   const manifest = {
     artifactsDir,
     createdAt: new Date().toISOString(),
+    sourceMtimeNotBefore: new Date(minMtimeMs).toISOString(),
     fileCount: files.length,
     files
   };
@@ -349,7 +352,7 @@ async function main() {
     Number(report.healthAfter.sessions) === 0 &&
     Number(report.healthAfter.pendingCalls) === 0;
   report.ok = failed.length === 0 && report.healthClean;
-  report.artifactArchive = archiveDiagnosticArtifacts(config.reportDir, reportId);
+  report.artifactArchive = archiveDiagnosticArtifacts(config.reportDir, reportId, report.startedAt);
 
   const reportJson = `${JSON.stringify(report, null, 2)}\n`;
   const reportSha256 = sha256(reportJson);
