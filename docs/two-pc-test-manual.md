@@ -391,9 +391,11 @@ Test-NetConnection <PC-A局域网IP> -Port 7077
 
 ```powershell
 node scripts/summarize-diagnostics.cjs .\pc-a-snapshot.json .\pc-b-snapshot.json > .\diagnostics.csv
+npm run diagnostics:analyze -- .\pc-a-snapshot.json .\pc-b-snapshot.json
 ```
 
 输出列包含本端信息、访问主机、安全上下文、采集能力、WebRTC 能力、音频输出选择能力、会话 ID、媒体房间 ID、媒体状态、对端 ID、视频发送/接收码率、包发/收/丢、音频缓冲、jitter、RTT 和 ICE 路由。
+分析脚本会输出 `WARN` / `INFO` / `OK` 行，用于快速定位媒体房间不一致、非安全上下文、缺少 `peer.signal`、无视频码率、音频缓冲过高或 RTT 过高等常见问题。
 
 如果音频能听到但延时明显，先排除以下因素：
 
