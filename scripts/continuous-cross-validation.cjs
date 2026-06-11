@@ -33,6 +33,8 @@ function usage() {
     "  --interval-seconds <seconds>   Delay between cycles",
     "  --cross-script <npm-script>    Cross-machine validation npm script to run each cycle",
     "  --stop-on-failure              Stop the loop after the first failed cycle",
+    "  --skip-resource-index          Do not refresh the resource trend index after each cycle",
+    "  --skip-status-gate             Do not run the strict status gate after strict cycles",
     "  --help                         Show this help",
     "",
     "Environment:",
@@ -42,7 +44,9 @@ function usage() {
     "  UST_CROSS_LOOP_DURATION_SECONDS    Default duration limit",
     "  UST_CROSS_LOOP_INTERVAL_SECONDS    Default interval",
     "  UST_CROSS_LOOP_CROSS_SCRIPT        Default cross-machine npm script",
-    "  UST_CROSS_LOOP_STOP_ON_FAILURE     Stop after first failed cycle"
+    "  UST_CROSS_LOOP_STOP_ON_FAILURE     Stop after first failed cycle",
+    "  UST_CROSS_LOOP_SKIP_RESOURCE_INDEX Skip resource trend index refresh",
+    "  UST_CROSS_LOOP_SKIP_STATUS_GATE    Skip strict status gate"
   ].join("\n");
 }
 
@@ -85,14 +89,19 @@ function parseArgs(argv) {
     throw new Error("--iterations 0 requires a duration limit");
   }
 
+  const crossScript = readArg(argv, "--cross-script") || env("UST_CROSS_LOOP_CROSS_SCRIPT", DEFAULTS.crossScript);
+  const strictPostChecks = crossScript === "test:remote:cross:strict";
   return {
     help,
     reportDir: env("UST_CROSS_LOOP_REPORT_DIR", env("UST_CROSS_REPORT_DIR", DEFAULTS.reportDir)),
-    crossScript: readArg(argv, "--cross-script") || env("UST_CROSS_LOOP_CROSS_SCRIPT", DEFAULTS.crossScript),
+    crossScript,
+    strictPostChecks,
     iterations: normalizedIterations,
     durationMs,
     intervalSeconds,
-    stopOnFailure: argv.includes("--stop-on-failure") || envFlag("UST_CROSS_LOOP_STOP_ON_FAILURE")
+    stopOnFailure: argv.includes("--stop-on-failure") || envFlag("UST_CROSS_LOOP_STOP_ON_FAILURE"),
+    skipResourceIndex: argv.includes("--skip-resource-index") || envFlag("UST_CROSS_LOOP_SKIP_RESOURCE_INDEX"),
+    skipStatusGate: argv.includes("--skip-status-gate") || envFlag("UST_CROSS_LOOP_SKIP_STATUS_GATE")
   };
 }
 
@@ -169,6 +178,7 @@ function latestCrossReport(reportDir, startedAfterMs) {
     .map((entry) => entry.name)
     .filter((name) => name.endsWith(".json"))
     .filter((name) => !name.startsWith("continuous-"))
+    .filter((name) => name !== "status.json")
     .filter((name) => name !== "artifact-manifest.json")
     .map((name) => path.join(reportDir, name))
     .map((filePath) => {
@@ -207,13 +217,13 @@ function renderMarkdown(ledger) {
     `- Cycles: ${ledger.cycles.length}`,
     `- Stop reason: ${ledger.stopReason || "-"}`,
     "",
-    "| Cycle | Result | Cross report | Failed steps | Duration ms |",
-    "|---:|---:|---|---|---:|"
+    "| Cycle | Result | Index | Resources | Status gate | Cross report | Failed steps | Duration ms |",
+    "|---:|---:|---:|---:|---:|---|---|---:|"
   ];
 
   for (const cycle of ledger.cycles) {
     lines.push(
-      `| ${cycle.iteration} | ${cycle.ok ? "PASS" : "FAIL"} | ${cycle.crossReport?.reportPath || "-"} | ${(cycle.crossReport?.failedSteps || []).join(", ") || "-"} | ${cycle.durationMs} |`
+      `| ${cycle.iteration} | ${cycle.ok ? "PASS" : "FAIL"} | ${cycle.index?.status || "-"} | ${cycle.resourceIndex?.status || "-"} | ${cycle.statusGate?.status || "-"} | ${cycle.crossReport?.reportPath || "-"} | ${(cycle.crossReport?.failedSteps || []).join(", ") || "-"} | ${cycle.durationMs} |`
     );
   }
 
@@ -223,12 +233,19 @@ function renderMarkdown(ledger) {
     "",
     "- Each cycle runs the existing single cross-machine validation command first.",
     "- The validation index is regenerated after every cycle to verify report and artifact hashes.",
+    "- The resource trend index is regenerated after every cycle unless disabled.",
+    "- Strict loops run the current status gate after the cycle is written unless disabled.",
     "- Full command output tails are retained in the JSON ledger."
   );
   return `${lines.join("\n")}\n`;
 }
 
+function refreshLedgerOk(ledger) {
+  ledger.ok = ledger.cycles.length > 0 && ledger.cycles.every((cycle) => cycle.ok);
+}
+
 function writeLedger(ledger, paths) {
+  refreshLedgerOk(ledger);
   ledger.updatedAt = new Date().toISOString();
   const json = `${JSON.stringify(ledger, null, 2)}\n`;
   const digest = sha256(json);
@@ -276,7 +293,10 @@ async function main(argv) {
       iterations: Number.isFinite(options.iterations) ? options.iterations : "unlimited",
       durationMs: options.durationMs,
       intervalSeconds: options.intervalSeconds,
-      stopOnFailure: options.stopOnFailure
+      stopOnFailure: options.stopOnFailure,
+      strictPostChecks: options.strictPostChecks,
+      skipResourceIndex: options.skipResourceIndex,
+      skipStatusGate: options.skipStatusGate
     },
     cycles: []
   };
@@ -293,17 +313,37 @@ async function main(argv) {
       durationMs: 0,
       cross: null,
       index: null,
+      resourceIndex: null,
+      statusGate: null,
       crossReport: null
     };
 
     cycle.cross = runNpmScript(options.crossScript);
     cycle.crossReport = latestCrossReport(options.reportDir, cycleStartedMs);
     cycle.index = runNpmScript("test:remote:cross:index", ["--", "--json"], 120000);
+    if (!options.skipResourceIndex) {
+      cycle.resourceIndex = runNpmScript(
+        "test:remote:cross:resources",
+        options.strictPostChecks ? ["--", "--strict-only"] : [],
+        120000
+      );
+    }
     cycle.finishedAt = new Date().toISOString();
     cycle.durationMs = Date.now() - cycleStartedMs;
-    cycle.ok = cycle.cross.status === "passed" && cycle.index.status === "passed" && cycle.crossReport?.ok === true;
+    cycle.ok =
+      cycle.cross.status === "passed" &&
+      cycle.index.status === "passed" &&
+      (!cycle.resourceIndex || cycle.resourceIndex.status === "passed") &&
+      cycle.crossReport?.ok === true;
     ledger.cycles.push(cycle);
     writeLedger(ledger, paths);
+    if (options.strictPostChecks && !options.skipStatusGate) {
+      cycle.statusGate = runNpmScript("test:remote:cross:status", [], 120000);
+      cycle.finishedAt = new Date().toISOString();
+      cycle.durationMs = Date.now() - cycleStartedMs;
+      cycle.ok = cycle.ok && cycle.statusGate.status === "passed";
+      writeLedger(ledger, paths);
+    }
 
     if (!cycle.ok && options.stopOnFailure) {
       ledger.stopReason = `cycle ${iteration} failed and --stop-on-failure is enabled`;
@@ -324,7 +364,6 @@ async function main(argv) {
     }
   }
   ledger.finishedAt = new Date().toISOString();
-  ledger.ok = ledger.cycles.length > 0 && ledger.cycles.every((cycle) => cycle.ok);
   const digest = writeLedger(ledger, paths);
 
   console.log(

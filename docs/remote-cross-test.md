@@ -139,8 +139,10 @@ Remove-Item Env:UST_KYLIN_SUDO_PASSWORD -ErrorAction SilentlyContinue
 - `--interval-seconds <秒>`：两轮之间的等待时间。
 - `--cross-script <npm-script>`：指定每轮运行的交叉验证 npm script，例如 `test:remote:cross:strict`。
 - `--stop-on-failure`：发现失败后立即停止，适合定位问题；稳定性观察阶段建议不启用，以便收集连续失败证据。
+- `--skip-resource-index`：每轮结束后不刷新资源趋势索引，仅用于临时排障。
+- `--skip-status-gate`：严格循环中不运行当前状态门禁，仅用于定位门禁脚本自身问题。
 
-持续验证会在 `validation-results/cross-machine-validation/` 下生成 `continuous-*.json`、`continuous-*.md` 和 `continuous-*.sha256` 总账文件。总账记录每一轮对应的单次交叉验证报告、索引刷新结果和命令输出尾部；单次报告由配置的交叉验证 npm script 生成，并继续由 `npm run test:remote:cross:index` 校验哈希和 artifact 完整性。
+持续验证会在 `validation-results/cross-machine-validation/` 下生成 `continuous-*.json`、`continuous-*.md` 和 `continuous-*.sha256` 总账文件。总账记录每一轮对应的单次交叉验证报告、报告索引刷新结果、资源趋势索引刷新结果、严格状态门禁结果和命令输出尾部；单次报告由配置的交叉验证 npm script 生成，并继续由 `npm run test:remote:cross:index` 校验哈希和 artifact 完整性。严格循环默认还会在每轮写入总账后运行 `npm run test:remote:cross:status`，防止长稳测试只留下不满足严格门禁的报告。
 
 持续验证完成后刷新总账索引：
 

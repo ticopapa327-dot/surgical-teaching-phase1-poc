@@ -198,13 +198,13 @@ async function writeContinuousLedger(
   reportDir,
   id,
   crossReportPath,
-  { ok = true, crossScript = "test:remote:cross:strict" } = {}
+  { ok = true, crossScript = "test:remote:cross:strict", finishedAt = "2026-06-11T00:02:00.000Z" } = {}
 ) {
   const ledger = {
     id,
     ok,
     startedAt: "2026-06-11T00:01:00.000Z",
-    finishedAt: "2026-06-11T00:02:00.000Z",
+    finishedAt,
     stopReason: "iteration limit reached",
     config: {
       reportDir,
@@ -325,6 +325,23 @@ try {
   assert.equal(resourceIndexJson.machines.local118After.minMemoryFreeGiB, 20);
   assert.equal(resourceIndexJson.machines.windows117.minMemoryFreeGiB, 8);
   assert.equal(resourceIndexJson.machines.kylin137.minMemoryFreeGiB, 8);
+
+  const activeLedgerDir = path.join(tempDir, "status-active-ledger");
+  await mkdir(activeLedgerDir, { recursive: true });
+  const activeLedgerReport = await writeCrossReport(activeLedgerDir, "2026-06-11T00-06-10-000Z", { strict: true });
+  await writeContinuousLedger(
+    activeLedgerDir,
+    "continuous-2026-06-11T00-06-40-000Z",
+    activeLedgerReport.reportPath,
+    { finishedAt: "" }
+  );
+  const activeLedgerStatus = await runNode("scripts/validation-status.cjs", {
+    UST_VALIDATION_REPORT_DIR: activeLedgerDir,
+    UST_VALIDATION_STATUS_MAX_AGE_MINUTES: "0"
+  });
+  assert.equal(activeLedgerStatus.code, 0, `${activeLedgerStatus.stdout}\n${activeLedgerStatus.stderr}`);
+  const activeLedgerStatusJson = JSON.parse(activeLedgerStatus.stdout);
+  assert.equal(activeLedgerStatusJson.latestStrictLedger.finishedAt, "2026-06-11T00:02:00.000Z");
 
   const noStrictLedgerDir = path.join(tempDir, "status-no-strict-ledger");
   await mkdir(noStrictLedgerDir, { recursive: true });

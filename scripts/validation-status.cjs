@@ -348,7 +348,8 @@ function buildStatus(options) {
   const coverage = report ? strictCoverage(report) : null;
   const localResources = report ? localResourcesStatus(report) : null;
   const remoteResources = report ? remoteResourcesStatus(report, reportPath) : null;
-  const age = ageStatus(latest.ledger.finishedAt, options.maxAgeMinutes);
+  const effectiveFinishedAt = latest.ledger.finishedAt || cycle?.finishedAt || "";
+  const age = ageStatus(effectiveFinishedAt, options.maxAgeMinutes);
   const healthAfter = report?.healthAfter || {};
 
   const failures = [];
@@ -383,7 +384,7 @@ function buildStatus(options) {
       id: path.basename(latest.ledgerPath, ".json"),
       ledgerPath: latest.ledgerPath,
       startedAt: latest.ledger.startedAt || "",
-      finishedAt: latest.ledger.finishedAt || "",
+      finishedAt: effectiveFinishedAt,
       ok: Boolean(latest.ledger.ok),
       checksum: latest.checksum,
       cycleCount: Array.isArray(latest.ledger.cycles) ? latest.ledger.cycles.length : 0,
