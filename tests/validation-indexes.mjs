@@ -74,6 +74,12 @@ function splitRouteDiscovery() {
         tcpOpen: true,
         error: ""
       },
+      routeHint: {
+        interfaceAlias: "CMYNetwork",
+        sourceAddress: "198.19.0.1",
+        nextHop: "198.19.0.2"
+      },
+      routeOnExpectedLan: false,
       warnings: ["known host 192.168.1.137:22 is reachable only without LAN bind"]
     },
     warnings: ["known host 192.168.1.137:22 is not reachable from local address 192.168.1.118"]
@@ -490,9 +496,17 @@ try {
     splitRouteStatusJson.latestStrictReport.kylinDiscovery.classification,
     "os-route-open-lan-bound-closed"
   );
+  assert.equal(splitRouteStatusJson.latestStrictReport.kylinDiscovery.routeOnExpectedLan, false);
+  assert.equal(splitRouteStatusJson.latestStrictReport.kylinDiscovery.routeHint.interfaceAlias, "CMYNetwork");
   assert.equal(
     splitRouteStatusJson.failures.includes(
       "strict cross report Kylin discovery failed: os-route-open-lan-bound-closed"
+    ),
+    true
+  );
+  assert.equal(
+    splitRouteStatusJson.failures.includes(
+      "strict cross report Kylin discovery OS route is not using expected LAN source"
     ),
     true
   );

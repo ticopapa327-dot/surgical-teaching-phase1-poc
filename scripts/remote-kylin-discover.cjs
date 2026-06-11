@@ -200,7 +200,61 @@ function connectivityAttempt(result, extra = {}) {
   };
 }
 
-function describeKnownHostConnectivity({ host, port, localAddress, boundResult, osRouteResult, keyscan }) {
+function routeUsesExpectedLocalAddress(routeHint, localAddress) {
+  const expected = String(localAddress || "").trim();
+  const actual = String(routeHint?.sourceAddress || "").trim();
+  if (!expected || !actual) return null;
+  return actual === expected;
+}
+
+function readWindowsRouteHint(host) {
+  if (process.platform !== "win32") return null;
+  const script = [
+    "$ErrorActionPreference = 'Stop'",
+    `$route = Find-NetRoute -RemoteIPAddress '${String(host).replace(/'/g, "''")}' -ErrorAction Stop | Select-Object -First 1`,
+    "if ($route) {",
+    "  [pscustomobject]@{",
+    "    interfaceAlias = [string]$route.InterfaceAlias",
+    "    interfaceIndex = if ($null -ne $route.InterfaceIndex) { [int]$route.InterfaceIndex } else { $null }",
+    "    sourceAddress = [string]$route.IPAddress",
+    "    prefixLength = if ($null -ne $route.PrefixLength) { [int]$route.PrefixLength } else { $null }",
+    "    routeMetric = if ($null -ne $route.RouteMetric) { [int]$route.RouteMetric } else { $null }",
+    "    interfaceMetric = if ($null -ne $route.InterfaceMetric) { [int]$route.InterfaceMetric } else { $null }",
+    "    nextHop = [string]$route.NextHop",
+    "  } | ConvertTo-Json -Compress",
+    "}"
+  ].join("\n");
+  const result = spawnSync("powershell.exe", ["-NoProfile", "-NoLogo", "-Command", script], {
+    encoding: "utf8",
+    timeout: 5000,
+    windowsHide: true
+  });
+  if (result.status !== 0 || !String(result.stdout || "").trim()) return null;
+  try {
+    const parsed = JSON.parse(result.stdout);
+    return {
+      interfaceAlias: parsed.interfaceAlias || "",
+      interfaceIndex: parsed.interfaceIndex ?? null,
+      sourceAddress: parsed.sourceAddress || "",
+      prefixLength: parsed.prefixLength ?? null,
+      routeMetric: parsed.routeMetric ?? null,
+      interfaceMetric: parsed.interfaceMetric ?? null,
+      nextHop: parsed.nextHop || ""
+    };
+  } catch {
+    return null;
+  }
+}
+
+function describeKnownHostConnectivity({
+  host,
+  port,
+  localAddress,
+  boundResult,
+  osRouteResult,
+  keyscan,
+  routeHint = null
+}) {
   const bound = localAddress
     ? connectivityAttempt(boundResult, { localAddress })
     : null;
@@ -223,12 +277,20 @@ function describeKnownHostConnectivity({ host, port, localAddress, boundResult, 
   if (osRoute.tcpOpen && keyscan && keyscan.keys.length === 0) {
     warnings.push(`known host ${host}:${port} accepts TCP but did not return SSH host keys`);
   }
+  const routeOnExpectedLan = routeUsesExpectedLocalAddress(routeHint, localAddress);
+  if (routeOnExpectedLan === false) {
+    warnings.push(
+      `known host ${host}:${port} OS route source ${routeHint.sourceAddress} does not match expected LAN source ${localAddress}`
+    );
+  }
   return {
     host,
     port,
     classification,
     bound,
     osRoute,
+    routeHint,
+    routeOnExpectedLan,
     keyscan: keyscan
       ? {
           status: keyscan.status,
@@ -248,6 +310,7 @@ async function probeKnownHostConnectivity(options) {
       : Promise.resolve(null),
     probeTcp(options.knownHost, options.port, "", options.timeoutMs)
   ]);
+  const routeHint = readWindowsRouteHint(options.knownHost);
   const keyscan = scanKeys(options.knownHost, options);
   return describeKnownHostConnectivity({
     host: options.knownHost,
@@ -255,7 +318,8 @@ async function probeKnownHostConnectivity(options) {
     localAddress: options.localAddress,
     boundResult,
     osRouteResult,
-    keyscan
+    keyscan,
+    routeHint
   });
 }
 
@@ -406,5 +470,6 @@ module.exports = {
   fingerprintKey,
   hostsFromCidr,
   parseKeyscanText,
-  parseKnownHostsText
+  parseKnownHostsText,
+  routeUsesExpectedLocalAddress
 };

@@ -329,6 +329,12 @@ function kylinDiscoveryStatus(report, reportPath) {
     matchCount: Number(artifact.matchCount ?? 0),
     boundTcpOpen: connectivity.bound?.tcpOpen ?? null,
     osRouteTcpOpen: connectivity.osRoute?.tcpOpen ?? null,
+    routeOnExpectedLan: connectivity.routeOnExpectedLan ?? null,
+    routeHint: {
+      interfaceAlias: connectivity.routeHint?.interfaceAlias || "",
+      sourceAddress: connectivity.routeHint?.sourceAddress || "",
+      nextHop: connectivity.routeHint?.nextHop || ""
+    },
     warnings: [...new Set(warnings)],
     artifactPath,
     error: ""
@@ -478,6 +484,9 @@ function buildStatus(options) {
   }
   if (kylinDiscovery?.available && !kylinDiscovery.ok) {
     failures.push(`strict cross report Kylin discovery failed: ${kylinDiscovery.classification || "unknown"}`);
+  }
+  if (kylinDiscovery?.available && kylinDiscovery.routeOnExpectedLan === false) {
+    failures.push("strict cross report Kylin discovery OS route is not using expected LAN source");
   }
   if (!age.ok) failures.push(age.error);
 

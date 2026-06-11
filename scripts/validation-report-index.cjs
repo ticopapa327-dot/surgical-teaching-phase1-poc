@@ -196,11 +196,26 @@ function kylinDiscoveryStatus(report, reportPath) {
     matchCount: Number(artifact.matchCount ?? 0),
     boundTcpOpen: connectivity.bound?.tcpOpen ?? null,
     osRouteTcpOpen: connectivity.osRoute?.tcpOpen ?? null,
+    routeOnExpectedLan: connectivity.routeOnExpectedLan ?? null,
+    routeHint: {
+      interfaceAlias: connectivity.routeHint?.interfaceAlias || "",
+      sourceAddress: connectivity.routeHint?.sourceAddress || "",
+      nextHop: connectivity.routeHint?.nextHop || ""
+    },
     warningCount: uniqueWarnings.length,
     warnings: uniqueWarnings,
     artifactPath: targetPath,
     error: ""
   };
+}
+
+function routeSummary(discovery) {
+  if (!discovery?.available) return "";
+  const classification = discovery.classification || "discovery";
+  const sourceAddress = discovery.routeHint?.sourceAddress || "";
+  const interfaceAlias = discovery.routeHint?.interfaceAlias || "";
+  if (!sourceAddress && !interfaceAlias) return classification;
+  return `${classification} via ${interfaceAlias || "-"} ${sourceAddress || "-"}`;
 }
 
 function summarizeReport(reportPath) {
@@ -276,7 +291,7 @@ function renderMarkdown(index) {
     `- Legacy reports without artifact archive: ${index.legacyReports}`,
     latest ? `- Latest report: ${latest.id} (${latest.ok ? "PASS" : "FAIL"})` : "- Latest report: none",
     latest?.kylinDiscovery?.available
-      ? `- Latest 137 discovery: ${latest.kylinDiscovery.classification || "-"} (bound=${latest.kylinDiscovery.boundTcpOpen}, osRoute=${latest.kylinDiscovery.osRouteTcpOpen}, matches=${latest.kylinDiscovery.matchCount})`
+      ? `- Latest 137 discovery: ${routeSummary(latest.kylinDiscovery)} (bound=${latest.kylinDiscovery.boundTcpOpen}, osRoute=${latest.kylinDiscovery.osRouteTcpOpen}, matches=${latest.kylinDiscovery.matchCount})`
       : "- Latest 137 discovery: none",
     "",
     "## Reports",
@@ -286,7 +301,7 @@ function renderMarkdown(index) {
   ];
 
   for (const report of index.reports) {
-    const route = report.kylinDiscovery.available ? report.kylinDiscovery.classification || "discovery" : "";
+    const route = routeSummary(report.kylinDiscovery);
     lines.push(
       `| ${markdownCell(report.startedAt)} | ${report.ok ? "PASS" : "FAIL"} | ${report.legacyEvidence ? "LEGACY" : report.evidenceOk ? "OK" : "BAD"} | ${markdownCell(route)} | ${report.stepCount} | ${report.retriedSteps.length} | ${report.artifacts.verifiedFiles}/${report.artifacts.fileCount} | ${markdownCell(report.reportPath)} |`
     );
