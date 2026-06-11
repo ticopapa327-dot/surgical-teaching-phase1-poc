@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const {
   compareKeys,
+  describeKnownHostConnectivity,
   fingerprintKey,
   hostsFromCidr,
   parseKeyscanText,
@@ -42,6 +43,32 @@ assert.deepEqual(comparison.matchedKeyTypes, ["ssh-ed25519"]);
 
 const miss = compareKeys(parseKeyscanText("192.168.1.99 ssh-rsa " + keyB), defaultPortKeys);
 assert.equal(miss.ok, false);
+
+const splitRoute = describeKnownHostConnectivity({
+  host: "192.168.1.137",
+  port: 22,
+  localAddress: "192.168.1.118",
+  boundResult: { ok: false, error: "timeout" },
+  osRouteResult: { ok: true, error: "" },
+  keyscan: { status: 1, error: "", stderr: "Connection closed", keys: [] }
+});
+assert.equal(splitRoute.classification, "os-route-open-lan-bound-closed");
+assert.equal(splitRoute.bound.tcpOpen, false);
+assert.equal(splitRoute.osRoute.tcpOpen, true);
+assert.equal(splitRoute.keyscan.keyCount, 0);
+assert.ok(splitRoute.warnings.some((warning) => warning.includes("another interface")));
+assert.ok(splitRoute.warnings.some((warning) => warning.includes("did not return SSH host keys")));
+
+const lanRoute = describeKnownHostConnectivity({
+  host: "192.168.1.137",
+  port: 22,
+  localAddress: "192.168.1.118",
+  boundResult: { ok: true, error: "" },
+  osRouteResult: { ok: true, error: "" },
+  keyscan: { status: 0, error: "", stderr: "", keys: keyscan }
+});
+assert.equal(lanRoute.classification, "lan-bound-open");
+assert.deepEqual(lanRoute.warnings, []);
 
 assert.deepEqual(hostsFromCidr("192.168.1.0/30"), ["192.168.1.1", "192.168.1.2"]);
 assert.throws(() => hostsFromCidr("192.168.1.0/16"), /\/24 to \/30/);

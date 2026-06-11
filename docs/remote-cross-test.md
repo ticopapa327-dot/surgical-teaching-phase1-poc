@@ -106,6 +106,8 @@ Remove-Item Env:UST_KYLIN_SUDO_PASSWORD -ErrorAction SilentlyContinue
 
 当 137 探针失败，或严格验证缺少 137 临时授权时，交叉验证会自动追加 `137-discovery` 诊断步骤，扫描 118 有线网段并与 137 历史 host key 比对。该步骤不能替代 137 验证通过，只用于把“是否换 IP、是否仍在同一有线 LAN”写入可审计报告。
 
+`137-discovery` 报告中的 `knownHostConnectivity` 会同时记录绑定 118 有线地址的 TCP 结果和系统默认路由的 TCP 结果。如果出现 `os-route-open-lan-bound-closed`，说明系统默认路由可能经由 VPN 或虚拟网卡触达了某个 `192.168.1.137`，但这不能证明 137 麒麟终端在当前有线 LAN 上可用于手术室-示教室交叉验证。
+
 117/137 媒体 smoke 会额外写入 `*-progress.json`，记录配置、浏览器连接、呼叫、订阅、发布、快照保存、诊断分析和 health 读取等阶段。若 Windows 进程出现 `3221226505` 一类异常退出，交叉验证报告会同时记录 `exitCodeHex` 和已知 Windows 状态名，用于判断是业务断言失败还是底层进程 fast-fail。
 
 多轮验证后可生成本地索引，快速查看最近报告、失败步骤、重试次数和证据完整性：

@@ -192,6 +192,73 @@ function compareKeys(candidateKeys, expectedKeys) {
   };
 }
 
+function connectivityAttempt(result, extra = {}) {
+  return {
+    ...extra,
+    tcpOpen: Boolean(result?.ok),
+    error: result?.error || ""
+  };
+}
+
+function describeKnownHostConnectivity({ host, port, localAddress, boundResult, osRouteResult, keyscan }) {
+  const bound = localAddress
+    ? connectivityAttempt(boundResult, { localAddress })
+    : null;
+  const osRoute = connectivityAttempt(osRouteResult);
+  const warnings = [];
+  let classification = "closed";
+  if (bound?.tcpOpen) {
+    classification = "lan-bound-open";
+  } else if (localAddress && osRoute.tcpOpen) {
+    classification = "os-route-open-lan-bound-closed";
+    warnings.push(
+      `known host ${host}:${port} is reachable only without LAN bind; OS route may be using another interface`
+    );
+  } else if (osRoute.tcpOpen) {
+    classification = "os-route-open";
+  }
+  if (localAddress && !bound?.tcpOpen) {
+    warnings.push(`known host ${host}:${port} is not reachable from local address ${localAddress}`);
+  }
+  if (osRoute.tcpOpen && keyscan && keyscan.keys.length === 0) {
+    warnings.push(`known host ${host}:${port} accepts TCP but did not return SSH host keys`);
+  }
+  return {
+    host,
+    port,
+    classification,
+    bound,
+    osRoute,
+    keyscan: keyscan
+      ? {
+          status: keyscan.status,
+          error: keyscan.error || keyscan.stderr,
+          keyCount: keyscan.keys.length,
+          fingerprints: keyscan.keys.map((key) => ({ keyType: key.keyType, fingerprint: key.fingerprint }))
+        }
+      : null,
+    warnings
+  };
+}
+
+async function probeKnownHostConnectivity(options) {
+  const [boundResult, osRouteResult] = await Promise.all([
+    options.localAddress
+      ? probeTcp(options.knownHost, options.port, options.localAddress, options.timeoutMs)
+      : Promise.resolve(null),
+    probeTcp(options.knownHost, options.port, "", options.timeoutMs)
+  ]);
+  const keyscan = scanKeys(options.knownHost, options);
+  return describeKnownHostConnectivity({
+    host: options.knownHost,
+    port: options.port,
+    localAddress: options.localAddress,
+    boundResult,
+    osRouteResult,
+    keyscan
+  });
+}
+
 function nowStamp() {
   return new Date().toISOString().replace(/[:.]/g, "-");
 }
@@ -262,7 +329,10 @@ async function buildDiscovery(options) {
     : "";
   const expectedKeys = parseKnownHostsText(knownHostsText, options.knownHost, options.port);
   const hosts = hostsFromCidr(options.subnet);
-  const tcpCandidates = await scanTcp(hosts, options);
+  const [knownHostConnectivity, tcpCandidates] = await Promise.all([
+    probeKnownHostConnectivity(options),
+    scanTcp(hosts, options)
+  ]);
   const candidates = tcpCandidates.map((host) => {
     const keyscan = scanKeys(host, options);
     const comparison = compareKeys(keyscan.keys, expectedKeys);
@@ -299,8 +369,12 @@ async function buildDiscovery(options) {
     tcpCandidateCount: tcpCandidates.length,
     matchCount: matches.length,
     recommendedTargets: matches.map((candidate) => candidate.suggestedSshTarget),
+    knownHostConnectivity,
     candidates,
-    warnings: expectedKeys.length ? [] : [`no known host keys found for ${options.knownHost}`]
+    warnings: [
+      ...(expectedKeys.length ? [] : [`no known host keys found for ${options.knownHost}`]),
+      ...knownHostConnectivity.warnings
+    ]
   };
 }
 
@@ -328,6 +402,7 @@ if (require.main === module) {
 
 module.exports = {
   compareKeys,
+  describeKnownHostConnectivity,
   fingerprintKey,
   hostsFromCidr,
   parseKeyscanText,
