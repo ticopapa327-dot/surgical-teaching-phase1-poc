@@ -9,6 +9,9 @@ const DEFAULTS = {
   signalingUrl: "ws://192.168.1.118:7077/signal",
   signalingHealthUrl: "http://127.0.0.1:7077/health",
   remoteDebugUrl: "http://192.168.1.117:9222",
+  requestMode: "view",
+  expectAudio: "false",
+  allowNonPublisherRuntimeWarn: "false",
   channels: "ch1,ch2,ch3,ch4",
   artifactDir: path.join("test-results", "remote-windows-media-smoke")
 };
@@ -38,6 +41,15 @@ function env(name, fallback) {
   return String(process.env[name] || fallback).trim();
 }
 
+function envFlag(name, fallback) {
+  const value = env(name, fallback).toLowerCase();
+  return value === "1" || value === "true" || value === "yes" || value === "on";
+}
+
+function normalizeRequestMode(value) {
+  return value === "interactive" ? "interactive" : "view";
+}
+
 function normalizeChannels(value) {
   const channels = String(value || "")
     .split(",")
@@ -61,6 +73,9 @@ function printConfig(config) {
   console.log(`  signalingUrl:       ${config.signalingUrl}`);
   console.log(`  signalingHealthUrl: ${config.signalingHealthUrl}`);
   console.log(`  remoteDebugUrl:     ${config.remoteDebugUrl}`);
+  console.log(`  requestMode:        ${config.requestMode}`);
+  console.log(`  expectAudio:        ${config.expectAudio}`);
+  console.log(`  allowNonPublisherRuntimeWarn: ${config.allowNonPublisherRuntimeWarn}`);
   console.log(`  channels:           ${config.channels.join(",")}`);
   console.log(`  artifactDir:        ${config.artifactDir}`);
 }
@@ -92,8 +107,8 @@ async function registerEndpoint(page, config, endpoint) {
   await expect(page.getByText(`${LABELS.registered} ${endpoint.name}`)).toBeVisible({ timeout: 10000 });
 }
 
-async function startViewOnlyCall(localPage, remotePage, teachingEndpoint) {
-  await localPage.getByLabel(LABELS.requestMode).selectOption("view");
+async function startCall(localPage, remotePage, teachingEndpoint, requestMode) {
+  await localPage.getByLabel(LABELS.requestMode).selectOption(requestMode);
   await expect(localPage.locator(`option[value="${teachingEndpoint.id}"]`)).toHaveCount(1, { timeout: 10000 });
   await localPage.getByLabel(LABELS.target).selectOption(teachingEndpoint.id);
   await localPage.getByRole("button", { name: LABELS.callSelected }).click();
@@ -144,6 +159,19 @@ async function expectLiveRemoteVideoCount(page, count) {
   );
 }
 
+async function expectRemoteAudioTrackCount(page, count) {
+  await page.waitForFunction(
+    (expectedCount) => {
+      const streams = [...document.querySelectorAll(".remote-audio-sinks audio")]
+        .map((audio) => audio.srcObject)
+        .filter((stream) => stream?.getAudioTracks?.().some((track) => track.readyState === "live"));
+      return streams.length >= expectedCount;
+    },
+    count,
+    { timeout: 20000 }
+  );
+}
+
 async function copyDiagnosticSnapshot(page) {
   await page.getByRole("button", { name: LABELS.copyDiagnosticSnapshot }).click();
   const textarea = page.locator(".diagnostic-snapshot");
@@ -167,13 +195,14 @@ function saveJson(filePath, value) {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
-function runDiagnosticAnalyzer(localSnapshotPath, remoteSnapshotPath) {
+function runDiagnosticAnalyzer(localSnapshotPath, remoteSnapshotPath, options = {}) {
   const result = spawnSync(
     process.execPath,
     [
       "scripts/analyze-diagnostics.cjs",
       "--fail-on-warn",
       "--allow-receive-only-runtime-warn",
+      ...(options.allowNonPublisherRuntimeWarn ? ["--allow-non-publisher-runtime-warn"] : []),
       localSnapshotPath,
       remoteSnapshotPath
     ],
@@ -196,6 +225,12 @@ async function main() {
     signalingUrl: env("UST_SIGNALING_URL", DEFAULTS.signalingUrl),
     signalingHealthUrl: env("UST_SIGNALING_HEALTH_URL", DEFAULTS.signalingHealthUrl),
     remoteDebugUrl: env("UST_REMOTE_DEBUG_URL", DEFAULTS.remoteDebugUrl),
+    requestMode: normalizeRequestMode(env("UST_REMOTE_REQUEST_MODE", DEFAULTS.requestMode)),
+    expectAudio: envFlag("UST_REMOTE_EXPECT_AUDIO", DEFAULTS.expectAudio),
+    allowNonPublisherRuntimeWarn: envFlag(
+      "UST_REMOTE_ALLOW_NON_PUBLISHER_RUNTIME_WARN",
+      DEFAULTS.allowNonPublisherRuntimeWarn
+    ),
     channels: normalizeChannels(env("UST_REMOTE_MEDIA_CHANNELS", DEFAULTS.channels)),
     artifactDir: env("UST_REMOTE_ARTIFACT_DIR", DEFAULTS.artifactDir)
   };
@@ -237,7 +272,7 @@ async function main() {
 
     await registerEndpoint(remotePage, config, teachingRoom);
     await registerEndpoint(localPage, config, operatingRoom);
-    await startViewOnlyCall(localPage, remotePage, teachingRoom);
+    await startCall(localPage, remotePage, teachingRoom, config.requestMode);
     await assertSessionVisible(localPage, remotePage, operatingRoom, teachingRoom);
     await configureRemoteSubscriptions(remotePage, config.channels);
 
@@ -245,18 +280,28 @@ async function main() {
     await expectLiveRemoteVideoCount(remotePage, config.channels.length);
     await expect(remotePage.locator(".remote-health-live")).toHaveCount(config.channels.length, { timeout: 20000 });
     await expect(remotePage.locator(".diagnostic-state-live")).toHaveCount(config.channels.length, { timeout: 20000 });
+    if (config.expectAudio) {
+      await expectRemoteAudioTrackCount(remotePage, 1);
+      await expect(remotePage.locator(".peer-diagnostic-list")).toContainText("远端1", { timeout: 20000 });
+      await expect(localPage.locator(".peer-diagnostic-list")).toContainText("本地1", { timeout: 20000 });
+    }
 
     const remoteSnapshot = await waitForDiagnosticSnapshot(
       remotePage,
       (snapshot) =>
         snapshot?.media?.diagnostics?.filter((item) => item.state === "live").length >= config.channels.length &&
-        snapshot?.media?.statsMetrics?.some(metricHasVideo),
+        snapshot?.media?.statsMetrics?.some(metricHasVideo) &&
+        (!config.expectAudio ||
+          snapshot?.media?.peerConnections?.some((peer) => Number(peer.remoteAudioTrackCount) >= 1)),
       "remote"
     );
     const localSnapshot = await waitForDiagnosticSnapshot(
       localPage,
       (snapshot) =>
-        snapshot?.media?.peerConnections?.length >= 1 && snapshot?.media?.statsMetrics?.some(metricHasVideo),
+        snapshot?.media?.peerConnections?.length >= 1 &&
+        snapshot?.media?.statsMetrics?.some(metricHasVideo) &&
+        (!config.expectAudio ||
+          snapshot?.media?.peerConnections?.some((peer) => Number(peer.localAudioTrackCount) >= 1)),
       "local"
     );
 
@@ -264,7 +309,9 @@ async function main() {
     const remoteSnapshotPath = path.join(config.artifactDir, `${suffix}-teach-117.json`);
     saveJson(localSnapshotPath, localSnapshot);
     saveJson(remoteSnapshotPath, remoteSnapshot);
-    runDiagnosticAnalyzer(localSnapshotPath, remoteSnapshotPath);
+    runDiagnosticAnalyzer(localSnapshotPath, remoteSnapshotPath, {
+      allowNonPublisherRuntimeWarn: config.allowNonPublisherRuntimeWarn
+    });
 
     const health = await (await requireHttpOk(config.signalingHealthUrl, "Signaling health endpoint")).json();
     console.log(
@@ -273,6 +320,9 @@ async function main() {
           ok: true,
           operatingRoomId: operatingRoom.id,
           teachingRoomId: teachingRoom.id,
+          requestMode: config.requestMode,
+          expectAudio: config.expectAudio,
+          allowNonPublisherRuntimeWarn: config.allowNonPublisherRuntimeWarn,
           channels: config.channels,
           localSnapshotPath,
           remoteSnapshotPath,

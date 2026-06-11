@@ -605,6 +605,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   const [recordingFilter, setRecordingFilter] = useState("");
   const [isPermissionReady, setPermissionReady] = useState(false);
   const [recordingSessionId, setRecordingSessionId] = useState("");
+  const [, setRecordingVersion] = useState(0);
   const [previewVersion, setPreviewVersion] = useState(0);
   const [patientQuery, setPatientQuery] = useState("HIS-001");
   const [currentPatient, setCurrentPatient] = useState(null);
@@ -1084,6 +1085,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
           stopStream(recordStream);
           delete activeRecorders.current[channel.id];
           delete pendingWrites.current[channel.id];
+          setRecordingVersion((value) => value + 1);
           await refreshRecordings();
           setStatus(nextStatus);
         }
@@ -1095,6 +1097,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
         recordingId: created.id,
         startedAtMs: Date.now()
       };
+      setRecordingVersion((value) => value + 1);
       setStatus(`${channel.label} 正在录制。`);
     } catch (error) {
       stopStream(recordStream);

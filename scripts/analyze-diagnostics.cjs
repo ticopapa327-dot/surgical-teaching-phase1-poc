@@ -47,8 +47,22 @@ function isReceiveOnlyEndpoint(snapshot) {
   return snapshot?.endpoint?.role !== "operating-room" && snapshot?.session?.mode === "view";
 }
 
+function isNonPublisherReceiverEndpoint(snapshot) {
+  if (snapshot?.endpoint?.role === "operating-room") return false;
+  const media = snapshot?.media || {};
+  const diagnostics = Array.isArray(media.diagnostics) ? media.diagnostics : [];
+  const peers = Array.isArray(media.peerConnections) ? media.peerConnections : [];
+  return (
+    media.state === "receiving" ||
+    diagnostics.some((diagnostic) => diagnostic?.state === "live") ||
+    peers.some((peer) => Number(peer?.remoteAudioTrackCount) > 0 || Number(peer?.remoteVideoTrackCount) > 0)
+  );
+}
+
 function runtimeLevel(snapshot, options) {
-  return options.allowReceiveOnlyRuntimeWarn && isReceiveOnlyEndpoint(snapshot) ? "INFO" : "WARN";
+  if (options.allowReceiveOnlyRuntimeWarn && isReceiveOnlyEndpoint(snapshot)) return "INFO";
+  if (options.allowNonPublisherRuntimeWarn && isNonPublisherReceiverEndpoint(snapshot)) return "INFO";
+  return "WARN";
 }
 
 function warnRuntime(lines, label, snapshot, options = {}) {
@@ -171,10 +185,16 @@ function analyze(entries, options = {}) {
 function main(argv) {
   const failOnWarn = argv.includes("--fail-on-warn");
   const allowReceiveOnlyRuntimeWarn = argv.includes("--allow-receive-only-runtime-warn");
-  const filePaths = argv.filter((item) => item !== "--fail-on-warn" && item !== "--allow-receive-only-runtime-warn");
+  const allowNonPublisherRuntimeWarn = argv.includes("--allow-non-publisher-runtime-warn");
+  const filePaths = argv.filter(
+    (item) =>
+      item !== "--fail-on-warn" &&
+      item !== "--allow-receive-only-runtime-warn" &&
+      item !== "--allow-non-publisher-runtime-warn"
+  );
   if (!filePaths.length) {
     console.error(
-      "Usage: node scripts/analyze-diagnostics.cjs [--fail-on-warn] [--allow-receive-only-runtime-warn] <snapshot.json> [snapshot2.json ...]"
+      "Usage: node scripts/analyze-diagnostics.cjs [--fail-on-warn] [--allow-receive-only-runtime-warn] [--allow-non-publisher-runtime-warn] <snapshot.json> [snapshot2.json ...]"
     );
     process.exitCode = 1;
     return;
@@ -184,7 +204,7 @@ function main(argv) {
     label: fileLabel(filePath),
     snapshot: readSnapshot(filePath)
   }));
-  const lines = analyze(entries, { allowReceiveOnlyRuntimeWarn });
+  const lines = analyze(entries, { allowReceiveOnlyRuntimeWarn, allowNonPublisherRuntimeWarn });
   console.log(lines.join("\n"));
   if (failOnWarn && lines.some((line) => line.startsWith("WARN "))) {
     process.exitCode = 2;

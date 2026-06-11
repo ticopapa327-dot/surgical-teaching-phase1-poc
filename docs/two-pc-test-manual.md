@@ -241,6 +241,31 @@ npm run test:remote:diagnostics -- --no-fail-on-warn .\pc-a-snapshot.json .\pc-b
 
 该测试仍属于 PoC 媒体闭环验证，默认使用浏览器模拟源；真实 USB 采集卡、真实声卡、双向交互音频、长稳运行和资源占用仍需后续专项验证。
 
+### 4. 使用 117 Windows 远程浏览器做交互音频接收 smoke
+
+117 通过 `http://192.168.1.118:5173` 打开页面时属于非安全 HTTP 来源，浏览器可能禁止 117 本地麦克风采集。因此该自动化只验证“118 手术室端音频能送达 117 示教室端”，不把 117 本地发言作为通过标准。
+
+执行：
+
+```powershell
+npm run test:remote:audio:tunnel
+```
+
+测试会自动建立交互模式会话，117 订阅通道，118 发布订阅媒体并附带本地音频轨道，随后验证：
+
+1. 117 至少收到 1 路远端音频轨道。
+2. 117 连接诊断出现远端音频轨道。
+3. 118 连接诊断出现本地音频轨道。
+4. 双端诊断快照保存在 `test-results\remote-windows-audio-smoke\`。
+
+音频 smoke 通过后，可生成本轮音频诊断报告：
+
+```powershell
+npm run test:remote:audio:diagnostics
+```
+
+如果输出中出现 117 `insecure context` 或 `getUserMedia unavailable` 的 `INFO`，表示 117 局域网 HTTP 页面不能采集本地麦克风；这是当前测试拓扑的预期边界。视频链路、PeerConnection、媒体房间、音频轨道、音频缓冲或 RTT 出现 `WARN` 才应判定为本轮失败。
+
 如果需要分开启动，也可以在 PC-A 执行：
 
 ```powershell

@@ -8,6 +8,7 @@ const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ust-diagnostic-analyzer-")
 const okSnapshotPath = path.join(tmpDir, "ok-snapshot.json");
 const publisherSnapshotPath = path.join(tmpDir, "publisher-snapshot.json");
 const receiveOnlySnapshotPath = path.join(tmpDir, "receive-only-snapshot.json");
+const nonPublisherReceiverSnapshotPath = path.join(tmpDir, "non-publisher-receiver-snapshot.json");
 const warningSnapshotPath = path.join(tmpDir, "warning-snapshot.json");
 
 fs.writeFileSync(
@@ -234,6 +235,69 @@ fs.writeFileSync(
   })
 );
 
+fs.writeFileSync(
+  nonPublisherReceiverSnapshotPath,
+  JSON.stringify({
+    runtime: {
+      secureContext: false,
+      getUserMedia: false,
+      webRtc: true,
+      setSinkId: true
+    },
+    endpoint: {
+      role: "teaching-room"
+    },
+    session: {
+      id: "session-interactive",
+      mediaRoomId: "media-room-interactive",
+      mode: "interactive",
+      subscribedChannels: ["ch1"]
+    },
+    media: {
+      state: "receiving",
+      iceServerCount: 1,
+      diagnostics: [
+        {
+          channelId: "ch1",
+          state: "live"
+        }
+      ],
+      peerConnections: [
+        {
+          endpointId: "or-interactive",
+          state: "live",
+          connectionState: "connected",
+          iceConnectionState: "connected",
+          remoteAudioTrackCount: 1,
+          remoteVideoTrackCount: 1
+        }
+      ],
+      statsMetrics: [
+        {
+          endpointId: "or-interactive",
+          video: {
+            receiveBitrateBps: 640000,
+            packetsReceived: 300
+          },
+          audio: {
+            bufferMs: 40
+          },
+          network: {
+            rttMs: 10
+          }
+        }
+      ]
+    },
+    recentEvents: [
+      {
+        type: "peer.signal.forwarded",
+        sessionId: "session-interactive",
+        mediaRoomId: "media-room-interactive"
+      }
+    ]
+  })
+);
+
 const okResult = spawnSync(process.execPath, ["scripts/analyze-diagnostics.cjs", okSnapshotPath], {
   encoding: "utf8"
 });
@@ -263,6 +327,21 @@ const receiveOnlyResult = spawnSync(
 assert.equal(receiveOnlyResult.status, 0, receiveOnlyResult.stderr);
 assert.match(receiveOnlyResult.stdout, /INFO receive-only-snapshot\.json: insecure context/);
 assert.match(receiveOnlyResult.stdout, /INFO receive-only-snapshot\.json: getUserMedia unavailable/);
+
+const nonPublisherReceiverResult = spawnSync(
+  process.execPath,
+  [
+    "scripts/analyze-diagnostics.cjs",
+    "--fail-on-warn",
+    "--allow-non-publisher-runtime-warn",
+    nonPublisherReceiverSnapshotPath
+  ],
+  { encoding: "utf8" }
+);
+
+assert.equal(nonPublisherReceiverResult.status, 0, nonPublisherReceiverResult.stderr);
+assert.match(nonPublisherReceiverResult.stdout, /INFO non-publisher-receiver-snapshot\.json: insecure context/);
+assert.match(nonPublisherReceiverResult.stdout, /INFO non-publisher-receiver-snapshot\.json: getUserMedia unavailable/);
 
 const warningResult = spawnSync(
   process.execPath,

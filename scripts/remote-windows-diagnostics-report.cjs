@@ -18,6 +18,8 @@ function usage() {
     "Options:",
     "  --artifact-dir <dir>    Find the latest remote media snapshot pair in this directory",
     "  --output <csv>          Write CSV report to this path",
+    "  --allow-non-publisher-runtime-warn",
+    "                          Downgrade receiver-side insecure capture warnings to INFO",
     "  --no-fail-on-warn      Do not fail when the analyzer emits WARN lines",
     "  --help                 Show this help",
     "",
@@ -32,6 +34,7 @@ function parseArgs(argv) {
     artifactDir: env("UST_REMOTE_ARTIFACT_DIR", DEFAULTS.artifactDir),
     outputPath: env("UST_REMOTE_DIAGNOSTIC_CSV", ""),
     failOnWarn: true,
+    allowNonPublisherRuntimeWarn: false,
     snapshotPaths: []
   };
 
@@ -51,6 +54,8 @@ function parseArgs(argv) {
       options.outputPath = argv[index];
     } else if (item.startsWith("--output=")) {
       options.outputPath = item.slice("--output=".length);
+    } else if (item === "--allow-non-publisher-runtime-warn") {
+      options.allowNonPublisherRuntimeWarn = true;
     } else if (item === "--no-fail-on-warn") {
       options.failOnWarn = false;
     } else if (item.startsWith("-")) {
@@ -138,6 +143,7 @@ function runAnalyzer(snapshotPaths, options) {
   const args = [
     "scripts/analyze-diagnostics.cjs",
     "--allow-receive-only-runtime-warn",
+    ...(options.allowNonPublisherRuntimeWarn ? ["--allow-non-publisher-runtime-warn"] : []),
     ...(options.failOnWarn ? ["--fail-on-warn"] : []),
     ...snapshotPaths
   ];
@@ -173,6 +179,7 @@ function main(argv) {
         snapshotPaths,
         csvPath: outputPath,
         failOnWarn: options.failOnWarn,
+        allowNonPublisherRuntimeWarn: options.allowNonPublisherRuntimeWarn,
         analyzerLines
       },
       null,
