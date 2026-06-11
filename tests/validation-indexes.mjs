@@ -67,27 +67,81 @@ async function writeCrossReport(reportDir, id, { ok = true, withArtifact = true,
 
   if (withArtifact) {
     await mkdir(artifactDir, { recursive: true });
+    const files = [];
     const artifactJson = `${JSON.stringify({ id, kind: "snapshot" }, null, 2)}\n`;
     await writeFile(artifactPath, artifactJson, "utf8");
+    files.push({
+      sourcePath: "test-results/example/snapshot.json",
+      targetPath: artifactPath,
+      bytes: Buffer.byteLength(artifactJson),
+      sha256: sha256(artifactJson)
+    });
+
+    if (strict) {
+      const windowsProbePath = path.join(artifactDir, "remote-windows-probe", "windows-probe.json");
+      const kylinProbePath = path.join(artifactDir, "remote-kylin-probe", "kylin-probe.json");
+      const windowsProbeJson = `${JSON.stringify(
+        {
+          checks: {
+            remote: {
+              checks: {
+                resources: {
+                  capturedAt: "2026-06-11T00:00:01.000Z",
+                  memory: { freeGiB: 8 },
+                  processes: []
+                }
+              }
+            }
+          }
+        },
+        null,
+        2
+      )}\n`;
+      const kylinProbeJson = `${JSON.stringify(
+        {
+          checks: {
+            resources: {
+              capturedAt: "2026-06-11T00:00:01.000Z",
+              memory: { availableGiB: 8 },
+              processes: []
+            }
+          }
+        },
+        null,
+        2
+      )}\n`;
+      await mkdir(path.dirname(windowsProbePath), { recursive: true });
+      await mkdir(path.dirname(kylinProbePath), { recursive: true });
+      await writeFile(windowsProbePath, windowsProbeJson, "utf8");
+      await writeFile(kylinProbePath, kylinProbeJson, "utf8");
+      files.push(
+        {
+          sourcePath: "test-results/remote-windows-probe/windows-probe.json",
+          targetPath: windowsProbePath,
+          bytes: Buffer.byteLength(windowsProbeJson),
+          sha256: sha256(windowsProbeJson)
+        },
+        {
+          sourcePath: "test-results/remote-kylin-probe/kylin-probe.json",
+          targetPath: kylinProbePath,
+          bytes: Buffer.byteLength(kylinProbeJson),
+          sha256: sha256(kylinProbeJson)
+        }
+      );
+    }
+
     const manifest = {
       artifactsDir: artifactDir,
       createdAt: "2026-06-11T00:00:01.000Z",
       sourceMtimeNotBefore: "2026-06-11T00:00:00.000Z",
-      fileCount: 1,
-      files: [
-        {
-          sourcePath: "test-results/example/snapshot.json",
-          targetPath: artifactPath,
-          bytes: Buffer.byteLength(artifactJson),
-          sha256: sha256(artifactJson)
-        }
-      ]
+      fileCount: files.length,
+      files
     };
     await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
     artifactArchive = {
       artifactsDir: artifactDir,
       manifestPath: manifestPath,
-      fileCount: 1
+      fileCount: files.length
     };
   }
 
@@ -252,6 +306,7 @@ try {
   assert.equal(strictStatusJson.latestStrictLedger.latestCycle.crossStatus, "passed");
   assert.equal(strictStatusJson.latestStrictReport.strictCoverage.ok, true);
   assert.equal(strictStatusJson.latestStrictReport.localResources.ok, true);
+  assert.equal(strictStatusJson.latestStrictReport.remoteResources.ok, true);
   assert.equal(strictStatusJson.latestStrictReport.steps.ok, true);
   assert.equal(strictStatusJson.latestStrictReport.artifacts.ok, true);
 

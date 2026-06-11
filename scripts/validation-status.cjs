@@ -182,6 +182,58 @@ function inspectArtifactArchive(report, reportPath) {
   };
 }
 
+function resolveArtifactManifestPath(report, reportPath) {
+  const manifestPath = report?.artifactArchive?.manifestPath || "";
+  if (!manifestPath) return "";
+  const directManifestPath = path.resolve(manifestPath);
+  if (fs.existsSync(directManifestPath)) return directManifestPath;
+  const relativeManifestPath = path.resolve(path.dirname(reportPath), "..", "..", manifestPath);
+  return fs.existsSync(relativeManifestPath) ? relativeManifestPath : "";
+}
+
+function readJsonArtifact(manifest, sourceDirName) {
+  const file = (manifest.files || [])
+    .filter((item) => String(item.sourcePath || item.targetPath || "").includes(sourceDirName))
+    .filter((item) => String(item.targetPath || "").toLowerCase().endsWith(".json"))
+    .sort((a, b) => String(b.targetPath || "").localeCompare(String(a.targetPath || "")))[0];
+  if (!file?.targetPath) return null;
+  const targetPath = path.resolve(file.targetPath);
+  if (!fs.existsSync(targetPath)) return null;
+  try {
+    return readJson(targetPath);
+  } catch {
+    return null;
+  }
+}
+
+function remoteResourcesStatus(report, reportPath) {
+  const manifestPath = resolveArtifactManifestPath(report, reportPath);
+  if (!manifestPath) {
+    return {
+      ok: false,
+      windows117Ok: false,
+      kylin137Ok: false,
+      error: "artifact manifest missing"
+    };
+  }
+  const manifest = readJson(manifestPath);
+  const windowsProbe = readJsonArtifact(manifest, "remote-windows-probe");
+  const kylinProbe = readJsonArtifact(manifest, "remote-kylin-probe");
+  const windowsResources = windowsProbe?.checks?.remote?.checks?.resources || null;
+  const kylinResources = kylinProbe?.checks?.resources || null;
+  const windows117Ok = Boolean(windowsResources?.capturedAt && windowsResources?.memory && windowsResources?.processes);
+  const kylin137Ok = Boolean(kylinResources?.capturedAt && kylinResources?.memory && kylinResources?.processes);
+  return {
+    ok: windows117Ok && kylin137Ok,
+    windows117Ok,
+    kylin137Ok,
+    windowsCapturedAt: windowsResources?.capturedAt || "",
+    kylinCapturedAt: kylinResources?.capturedAt || "",
+    windowsMemoryFreeGiB: windowsResources?.memory?.freeGiB ?? null,
+    kylinMemoryAvailableGiB: kylinResources?.memory?.availableGiB ?? null
+  };
+}
+
 function collectLedgers(reportDir, expectedCrossScript) {
   if (!fs.existsSync(reportDir) || !fs.statSync(reportDir).isDirectory()) return [];
   return fs
@@ -295,6 +347,7 @@ function buildStatus(options) {
   const steps = report ? stepStatus(report) : null;
   const coverage = report ? strictCoverage(report) : null;
   const localResources = report ? localResourcesStatus(report) : null;
+  const remoteResources = report ? remoteResourcesStatus(report, reportPath) : null;
   const age = ageStatus(latest.ledger.finishedAt, options.maxAgeMinutes);
   const healthAfter = report?.healthAfter || {};
 
@@ -316,6 +369,7 @@ function buildStatus(options) {
   if (steps && !steps.ok) failures.push("strict cross report did not pass every required step");
   if (coverage && !coverage.ok) failures.push("strict cross report did not require full remote coverage");
   if (localResources && !localResources.ok) failures.push("strict cross report local resources missing");
+  if (remoteResources && !remoteResources.ok) failures.push("strict cross report remote resources missing");
   if (!age.ok) failures.push(age.error);
 
   return {
@@ -360,6 +414,7 @@ function buildStatus(options) {
           artifacts,
           strictCoverage: coverage,
           localResources,
+          remoteResources,
           steps
         }
       : null
