@@ -171,6 +171,7 @@ function collectReports(reportDir) {
     .readdirSync(reportDir, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
     .filter((entry) => !entry.name.startsWith("continuous-"))
+    .filter((entry) => entry.name !== "status.json")
     .filter((entry) => !entry.name.endsWith("artifact-manifest.json"))
     .map((entry) => path.join(reportDir, entry.name))
     .map(summarizeReport)

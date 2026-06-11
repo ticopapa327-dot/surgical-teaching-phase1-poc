@@ -7,6 +7,21 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const requiredStrictStepIds = [
+  "117-probe",
+  "117-signal",
+  "117-media",
+  "117-audio",
+  "117-media-diagnostics",
+  "117-audio-diagnostics",
+  "137-probe",
+  "137-signal",
+  "137-media",
+  "137-audio",
+  "137-media-diagnostics",
+  "137-audio-diagnostics",
+  "117-137-conference"
+];
 
 function sha256(textOrBuffer) {
   return crypto.createHash("sha256").update(textOrBuffer).digest("hex");
@@ -18,7 +33,7 @@ async function writeJsonWithChecksum(filePath, value) {
   await writeFile(filePath.replace(/\.json$/i, ".sha256"), `${sha256(json)}  ${path.basename(filePath)}\n`, "utf8");
 }
 
-async function writeCrossReport(reportDir, id, { ok = true, withArtifact = true } = {}) {
+async function writeCrossReport(reportDir, id, { ok = true, withArtifact = true, strict = false, steps = null } = {}) {
   const artifactDir = path.join(reportDir, `${id}-artifacts`);
   const artifactPath = path.join(artifactDir, "snapshot.json");
   const manifestPath = path.join(artifactDir, "artifact-manifest.json");
@@ -54,6 +69,16 @@ async function writeCrossReport(reportDir, id, { ok = true, withArtifact = true 
     ok,
     startedAt: `2026-06-11T00:00:${id.endsWith("fail") ? "02" : "01"}.000Z`,
     finishedAt: `2026-06-11T00:00:${id.endsWith("fail") ? "03" : "02"}.000Z`,
+    config: strict
+      ? {
+          strictRemoteCoverage: true,
+          requireWindows117: true,
+          requireKylin137: true,
+          requireConference: true,
+          skipWindows117: false,
+          skipKylin137: false
+        }
+      : {},
     healthClean: true,
     healthAfter: {
       ok: true,
@@ -62,21 +87,35 @@ async function writeCrossReport(reportDir, id, { ok = true, withArtifact = true 
       pendingCalls: 0
     },
     artifactArchive,
-    steps: [
-      {
-        id: ok ? "117-signal" : "137-signal",
-        status: ok ? "passed" : "failed",
-        attemptCount: 1,
-        maxAttempts: 1
-      }
-    ]
+    steps:
+      steps ||
+      (strict
+        ? requiredStrictStepIds.map((stepId) => ({
+            id: stepId,
+            status: ok ? "passed" : "failed",
+            attemptCount: 1,
+            maxAttempts: 1
+          }))
+        : [
+            {
+              id: ok ? "117-signal" : "137-signal",
+              status: ok ? "passed" : "failed",
+              attemptCount: 1,
+              maxAttempts: 1
+            }
+          ])
   };
   const reportPath = path.join(reportDir, `${id}.json`);
   await writeJsonWithChecksum(reportPath, report);
   return { report, reportPath };
 }
 
-async function writeContinuousLedger(reportDir, id, crossReportPath, { ok = true } = {}) {
+async function writeContinuousLedger(
+  reportDir,
+  id,
+  crossReportPath,
+  { ok = true, crossScript = "test:remote:cross:strict" } = {}
+) {
   const ledger = {
     id,
     ok,
@@ -85,6 +124,7 @@ async function writeContinuousLedger(reportDir, id, crossReportPath, { ok = true
     stopReason: "iteration limit reached",
     config: {
       reportDir,
+      crossScript,
       iterations: 1,
       durationMs: 0,
       intervalSeconds: 1,
@@ -143,6 +183,7 @@ try {
   await mkdir(reportDir, { recursive: true });
   const pass = await writeCrossReport(reportDir, "2026-06-11T00-00-01-000Z");
   await writeCrossReport(reportDir, "2026-06-11T00-00-02-000Z-fail", { ok: false });
+  await writeFile(path.join(reportDir, "status.json"), `${JSON.stringify({ ok: true }, null, 2)}\n`, "utf8");
   await writeContinuousLedger(reportDir, "continuous-2026-06-11T00-01-00-000Z", pass.reportPath);
 
   const crossIndex = await runNode("scripts/validation-report-index.cjs", {
@@ -166,6 +207,65 @@ try {
   assert.equal(continuousIndexJson.evidenceFailures, 0);
   assert.equal(continuousIndexJson.ledgers[0].cycles[0].crossReport.reportOk, true);
   assert.equal(continuousIndexJson.ledgers[0].cycles[0].crossReport.artifacts.ok, true);
+
+  const strictStatusDir = path.join(tempDir, "status-strict-ok");
+  await mkdir(strictStatusDir, { recursive: true });
+  const strictPass = await writeCrossReport(strictStatusDir, "2026-06-11T00-06-00-000Z", { strict: true });
+  await writeContinuousLedger(strictStatusDir, "continuous-2026-06-11T00-06-30-000Z", strictPass.reportPath);
+  const strictStatus = await runNode("scripts/validation-status.cjs", {
+    UST_VALIDATION_REPORT_DIR: strictStatusDir,
+    UST_VALIDATION_STATUS_MAX_AGE_MINUTES: "0"
+  });
+  assert.equal(strictStatus.code, 0, `${strictStatus.stdout}\n${strictStatus.stderr}`);
+  const strictStatusJson = JSON.parse(strictStatus.stdout);
+  assert.equal(strictStatusJson.ok, true);
+  assert.equal(strictStatusJson.latestStrictLedger.latestCycle.crossStatus, "passed");
+  assert.equal(strictStatusJson.latestStrictReport.strictCoverage.ok, true);
+  assert.equal(strictStatusJson.latestStrictReport.steps.ok, true);
+  assert.equal(strictStatusJson.latestStrictReport.artifacts.ok, true);
+
+  const noStrictLedgerDir = path.join(tempDir, "status-no-strict-ledger");
+  await mkdir(noStrictLedgerDir, { recursive: true });
+  const noStrictReport = await writeCrossReport(noStrictLedgerDir, "2026-06-11T00-07-00-000Z", { strict: true });
+  await writeContinuousLedger(
+    noStrictLedgerDir,
+    "continuous-2026-06-11T00-07-30-000Z",
+    noStrictReport.reportPath,
+    { crossScript: "test:remote:cross" }
+  );
+  const noStrictStatus = await runNode("scripts/validation-status.cjs", {
+    UST_VALIDATION_REPORT_DIR: noStrictLedgerDir,
+    UST_VALIDATION_STATUS_MAX_AGE_MINUTES: "0"
+  });
+  assert.equal(noStrictStatus.code, 1);
+  const noStrictStatusJson = JSON.parse(noStrictStatus.stdout);
+  assert.equal(noStrictStatusJson.failures.includes("no strict continuous ledger found"), true);
+
+  const missingStrictStepDir = path.join(tempDir, "status-missing-strict-step");
+  await mkdir(missingStrictStepDir, { recursive: true });
+  const missingStepReport = await writeCrossReport(missingStrictStepDir, "2026-06-11T00-08-00-000Z", {
+    strict: true,
+    steps: requiredStrictStepIds
+      .filter((stepId) => stepId !== "117-137-conference")
+      .map((stepId) => ({
+        id: stepId,
+        status: "passed",
+        attemptCount: 1,
+        maxAttempts: 1
+      }))
+  });
+  await writeContinuousLedger(
+    missingStrictStepDir,
+    "continuous-2026-06-11T00-08-30-000Z",
+    missingStepReport.reportPath
+  );
+  const missingStepStatus = await runNode("scripts/validation-status.cjs", {
+    UST_VALIDATION_REPORT_DIR: missingStrictStepDir,
+    UST_VALIDATION_STATUS_MAX_AGE_MINUTES: "0"
+  });
+  assert.equal(missingStepStatus.code, 1);
+  const missingStepStatusJson = JSON.parse(missingStepStatus.stdout);
+  assert.equal(missingStepStatusJson.latestStrictReport.steps.missing.includes("117-137-conference"), true);
 
   const tamperedDir = path.join(tempDir, "reports-tampered");
   await mkdir(tamperedDir, { recursive: true });
