@@ -71,6 +71,7 @@
 31. 信令 WebSocket 增加单消息 payload 上限，默认 1 MiB，并在 `/health` 暴露 `maxPayloadBytes`，契约测试覆盖超大消息关闭。
 32. 会话状态区显示 `mediaRoomId`，便于现场确认当前信令会话对应的媒体房间。
 33. `peer.signal` 透传消息、事件日志、诊断快照和协议文档均纳入 `mediaRoomId`；服务端会拒绝与会话不匹配的媒体房间 ID，降低后续 SFU 房间映射或 stale session 排障风险。
+34. 诊断快照 CSV 汇总脚本增加 `mediaRoomId` 输出列，便于把双端快照和同一媒体房间直接对应。
 
 | 提交 | 内容 |
 |---|---|
@@ -107,6 +108,7 @@
 | `d5fee5e` | 限制信令 WebSocket 消息大小 |
 | `80475f8` | 会话状态显示媒体房间 ID |
 | `f2193ea` | peer.signal 透传媒体房间 ID |
+| `170b4d4` | 诊断 CSV 增加媒体房间 ID |
 
 ## 六、仍需真实环境复测的边界
 
