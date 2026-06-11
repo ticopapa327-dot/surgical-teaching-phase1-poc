@@ -126,36 +126,48 @@ npm run dev:lan
 
 ### 2. 使用 117 Windows 远程浏览器做自动化 smoke
 
-当 PC-B 为已开放 SSH 和 Edge/Chrome DevTools 的 Windows 终端时，可在 PC-A 直接执行远程信令 smoke。该测试由 PC-A 启动本地 Playwright 页面作为手术室端，并通过 PC-B 的 `9222` DevTools 端口控制远程 Edge 页面作为示教室端；PC-B 不需要安装 Node.js 或本仓库。
+当 PC-B 为已开放 SSH 的 Windows 终端时，可在 PC-A 直接执行远程信令 smoke。推荐使用 SSH 隧道模式：PC-A 通过 SSH 在 PC-B 启动独立 Edge DevTools 实例，并把 PC-A 本机 `127.0.0.1:9224` 转发到 PC-B 本机 `127.0.0.1:9222`；PC-B 不需要安装 Node.js 或本仓库，也不依赖 PC-B 对外直连 `9222` 端口。
 
 前置条件：
 
 1. PC-A 已执行 `npm run dev:lan`，并保持 `5173` 和 `7077` 服务运行。
-2. PC-B 的浏览器远程调试端口可访问，例如 `http://192.168.1.117:9222/json/version` 返回 `200`。
+2. PC-A 可通过 SSH 登录 PC-B，例如 `ssh HUAWEI@192.168.1.117`。
 3. PC-B 可访问 PC-A 的 `http://192.168.1.118:5173/` 和 `http://192.168.1.118:7077/health`。
+4. PC-A 本机 `9224` 端口未被其他程序占用。
 
-默认拓扑为 PC-A `192.168.1.118`、PC-B `192.168.1.117`。执行：
+默认拓扑为 PC-A `192.168.1.118`、PC-B `192.168.1.117`。推荐执行一键隧道 smoke：
 
 ```powershell
+npm run test:remote:signal:tunnel
+```
+
+该命令会自动启动 117 Edge DevTools、建立 PC-A 本机隧道、把 `UST_REMOTE_DEBUG_URL` 设置为 `http://127.0.0.1:9224`，测试结束后关闭隧道和远端测试 Edge。
+
+如需先单独检查隧道，也可以执行：
+
+```powershell
+npm run remote:devtools:start
+npm run remote:devtools:check
+$env:UST_REMOTE_DEBUG_URL = "http://127.0.0.1:9224"
 npm run test:remote:signal
+npm run remote:devtools:stop
 ```
 
-或使用等价别名：
+默认环境变量如下，现场 IP、SSH 用户或端口变化时可覆盖：
 
 ```powershell
-npm run test:remote:windows
-```
-
-默认环境变量如下，现场 IP 或端口变化时可覆盖：
-
-```powershell
+$env:UST_REMOTE_SSH_TARGET = "HUAWEI@192.168.1.117"
+$env:UST_REMOTE_DEVTOOLS_LOCAL_PORT = "9224"
+$env:UST_REMOTE_DEVTOOLS_REMOTE_PORT = "9222"
 $env:UST_LOCAL_WEB_URL = "http://127.0.0.1:5173/"
 $env:UST_REMOTE_WEB_URL = "http://192.168.1.118:5173/"
 $env:UST_SIGNALING_URL = "ws://192.168.1.118:7077/signal"
 $env:UST_SIGNALING_HEALTH_URL = "http://127.0.0.1:7077/health"
-$env:UST_REMOTE_DEBUG_URL = "http://192.168.1.117:9222"
-npm run test:remote:signal
+$env:UST_REMOTE_DEBUG_URL = "http://127.0.0.1:9224"
+npm run test:remote:signal:tunnel
 ```
+
+如果现场已经把 PC-B 的 DevTools 端口稳定开放到局域网，也可以继续使用直连模式：设置 `$env:UST_REMOTE_DEBUG_URL = "http://192.168.1.117:9222"` 后执行 `npm run test:remote:signal`。直连模式依赖 PC-B 防火墙、浏览器启动参数和端口代理，稳定性低于 SSH 隧道模式。
 
 通过标准：
 
@@ -164,7 +176,7 @@ npm run test:remote:signal
 3. 测试过程中服务端健康状态出现 `sessions=1`，`endpoints` 至少为 `2`；如果 PC-B 已有手动测试页面在线，`endpoints` 可能大于 `2`。
 4. 测试结束后远程测试页面会关闭，会话应自动清理。
 
-该测试依赖局域网、PC-B 在线状态和浏览器调试端口，不纳入 GitHub Actions CI；它是本地双机开发门禁，用于证明 118 能自动控制 117 完成信令呼叫闭环。
+该测试依赖局域网、PC-B 在线状态和 SSH，不纳入 GitHub Actions CI；它是本地双机开发门禁，用于证明 118 能自动控制 117 完成信令呼叫闭环。
 
 ### 3. 使用 117 Windows 远程浏览器做媒体 smoke
 
@@ -173,22 +185,24 @@ npm run test:remote:signal
 默认验证 4 路订阅：
 
 ```powershell
-npm run test:remote:media
+npm run test:remote:media:tunnel
 ```
 
 如需先做单路快速定位，可覆盖订阅通道：
 
 ```powershell
 $env:UST_REMOTE_MEDIA_CHANNELS = "ch1"
-npm run test:remote:media
+npm run test:remote:media:tunnel
 ```
 
 也可以指定 2 路或 3 路：
 
 ```powershell
 $env:UST_REMOTE_MEDIA_CHANNELS = "ch1,ch2"
-npm run test:remote:media
+npm run test:remote:media:tunnel
 ```
+
+如已通过 `npm run remote:devtools:start` 手动保持隧道打开，也可以设置 `$env:UST_REMOTE_DEBUG_URL = "http://127.0.0.1:9224"` 后执行原始命令 `npm run test:remote:media`。
 
 测试输出中会包含：
 

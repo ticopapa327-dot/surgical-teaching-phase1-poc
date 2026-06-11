@@ -166,6 +166,7 @@ npm run test:signaling
 也可执行 `npm run diagnostics:analyze -- snapshot-a.json snapshot-b.json`，自动提示媒体房间不一致、非安全上下文、缺少 `peer.signal`、远端画面等待、PeerConnection 异常、无视频码率、音频缓冲过高或 RTT 过高等常见问题。
 如需作为自动化门禁，可执行 `npm run diagnostics:analyze -- --fail-on-warn snapshot-a.json snapshot-b.json`，出现 `WARN` 时返回非零退出码。
 执行 117 Windows 远程媒体 smoke 后，可运行 `npm run test:remote:diagnostics`，默认读取最近一组 `test-results\remote-windows-media-smoke\*-or-118.json` 与 `*-teach-117.json`，生成 `*-diagnostics.csv` 并再次执行带门禁的诊断分析。
+117 远程浏览器控制推荐使用 SSH 隧道命令：`npm run test:remote:signal:tunnel` 和 `npm run test:remote:media:tunnel` 会自动启动 PC-B Edge DevTools、转发到 PC-A 本机 `127.0.0.1:9224`，并在测试后清理隧道。
 
 ## 文档
 
