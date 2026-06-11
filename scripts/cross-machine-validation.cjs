@@ -73,6 +73,8 @@ function walkFiles(dir) {
 
 function archiveDiagnosticArtifacts(reportDir, reportId, startedAt) {
   const sources = [
+    path.join("test-results", "remote-windows-probe"),
+    path.join("test-results", "remote-kylin-probe"),
     path.join("test-results", "remote-windows-media-smoke"),
     path.join("test-results", "remote-windows-audio-smoke"),
     path.join("test-results", "remote-kylin-media-smoke"),
@@ -152,7 +154,7 @@ function renderSummary(report, paths) {
     "## Notes",
     "",
     "- Full stdout/stderr is retained in the JSON report for local audit.",
-    "- Diagnostic snapshots and CSV reports are copied into the artifacts directory before this report is finalized.",
+    "- Probe snapshots, diagnostic snapshots and CSV reports are copied into the artifacts directory before this report is finalized.",
     "- The validation-results directory is intentionally ignored by Git because it may contain machine-specific runtime evidence.",
     "- Test snapshots under test-results remain volatile and may be cleaned by Playwright."
   );

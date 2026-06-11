@@ -1,9 +1,12 @@
+const fs = require("node:fs");
+const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 
 const DEFAULTS = {
   sshTarget: "xyzn@192.168.1.137",
   webUrl: "http://192.168.1.118:5173/",
   signalingHealthUrl: "http://192.168.1.118:7077/health",
+  artifactDir: path.join("test-results", "remote-kylin-probe"),
   sshTimeoutMs: "15000"
 };
 
@@ -50,11 +53,24 @@ function commandValue(result) {
   return result.stdout || result.stderr || result.error || "";
 }
 
+function nowStamp() {
+  return new Date().toISOString().replace(/[:.]/g, "-");
+}
+
+function writeProbeArtifact(payload, artifactDir) {
+  fs.mkdirSync(artifactDir, { recursive: true });
+  const artifactPath = path.join(artifactDir, `${nowStamp()}.json`);
+  payload.artifactPath = artifactPath;
+  fs.writeFileSync(artifactPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  return artifactPath;
+}
+
 function configFromEnv() {
   return {
     sshTarget: env("UST_KYLIN_SSH_TARGET", DEFAULTS.sshTarget),
     webUrl: env("UST_KYLIN_WEB_URL", DEFAULTS.webUrl),
     signalingHealthUrl: env("UST_KYLIN_SIGNALING_HEALTH_URL", DEFAULTS.signalingHealthUrl),
+    artifactDir: env("UST_KYLIN_PROBE_ARTIFACT_DIR", DEFAULTS.artifactDir),
     sshTimeoutMs: env("UST_KYLIN_SSH_TIMEOUT_MS", DEFAULTS.sshTimeoutMs)
   };
 }
@@ -68,6 +84,7 @@ function usage() {
     "  UST_KYLIN_SSH_TARGET             Default: xyzn@192.168.1.137",
     "  UST_KYLIN_WEB_URL                Default: http://192.168.1.118:5173/",
     "  UST_KYLIN_SIGNALING_HEALTH_URL   Default: http://192.168.1.118:7077/health",
+    "  UST_KYLIN_PROBE_ARTIFACT_DIR     Default: test-results/remote-kylin-probe",
     "  UST_KYLIN_SSH_TIMEOUT_MS         Default: 15000"
   ].join("\n");
 }
@@ -128,39 +145,35 @@ function main(argv) {
     Boolean(healthJson?.ok) &&
     Boolean(browserPath.stdout);
 
-  console.log(
-    JSON.stringify(
-      {
-        ok,
-        config,
-        checks: {
-          ssh: {
-            ok: ssh.ok,
-            value: commandValue(ssh)
-          },
-          web: {
-            ok: Number.isInteger(statusCode) && statusCode >= 200 && statusCode < 400,
-            statusCode,
-            stderr: webStatus.stderr
-          },
-          signalingHealth: {
-            ok: Boolean(healthJson?.ok),
-            value: healthJson || commandValue(signalingHealth)
-          },
-          browser: {
-            ok: Boolean(browserPath.stdout),
-            path: browserPath.stdout,
-            version: commandValue(browserVersion)
-          },
-          runtime: runtime.stdout,
-          desktop: desktop.stdout
-        },
-        warnings
+  const payload = {
+    ok,
+    config,
+    checks: {
+      ssh: {
+        ok: ssh.ok,
+        value: commandValue(ssh)
       },
-      null,
-      2
-    )
-  );
+      web: {
+        ok: Number.isInteger(statusCode) && statusCode >= 200 && statusCode < 400,
+        statusCode,
+        stderr: webStatus.stderr
+      },
+      signalingHealth: {
+        ok: Boolean(healthJson?.ok),
+        value: healthJson || commandValue(signalingHealth)
+      },
+      browser: {
+        ok: Boolean(browserPath.stdout),
+        path: browserPath.stdout,
+        version: commandValue(browserVersion)
+      },
+      runtime: runtime.stdout,
+      desktop: desktop.stdout
+    },
+    warnings
+  };
+  writeProbeArtifact(payload, config.artifactDir);
+  console.log(JSON.stringify(payload, null, 2));
 
   if (!ok) process.exitCode = 1;
 }

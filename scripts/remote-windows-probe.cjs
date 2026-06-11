@@ -1,3 +1,5 @@
+const fs = require("node:fs");
+const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 
 const DEFAULTS = {
@@ -5,6 +7,7 @@ const DEFAULTS = {
   webUrl: "http://192.168.1.118:5173/",
   signalingHealthUrl: "http://192.168.1.118:7077/health",
   devToolsUrl: "http://127.0.0.1:9222/json/version",
+  artifactDir: path.join("test-results", "remote-windows-probe"),
   sshTimeoutMs: "20000"
 };
 
@@ -28,12 +31,25 @@ function parseJsonFromOutput(text) {
   }
 }
 
+function nowStamp() {
+  return new Date().toISOString().replace(/[:.]/g, "-");
+}
+
+function writeProbeArtifact(payload, artifactDir) {
+  fs.mkdirSync(artifactDir, { recursive: true });
+  const artifactPath = path.join(artifactDir, `${nowStamp()}.json`);
+  payload.artifactPath = artifactPath;
+  fs.writeFileSync(artifactPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  return artifactPath;
+}
+
 function configFromEnv() {
   return {
     sshTarget: env("UST_REMOTE_SSH_TARGET", DEFAULTS.sshTarget),
     webUrl: env("UST_REMOTE_WINDOWS_WEB_URL", DEFAULTS.webUrl),
     signalingHealthUrl: env("UST_REMOTE_WINDOWS_SIGNALING_HEALTH_URL", DEFAULTS.signalingHealthUrl),
     devToolsUrl: env("UST_REMOTE_WINDOWS_DEVTOOLS_URL", DEFAULTS.devToolsUrl),
+    artifactDir: env("UST_REMOTE_WINDOWS_PROBE_ARTIFACT_DIR", DEFAULTS.artifactDir),
     sshTimeoutMs: env("UST_REMOTE_WINDOWS_SSH_TIMEOUT_MS", DEFAULTS.sshTimeoutMs)
   };
 }
@@ -48,6 +64,7 @@ function usage() {
     "  UST_REMOTE_WINDOWS_WEB_URL                Default: http://192.168.1.118:5173/",
     "  UST_REMOTE_WINDOWS_SIGNALING_HEALTH_URL   Default: http://192.168.1.118:7077/health",
     "  UST_REMOTE_WINDOWS_DEVTOOLS_URL           Default: http://127.0.0.1:9222/json/version",
+    "  UST_REMOTE_WINDOWS_PROBE_ARTIFACT_DIR     Default: test-results/remote-windows-probe",
     "  UST_REMOTE_WINDOWS_SSH_TIMEOUT_MS         Default: 20000"
   ].join("\n");
 }
@@ -221,30 +238,26 @@ function main(argv) {
   if (!remote?.checks?.devTools?.ok) warnings.push("devtools_not_running_before_probe");
 
   const ok = ssh.ok && Boolean(remote?.ok);
-  console.log(
-    JSON.stringify(
-      {
-        ok,
-        config,
-        checks: {
-          ssh: {
-            ok: ssh.ok,
-            status: ssh.status,
-            stderr: ssh.stderr,
-            error: ssh.error
-          },
-          remote: remote || {
-            ok: false,
-            parseError: "remote probe did not return JSON",
-            stdout: ssh.stdout
-          }
-        },
-        warnings
+  const payload = {
+    ok,
+    config,
+    checks: {
+      ssh: {
+        ok: ssh.ok,
+        status: ssh.status,
+        stderr: ssh.stderr,
+        error: ssh.error
       },
-      null,
-      2
-    )
-  );
+      remote: remote || {
+        ok: false,
+        parseError: "remote probe did not return JSON",
+        stdout: ssh.stdout
+      }
+    },
+    warnings
+  };
+  writeProbeArtifact(payload, config.artifactDir);
+  console.log(JSON.stringify(payload, null, 2));
 
   if (!ok) process.exitCode = 1;
 }
