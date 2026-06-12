@@ -9,8 +9,10 @@ const DEFAULTS = {
   signalingUrl: "ws://192.168.1.118:7077/signal",
   signalingHealthUrl: "http://127.0.0.1:7077/health",
   remoteDebugUrl: "http://192.168.1.117:9222",
+  caller: "local",
   requestMode: "view",
   expectAudio: "false",
+  expectUplinkAudio: "false",
   allowNonPublisherRuntimeWarn: "false",
   channels: "ch1,ch2,ch3,ch4",
   artifactDir: path.join("test-results", "remote-windows-media-smoke"),
@@ -56,6 +58,10 @@ function normalizeRequestMode(value) {
   return value === "interactive" ? "interactive" : "view";
 }
 
+function normalizeCaller(value) {
+  return value === "remote" ? "remote" : "local";
+}
+
 function normalizeChannels(value) {
   const channels = String(value || "")
     .split(",")
@@ -72,6 +78,10 @@ function metricHasVideo(metric) {
   );
 }
 
+function peerHasAudio(snapshot, field) {
+  return snapshot?.media?.peerConnections?.some((peer) => Number(peer?.[field]) >= 1);
+}
+
 function printConfig(config) {
   console.log("Remote Windows media smoke configuration");
   console.log(`  localWebUrl:        ${config.localWebUrl}`);
@@ -79,8 +89,10 @@ function printConfig(config) {
   console.log(`  signalingUrl:       ${config.signalingUrl}`);
   console.log(`  signalingHealthUrl: ${config.signalingHealthUrl}`);
   console.log(`  remoteDebugUrl:     ${config.remoteDebugUrl}`);
+  console.log(`  caller:             ${config.caller}`);
   console.log(`  requestMode:        ${config.requestMode}`);
   console.log(`  expectAudio:        ${config.expectAudio}`);
+  console.log(`  expectUplinkAudio:  ${config.expectUplinkAudio}`);
   console.log(`  allowNonPublisherRuntimeWarn: ${config.allowNonPublisherRuntimeWarn}`);
   console.log(`  channels:           ${config.channels.join(",")}`);
   console.log(`  artifactDir:        ${config.artifactDir}`);
@@ -276,8 +288,10 @@ async function main() {
     signalingUrl: env("UST_SIGNALING_URL", DEFAULTS.signalingUrl),
     signalingHealthUrl: env("UST_SIGNALING_HEALTH_URL", DEFAULTS.signalingHealthUrl),
     remoteDebugUrl: env("UST_REMOTE_DEBUG_URL", DEFAULTS.remoteDebugUrl),
+    caller: normalizeCaller(env("UST_REMOTE_CALLER", DEFAULTS.caller)),
     requestMode: normalizeRequestMode(env("UST_REMOTE_REQUEST_MODE", DEFAULTS.requestMode)),
     expectAudio: envFlag("UST_REMOTE_EXPECT_AUDIO", DEFAULTS.expectAudio),
+    expectUplinkAudio: envFlag("UST_REMOTE_EXPECT_UPLINK_AUDIO", DEFAULTS.expectUplinkAudio),
     allowNonPublisherRuntimeWarn: envFlag(
       "UST_REMOTE_ALLOW_NON_PUBLISHER_RUNTIME_WARN",
       DEFAULTS.allowNonPublisherRuntimeWarn
@@ -319,8 +333,10 @@ async function main() {
   };
   const progressPath = path.join(config.artifactDir, `${suffix}-progress.json`);
   progress = createProgressRecorder(progressPath, {
+    caller: config.caller,
     requestMode: config.requestMode,
     expectAudio: config.expectAudio,
+    expectUplinkAudio: config.expectUplinkAudio,
     channels: config.channels,
     remoteDebugUrl: config.remoteDebugUrl,
     signalingUrl: config.signalingUrl
@@ -351,8 +367,12 @@ async function main() {
     progress.mark("register-endpoints");
     await registerEndpoint(remotePage, config, teachingRoom);
     await registerEndpoint(localPage, config, operatingRoom);
-    progress.mark("start-call");
-    await startCall(localPage, remotePage, teachingRoom, config.requestMode);
+    progress.mark("start-call", { caller: config.caller });
+    if (config.caller === "remote") {
+      await startCall(remotePage, localPage, operatingRoom, config.requestMode);
+    } else {
+      await startCall(localPage, remotePage, teachingRoom, config.requestMode);
+    }
     await assertSessionVisible(localPage, remotePage, operatingRoom, teachingRoom);
     progress.mark("configure-subscriptions");
     await configureRemoteSubscriptions(remotePage, config.channels);
@@ -368,13 +388,17 @@ async function main() {
       await expect(localPage.locator(".peer-diagnostic-list")).toContainText("本地1", { timeout: 20000 });
     }
 
+    if (config.expectUplinkAudio) {
+      await expectRemoteAudioTrackCount(localPage, 1);
+    }
+
     const remoteSnapshot = await waitForDiagnosticSnapshot(
       remotePage,
       (snapshot) =>
         snapshot?.media?.diagnostics?.filter((item) => item.state === "live").length >= config.channels.length &&
         snapshot?.media?.statsMetrics?.some(metricHasVideo) &&
-        (!config.expectAudio ||
-          snapshot?.media?.peerConnections?.some((peer) => Number(peer.remoteAudioTrackCount) >= 1)),
+        (!config.expectAudio || peerHasAudio(snapshot, "remoteAudioTrackCount")) &&
+        (!config.expectUplinkAudio || peerHasAudio(snapshot, "localAudioTrackCount")),
       "remote"
     );
     progress.mark("remote-snapshot-ready", {
@@ -386,8 +410,8 @@ async function main() {
       (snapshot) =>
         snapshot?.media?.peerConnections?.length >= 1 &&
         snapshot?.media?.statsMetrics?.some(metricHasVideo) &&
-        (!config.expectAudio ||
-          snapshot?.media?.peerConnections?.some((peer) => Number(peer.localAudioTrackCount) >= 1)),
+        (!config.expectAudio || peerHasAudio(snapshot, "localAudioTrackCount")) &&
+        (!config.expectUplinkAudio || peerHasAudio(snapshot, "remoteAudioTrackCount")),
       "local"
     );
     progress.mark("local-snapshot-ready", {
@@ -418,8 +442,10 @@ async function main() {
           ok: true,
           operatingRoomId: operatingRoom.id,
           teachingRoomId: teachingRoom.id,
+          caller: config.caller,
           requestMode: config.requestMode,
           expectAudio: config.expectAudio,
+          expectUplinkAudio: config.expectUplinkAudio,
           allowNonPublisherRuntimeWarn: config.allowNonPublisherRuntimeWarn,
           channels: config.channels,
           localSnapshotPath,

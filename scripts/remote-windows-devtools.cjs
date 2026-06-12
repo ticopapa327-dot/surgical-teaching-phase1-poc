@@ -9,17 +9,33 @@ const DEFAULTS = {
   localHost: "127.0.0.1",
   localPort: "9224",
   statePath: path.join("test-results", "remote-windows-devtools", "state.json"),
-  remoteUserDataTag: "ust-edge-remote-debug-ssh"
+  remoteUserDataTag: "ust-edge-remote-debug-ssh",
+  secureOrigins: "http://192.168.1.118:5173",
+  fakeUiForMediaStream: "true",
+  fakeDeviceForMediaStream: "true",
+  headless: "true"
 };
 
 function env(name, fallback) {
   return String(process.env[name] || fallback).trim();
 }
 
+function envFlag(name, fallback) {
+  const value = env(name, fallback).toLowerCase();
+  return value === "1" || value === "true" || value === "yes" || value === "on";
+}
+
+function envList(name, fallback) {
+  return env(name, fallback)
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function configFromEnv() {
   const localHost = env("UST_REMOTE_DEVTOOLS_LOCAL_HOST", DEFAULTS.localHost);
   const localPort = env("UST_REMOTE_DEVTOOLS_LOCAL_PORT", DEFAULTS.localPort);
-  return {
+  const config = {
     sshTarget: env("UST_REMOTE_SSH_TARGET", DEFAULTS.sshTarget),
     remoteHost: env("UST_REMOTE_DEVTOOLS_REMOTE_HOST", DEFAULTS.remoteHost),
     remotePort: env("UST_REMOTE_DEVTOOLS_REMOTE_PORT", DEFAULTS.remotePort),
@@ -27,8 +43,17 @@ function configFromEnv() {
     localPort,
     localDebugUrl: env("UST_REMOTE_DEBUG_URL", `http://${localHost}:${localPort}`),
     statePath: env("UST_REMOTE_DEVTOOLS_STATE", DEFAULTS.statePath),
-    remoteUserDataTag: env("UST_REMOTE_DEVTOOLS_USER_DATA_TAG", DEFAULTS.remoteUserDataTag)
+    remoteUserDataTag: env("UST_REMOTE_DEVTOOLS_USER_DATA_TAG", DEFAULTS.remoteUserDataTag),
+    secureOrigins: envList("UST_REMOTE_DEVTOOLS_SECURE_ORIGINS", DEFAULTS.secureOrigins),
+    fakeUiForMediaStream: envFlag("UST_REMOTE_DEVTOOLS_FAKE_UI_FOR_MEDIA_STREAM", DEFAULTS.fakeUiForMediaStream),
+    fakeDeviceForMediaStream: envFlag(
+      "UST_REMOTE_DEVTOOLS_FAKE_DEVICE_FOR_MEDIA_STREAM",
+      DEFAULTS.fakeDeviceForMediaStream
+    ),
+    headless: envFlag("UST_REMOTE_DEVTOOLS_HEADLESS", DEFAULTS.headless)
   };
+  config.browserArgsFingerprint = browserArgs(config).join("\n");
+  return config;
 }
 
 function usage() {
@@ -44,7 +69,11 @@ function usage() {
     "  UST_REMOTE_DEVTOOLS_LOCAL_PORT     Default: 9224",
     "  UST_REMOTE_DEVTOOLS_REMOTE_PORT    Default: 9222",
     "  UST_REMOTE_DEBUG_URL               Default: http://127.0.0.1:9224",
-    "  UST_REMOTE_DEVTOOLS_STATE          Default: test-results/remote-windows-devtools/state.json"
+    "  UST_REMOTE_DEVTOOLS_STATE          Default: test-results/remote-windows-devtools/state.json",
+    "  UST_REMOTE_DEVTOOLS_SECURE_ORIGINS Default: http://192.168.1.118:5173",
+    "  UST_REMOTE_DEVTOOLS_FAKE_UI_FOR_MEDIA_STREAM     Default: true",
+    "  UST_REMOTE_DEVTOOLS_FAKE_DEVICE_FOR_MEDIA_STREAM Default: true",
+    "  UST_REMOTE_DEVTOOLS_HEADLESS       Default: true"
   ].join("\n");
 }
 
@@ -119,7 +148,37 @@ function encodePowerShell(script) {
   return Buffer.from(script, "utf16le").toString("base64");
 }
 
+function powerShellSingleQuoted(value) {
+  return `'${String(value).replace(/'/g, "''")}'`;
+}
+
+function browserArgs(config) {
+  const args = [
+    `--remote-debugging-port=${config.remotePort}`,
+    `--remote-debugging-address=${config.remoteHost}`,
+    "--remote-allow-origins=*",
+    "--user-data-dir=$userDataDir",
+    "--no-first-run",
+    "--no-default-browser-check"
+  ];
+  if (config.headless) args.push("--headless=new");
+  if (config.secureOrigins.length) {
+    args.push(`--unsafely-treat-insecure-origin-as-secure=${config.secureOrigins.join(",")}`);
+  }
+  if (config.fakeUiForMediaStream) args.push("--use-fake-ui-for-media-stream");
+  if (config.fakeDeviceForMediaStream) args.push("--use-fake-device-for-media-stream");
+  args.push("about:blank");
+  return args;
+}
+
+function powerShellArgumentList(config) {
+  return browserArgs(config)
+    .map((arg) => (arg === "--user-data-dir=$userDataDir" ? '"--user-data-dir=$userDataDir"' : powerShellSingleQuoted(arg)))
+    .join(",\n  ");
+}
+
 function remoteEdgeScript(config) {
+  const argumentList = powerShellArgumentList(config);
   return `
 $ErrorActionPreference = "Stop"
 $paths = @(
@@ -139,14 +198,7 @@ Get-CimInstance Win32_Process |
   } |
   ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 Start-Process -FilePath $edge -ArgumentList @(
-  "--remote-debugging-port=${config.remotePort}",
-  "--remote-debugging-address=${config.remoteHost}",
-  "--remote-allow-origins=*",
-  "--user-data-dir=$userDataDir",
-  "--no-first-run",
-  "--no-default-browser-check",
-  "--headless=new",
-  "about:blank"
+  ${argumentList}
 ) -WindowStyle Hidden
 $deadline = (Get-Date).AddSeconds(20)
 do {
@@ -249,7 +301,12 @@ async function start(config) {
     remotePort: config.remotePort,
     localHost: config.localHost,
     localPort: config.localPort,
-    remoteUserDataTag: config.remoteUserDataTag
+    remoteUserDataTag: config.remoteUserDataTag,
+    secureOrigins: config.secureOrigins,
+    fakeUiForMediaStream: config.fakeUiForMediaStream,
+    fakeDeviceForMediaStream: config.fakeDeviceForMediaStream,
+    headless: config.headless,
+    browserArgsFingerprint: config.browserArgsFingerprint
   });
 
   const ready = await waitForReady(config);
