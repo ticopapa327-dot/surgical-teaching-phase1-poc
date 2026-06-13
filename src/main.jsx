@@ -2881,6 +2881,16 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
     audioOutputDeviceId ? `回放 ${audioOutputLabel(audioOutputDeviceId)}` : "系统回放"
   ].join(" / ");
 
+  function audioTrackDiagnosticSummary(track) {
+    return {
+      id: track.id || "",
+      label: track.label || "",
+      enabled: Boolean(track.enabled),
+      muted: Boolean(track.muted),
+      readyState: track.readyState || ""
+    };
+  }
+
   function buildDiagnosticSnapshot(options = {}) {
     const snapshotEvents = options.signalingEvents || signalingEvents;
     return {
@@ -2963,7 +2973,8 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
         state: audioCall.state,
         label: audioCall.label,
         includeInRecording: includeAudio,
-        diagnostics: audioDiagnostics
+        diagnostics: audioDiagnostics,
+        localTracks: (interactionAudioStream.current?.getAudioTracks?.() || []).map(audioTrackDiagnosticSummary)
       },
       devices: {
         permissionRequested: isPermissionReady,

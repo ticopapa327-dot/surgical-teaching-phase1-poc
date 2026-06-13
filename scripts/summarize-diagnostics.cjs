@@ -27,6 +27,7 @@ const HEADERS = [
   "signalingState",
   "localAudioTrackCount",
   "remoteAudioTrackCount",
+  "localAudioTrackLabels",
   "sendBitrateBps",
   "receiveBitrateBps",
   "packetsSent",
@@ -57,6 +58,13 @@ function channelCounts(snapshot) {
   };
 }
 
+function localAudioTrackLabels(snapshot) {
+  return (Array.isArray(snapshot?.audio?.localTracks) ? snapshot.audio.localTracks : [])
+    .map((track) => track?.label || track?.id || "")
+    .filter(Boolean)
+    .join(" | ");
+}
+
 function metricRows(filePath, snapshot) {
   const metrics = Array.isArray(snapshot?.media?.statsMetrics) ? snapshot.media.statsMetrics : [];
   const peers = Array.isArray(snapshot?.media?.peerConnections) ? snapshot.media.peerConnections : [];
@@ -76,6 +84,7 @@ function metricRows(filePath, snapshot) {
     sessionId: snapshot?.session?.id || "",
     mediaRoomId: snapshot?.session?.mediaRoomId || "",
     mediaState: snapshot?.media?.state || "",
+    localAudioTrackLabels: localAudioTrackLabels(snapshot),
     ...counts
   };
 
