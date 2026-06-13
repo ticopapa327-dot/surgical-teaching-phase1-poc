@@ -37,12 +37,11 @@ npm run test:remote:audio:diagnostics
 117 长时间稳定性验证仍使用 `scripts/remote-windows-media-smoke.cjs`，通过环境变量开启保持与周期采样；默认值 `UST_REMOTE_HOLD_SECONDS=0`，因此普通 smoke 行为不变。示例：
 
 ```powershell
-$env:UST_REMOTE_DEBUG_URL = "http://192.168.1.117:9222"
 $env:UST_REMOTE_HOLD_SECONDS = "1800"
 $env:UST_REMOTE_SAMPLE_INTERVAL_SECONDS = "30"
 $env:UST_REMOTE_ARTIFACT_DIR = "test-results/remote-windows-audio-stability-30m"
-npm run test:remote:media
-Remove-Item Env:UST_REMOTE_DEBUG_URL,Env:UST_REMOTE_HOLD_SECONDS,Env:UST_REMOTE_SAMPLE_INTERVAL_SECONDS,Env:UST_REMOTE_ARTIFACT_DIR -ErrorAction SilentlyContinue
+npm run remote:devtools:real-mic:run -- npm run test:remote:media
+Remove-Item Env:UST_REMOTE_HOLD_SECONDS,Env:UST_REMOTE_SAMPLE_INTERVAL_SECONDS,Env:UST_REMOTE_ARTIFACT_DIR -ErrorAction SilentlyContinue
 ```
 
 长稳采样通过标准：
@@ -53,7 +52,7 @@ Remove-Item Env:UST_REMOTE_DEBUG_URL,Env:UST_REMOTE_HOLD_SECONDS,Env:UST_REMOTE_
 4. 音频 buffer 不超过 `200 ms`，RTT 不超过 `150 ms`。
 5. 任一采样失败即退出并保留 `*-progress.json`、采样快照和诊断 CSV。
 
-如果为真实麦克风验证临时在 117 上开放 `0.0.0.0:9222` DevTools，测试结束后必须关闭对应 Edge 进程并删除临时计划任务；长期保留该端口不符合 public 仓库的测试安全边界。
+真实麦克风入口使用 117 已登录用户的交互式计划任务启动 Edge，不加 `--headless`，也不加 `--use-fake-device-for-media-stream`，因此能读取 117 物理麦克风；脚本只清理带 `ust-edge-real-mic-interactive` 标记的 Edge 和计划任务，不删除现场已有 portproxy 或防火墙规则。如果为真实麦克风验证临时开放 `9222` DevTools，测试结束后必须执行 `npm run remote:devtools:real-mic:stop`；长期保留 DevTools 活跃实例不符合 public 仓库的测试安全边界。
 
 ## 三、137 麒麟自动化验证
 
