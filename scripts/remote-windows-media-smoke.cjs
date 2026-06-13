@@ -14,6 +14,8 @@ const DEFAULTS = {
   expectAudio: "false",
   expectUplinkAudio: "false",
   allowNonPublisherRuntimeWarn: "false",
+  holdSeconds: "0",
+  sampleIntervalSeconds: "30",
   channels: "ch1,ch2,ch3,ch4",
   artifactDir: path.join("test-results", "remote-windows-media-smoke"),
   localEndpointIdPrefix: "or-media-118",
@@ -52,6 +54,15 @@ function env(name, fallback) {
 function envFlag(name, fallback) {
   const value = env(name, fallback).toLowerCase();
   return value === "1" || value === "true" || value === "yes" || value === "on";
+}
+
+function envNumber(name, fallback) {
+  const value = env(name, fallback);
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) {
+    throw new Error(`${name} must be a non-negative number`);
+  }
+  return number;
 }
 
 function normalizeRequestMode(value) {
@@ -94,6 +105,8 @@ function printConfig(config) {
   console.log(`  expectAudio:        ${config.expectAudio}`);
   console.log(`  expectUplinkAudio:  ${config.expectUplinkAudio}`);
   console.log(`  allowNonPublisherRuntimeWarn: ${config.allowNonPublisherRuntimeWarn}`);
+  console.log(`  holdSeconds:        ${config.holdSeconds}`);
+  console.log(`  sampleIntervalSeconds: ${config.sampleIntervalSeconds}`);
   console.log(`  channels:           ${config.channels.join(",")}`);
   console.log(`  artifactDir:        ${config.artifactDir}`);
   console.log(`  localEndpoint:      ${config.localEndpointIdPrefix} / ${config.localEndpointNamePrefix}`);
@@ -281,6 +294,138 @@ function runDiagnosticAnalyzer(localSnapshotPath, remoteSnapshotPath, options = 
   }
 }
 
+function summarizeStabilitySnapshot(snapshot) {
+  return {
+    generatedAt: snapshot?.generatedAt || "",
+    endpointId: snapshot?.endpoint?.id || "",
+    endpointRole: snapshot?.endpoint?.role || "",
+    mediaState: snapshot?.media?.state || "",
+    audioState: snapshot?.audio?.state || "",
+    localAudioTrackLabels: (Array.isArray(snapshot?.audio?.localTracks) ? snapshot.audio.localTracks : [])
+      .map((track) => track?.label || track?.id || "")
+      .filter(Boolean),
+    liveChannelCount: (snapshot?.media?.diagnostics || []).filter((item) => item?.state === "live").length,
+    peerConnections: (snapshot?.media?.peerConnections || []).map((peer) => ({
+      endpointId: peer.endpointId || "",
+      connectionState: peer.connectionState || "",
+      iceConnectionState: peer.iceConnectionState || "",
+      signalingState: peer.signalingState || "",
+      localAudioTrackCount: Number(peer.localAudioTrackCount) || 0,
+      remoteAudioTrackCount: Number(peer.remoteAudioTrackCount) || 0
+    })),
+    metrics: (snapshot?.media?.statsMetrics || []).map((metric) => ({
+      endpointId: metric.endpointId || "",
+      packetsReceived: metric.video?.packetsReceived ?? null,
+      packetsLost: metric.video?.packetsLost ?? null,
+      audioBufferMs: metric.audio?.bufferMs ?? null,
+      audioJitterMs: metric.audio?.jitterMs ?? null,
+      rttMs: metric.network?.rttMs ?? null,
+      iceRoute: metric.network?.iceRoute || ""
+    }))
+  };
+}
+
+function stabilityFailures(snapshot, label, config) {
+  const failures = [];
+  const peers = Array.isArray(snapshot?.media?.peerConnections) ? snapshot.media.peerConnections : [];
+  const metrics = Array.isArray(snapshot?.media?.statsMetrics) ? snapshot.media.statsMetrics : [];
+  if (!peers.length) failures.push(`${label}: no peer connection`);
+  for (const peer of peers) {
+    if (peer?.connectionState !== "connected") {
+      failures.push(`${label}: peer ${peer?.endpointId || "unknown"} connectionState=${peer?.connectionState || ""}`);
+    }
+    if (peer?.iceConnectionState !== "connected") {
+      failures.push(`${label}: peer ${peer?.endpointId || "unknown"} iceConnectionState=${peer?.iceConnectionState || ""}`);
+    }
+  }
+  if (config.expectAudio && !peerHasAudio(snapshot, "localAudioTrackCount")) {
+    failures.push(`${label}: missing local audio track`);
+  }
+  if ((config.expectAudio || config.expectUplinkAudio) && !peerHasAudio(snapshot, "remoteAudioTrackCount")) {
+    failures.push(`${label}: missing remote audio track`);
+  }
+  if (snapshot?.endpoint?.role !== "operating-room") {
+    const liveChannelCount = (snapshot?.media?.diagnostics || []).filter((item) => item?.state === "live").length;
+    if (liveChannelCount < config.channels.length) {
+      failures.push(`${label}: only ${liveChannelCount}/${config.channels.length} channels live`);
+    }
+  }
+  for (const metric of metrics) {
+    const bufferMs = metric?.audio?.bufferMs;
+    const rttMs = metric?.network?.rttMs;
+    if (Number.isFinite(bufferMs) && bufferMs > 200) {
+      failures.push(`${label}: audio buffer ${bufferMs} ms for ${metric.endpointId || "unknown"}`);
+    }
+    if (Number.isFinite(rttMs) && rttMs > 150) {
+      failures.push(`${label}: RTT ${rttMs} ms for ${metric.endpointId || "unknown"}`);
+    }
+  }
+  return failures;
+}
+
+async function collectStabilitySamples(localPage, remotePage, config, suffix, progress) {
+  if (config.holdSeconds <= 0) return [];
+  const startedAtMs = Date.now();
+  const deadlineMs = startedAtMs + config.holdSeconds * 1000;
+  const intervalMs = Math.max(1000, config.sampleIntervalSeconds * 1000);
+  const samples = [];
+  progress.mark("stability-start", {
+    holdSeconds: config.holdSeconds,
+    sampleIntervalSeconds: config.sampleIntervalSeconds
+  });
+
+  while (Date.now() < deadlineMs) {
+    const waitMs = Math.min(intervalMs, Math.max(0, deadlineMs - Date.now()));
+    if (waitMs > 0) await localPage.waitForTimeout(waitMs);
+    const index = samples.length + 1;
+    const localSnapshot = await copyDiagnosticSnapshot(localPage);
+    const remoteSnapshot = await copyDiagnosticSnapshot(remotePage);
+    const paddedIndex = String(index).padStart(3, "0");
+    const localSnapshotPath = path.join(
+      config.artifactDir,
+      `${suffix}-stability-${paddedIndex}-${config.localSnapshotSuffix}.json`
+    );
+    const remoteSnapshotPath = path.join(
+      config.artifactDir,
+      `${suffix}-stability-${paddedIndex}-${config.remoteSnapshotSuffix}.json`
+    );
+    saveJson(localSnapshotPath, localSnapshot);
+    saveJson(remoteSnapshotPath, remoteSnapshot);
+    const failures = [
+      ...stabilityFailures(localSnapshot, config.localSnapshotSuffix, config),
+      ...stabilityFailures(remoteSnapshot, config.remoteSnapshotSuffix, config)
+    ];
+    const sample = {
+      index,
+      elapsedMs: Date.now() - startedAtMs,
+      ok: failures.length === 0,
+      failures,
+      localSnapshotPath,
+      remoteSnapshotPath,
+      local: summarizeStabilitySnapshot(localSnapshot),
+      remote: summarizeStabilitySnapshot(remoteSnapshot)
+    };
+    samples.push(sample);
+    progress.mark("stability-sample", {
+      index: sample.index,
+      elapsedMs: sample.elapsedMs,
+      ok: sample.ok,
+      failures: sample.failures,
+      local: sample.local,
+      remote: sample.remote
+    });
+    if (failures.length) {
+      throw new Error(`stability sample ${index} failed: ${failures.join("; ")}`);
+    }
+  }
+
+  progress.mark("stability-finished", {
+    sampleCount: samples.length,
+    elapsedMs: Date.now() - startedAtMs
+  });
+  return samples;
+}
+
 async function main() {
   const config = {
     localWebUrl: env("UST_LOCAL_WEB_URL", DEFAULTS.localWebUrl),
@@ -296,6 +441,8 @@ async function main() {
       "UST_REMOTE_ALLOW_NON_PUBLISHER_RUNTIME_WARN",
       DEFAULTS.allowNonPublisherRuntimeWarn
     ),
+    holdSeconds: envNumber("UST_REMOTE_HOLD_SECONDS", DEFAULTS.holdSeconds),
+    sampleIntervalSeconds: envNumber("UST_REMOTE_SAMPLE_INTERVAL_SECONDS", DEFAULTS.sampleIntervalSeconds),
     channels: normalizeChannels(env("UST_REMOTE_MEDIA_CHANNELS", DEFAULTS.channels)),
     artifactDir: env("UST_REMOTE_ARTIFACT_DIR", DEFAULTS.artifactDir),
     localEndpointIdPrefix: env("UST_LOCAL_ENDPOINT_ID_PREFIX", DEFAULTS.localEndpointIdPrefix),
@@ -337,6 +484,8 @@ async function main() {
     requestMode: config.requestMode,
     expectAudio: config.expectAudio,
     expectUplinkAudio: config.expectUplinkAudio,
+    holdSeconds: config.holdSeconds,
+    sampleIntervalSeconds: config.sampleIntervalSeconds,
     channels: config.channels,
     remoteDebugUrl: config.remoteDebugUrl,
     signalingUrl: config.signalingUrl
@@ -428,6 +577,7 @@ async function main() {
       allowNonPublisherRuntimeWarn: config.allowNonPublisherRuntimeWarn
     });
     progress.mark("diagnostics-analyzed");
+    const stabilitySamples = await collectStabilitySamples(localPage, remotePage, config, suffix, progress);
 
     const health = await (await requireHttpOk(config.signalingHealthUrl, "Signaling health endpoint")).json();
     progress.mark("health-read", {
@@ -451,6 +601,7 @@ async function main() {
           localSnapshotPath,
           remoteSnapshotPath,
           progressPath,
+          stabilitySampleCount: stabilitySamples.length,
           endpoints: health.endpoints,
           sessions: health.sessions,
           pendingCalls: health.pendingCalls

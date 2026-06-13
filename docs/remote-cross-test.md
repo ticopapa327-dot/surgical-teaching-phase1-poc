@@ -34,6 +34,27 @@ npm run test:remote:audio:diagnostics
 
 `117-probe` 默认还会检查 `kylin137=192.168.1.137:22`，结果写入 `checks.remote.checks.lanTargets`。该检查只作为三机网络拓扑证据，不会让 117 探针本身失败；如果出现 `lan_target_kylin137_unreachable`，说明 117 到 137 的 LAN 路径不通；如果出现 `lan_target_kylin137_non_lan_route`，说明 117 可以经由非预期源地址或虚拟网卡触达该地址，不能当作有线 LAN 三机验证通过。
 
+117 长时间稳定性验证仍使用 `scripts/remote-windows-media-smoke.cjs`，通过环境变量开启保持与周期采样；默认值 `UST_REMOTE_HOLD_SECONDS=0`，因此普通 smoke 行为不变。示例：
+
+```powershell
+$env:UST_REMOTE_DEBUG_URL = "http://192.168.1.117:9222"
+$env:UST_REMOTE_HOLD_SECONDS = "1800"
+$env:UST_REMOTE_SAMPLE_INTERVAL_SECONDS = "30"
+$env:UST_REMOTE_ARTIFACT_DIR = "test-results/remote-windows-audio-stability-30m"
+npm run test:remote:media
+Remove-Item Env:UST_REMOTE_DEBUG_URL,Env:UST_REMOTE_HOLD_SECONDS,Env:UST_REMOTE_SAMPLE_INTERVAL_SECONDS,Env:UST_REMOTE_ARTIFACT_DIR -ErrorAction SilentlyContinue
+```
+
+长稳采样通过标准：
+
+1. 每个采样点两端 peer connection 与 ICE 状态均为 `connected`。
+2. 在要求音频时，本地与远端音频轨道均存在。
+3. 示教室端远端 live 视频数量不低于本轮订阅通道数。
+4. 音频 buffer 不超过 `200 ms`，RTT 不超过 `150 ms`。
+5. 任一采样失败即退出并保留 `*-progress.json`、采样快照和诊断 CSV。
+
+如果为真实麦克风验证临时在 117 上开放 `0.0.0.0:9222` DevTools，测试结束后必须关闭对应 Edge 进程并删除临时计划任务；长期保留该端口不符合 public 仓库的测试安全边界。
+
 ## 三、137 麒麟自动化验证
 
 137 当前 SSHD 配置禁止端口转发，因此不能采用 117 的 SSH 隧道模式。现阶段使用临时 LAN DevTools 模式：118 通过 SSH 在 137 启动 headless 麒麟浏览器，并临时放行 137 的 `9334` 端口，仅允许 118 访问。
