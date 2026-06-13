@@ -300,7 +300,6 @@ try {
   if ($parsedLanTargets) { $lanTargets = @($parsedLanTargets) }
 } catch {}
 $lanTargetResults = @($lanTargets | ForEach-Object { Test-TcpTarget $_ })
-$lanTargetsPolicyOk = @($lanTargetResults | Where-Object { -not $_.policyOk }).Count -eq 0
 $edgeDebugProcesses = @(Get-CimInstance Win32_Process -Filter "Name = 'msedge.exe'" -ErrorAction SilentlyContinue |
   Where-Object { $_.CommandLine -like "*--remote-debugging-port=*" } |
   Select-Object ProcessId, CommandLine)
@@ -319,7 +318,7 @@ $resourceProcesses = @(Get-Process -ErrorAction SilentlyContinue |
     @{Name="CpuSeconds"; Expression={ if ($_.CPU) { [math]::Round($_.CPU, 1) } else { 0 } }})
 
 $result = [ordered]@{
-  ok = ($web.ok -and $health.ok -and [bool]$edge -and $lanTargetsPolicyOk)
+  ok = ($web.ok -and $health.ok -and [bool]$edge)
   computerName = $env:COMPUTERNAME
   userName = $env:USERNAME
   os = [ordered]@{

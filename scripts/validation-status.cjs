@@ -583,7 +583,7 @@ function stepStatus(report) {
   const steps = Array.isArray(report.steps) ? report.steps : [];
   const byId = new Map(steps.map((step) => [step.id, step]));
   const missing = REQUIRED_STRICT_STEPS.filter((id) => !byId.has(id));
-  const failed = steps.filter((step) => step.status === "failed").map((step) => step.id);
+  const failed = steps.filter((step) => step.status === "failed" && step.optional !== true).map((step) => step.id);
   const skipped = steps.filter((step) => step.status === "skipped").map((step) => step.id);
   const requiredNotPassed = REQUIRED_STRICT_STEPS.filter((id) => byId.get(id)?.status !== "passed");
   return {

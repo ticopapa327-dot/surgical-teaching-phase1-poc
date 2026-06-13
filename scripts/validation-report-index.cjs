@@ -383,6 +383,24 @@ function routePlanSummary(plan) {
   return `${plan.classification || "plan"} manual=${plan.requiresManualAction}`;
 }
 
+function realMicStatus(report) {
+  const steps = Array.isArray(report.steps) ? report.steps : [];
+  const smoke = steps.find((step) => step.id === "117-real-mic");
+  const diagnostics = steps.find((step) => step.id === "117-real-mic-diagnostics");
+  return {
+    included: Boolean(smoke || diagnostics),
+    smokeStatus: smoke?.status || "",
+    diagnosticsStatus: diagnostics?.status || "",
+    ok: Boolean(smoke?.status === "passed" && (!diagnostics || diagnostics.status === "passed"))
+  };
+}
+
+function realMicSummary(realMic) {
+  if (!realMic?.included) return "";
+  if (realMic.ok) return "PASS";
+  return [realMic.smokeStatus || "missing", realMic.diagnosticsStatus || ""].filter(Boolean).join("/");
+}
+
 function summarizeReport(reportPath) {
   const report = readJson(reportPath);
   const checksum = readChecksum(reportPath);
@@ -419,6 +437,7 @@ function summarizeReport(reportPath) {
     kylinDiscovery: kylinDiscoveryStatus(report, reportPath),
     lanTopology: lanTopologyStatus(report, reportPath),
     lanRoutePlan: lanRoutePlanStatus(report, reportPath),
+    windowsRealMic: realMicStatus(report),
     evidenceOk: checksum.ok && artifacts.ok,
     legacyEvidence: Boolean(artifacts.legacy),
     resultOk: Boolean(report.ok) && checksum.ok && artifacts.ok
@@ -458,6 +477,7 @@ function renderMarkdown(index) {
     `- Evidence failures: ${index.evidenceFailures}`,
     `- Legacy reports without artifact archive: ${index.legacyReports}`,
     `- Reports with LAN route plans: ${index.routePlanReports}`,
+    `- Reports with 117 real microphone validation: ${index.realMicReports}`,
     latest ? `- Latest report: ${latest.id} (${latest.ok ? "PASS" : "FAIL"})` : "- Latest report: none",
     latest?.kylinDiscovery?.available
       ? `- Latest 137 discovery: ${routeSummary(latest.kylinDiscovery)} (bound=${latest.kylinDiscovery.boundTcpOpen}, osRoute=${latest.kylinDiscovery.osRouteTcpOpen}, matches=${latest.kylinDiscovery.matchCount})`
@@ -471,16 +491,17 @@ function renderMarkdown(index) {
     "",
     "## Reports",
     "",
-    "| Started | Result | Evidence | 137 Route | LAN Topology | Route Plan | Steps | Retries | Artifacts | Report |",
-    "|---|---:|---:|---|---|---|---:|---:|---:|---|"
+    "| Started | Result | Evidence | 117 Real Mic | 137 Route | LAN Topology | Route Plan | Steps | Retries | Artifacts | Report |",
+    "|---|---:|---:|---:|---|---|---|---:|---:|---:|---|"
   ];
 
   for (const report of index.reports) {
     const route = routeSummary(report.kylinDiscovery);
     const topology = topologySummary(report.lanTopology);
     const routePlan = routePlanSummary(report.lanRoutePlan);
+    const realMic = realMicSummary(report.windowsRealMic);
     lines.push(
-      `| ${markdownCell(report.startedAt)} | ${report.ok ? "PASS" : "FAIL"} | ${report.legacyEvidence ? "LEGACY" : report.evidenceOk ? "OK" : "BAD"} | ${markdownCell(route)} | ${markdownCell(topology)} | ${markdownCell(routePlan)} | ${report.stepCount} | ${report.retriedSteps.length} | ${report.artifacts.verifiedFiles}/${report.artifacts.fileCount} | ${markdownCell(report.reportPath)} |`
+      `| ${markdownCell(report.startedAt)} | ${report.ok ? "PASS" : "FAIL"} | ${report.legacyEvidence ? "LEGACY" : report.evidenceOk ? "OK" : "BAD"} | ${markdownCell(realMic)} | ${markdownCell(route)} | ${markdownCell(topology)} | ${markdownCell(routePlan)} | ${report.stepCount} | ${report.retriedSteps.length} | ${report.artifacts.verifiedFiles}/${report.artifacts.fileCount} | ${markdownCell(report.reportPath)} |`
     );
   }
 
@@ -527,6 +548,7 @@ function main(argv) {
     evidenceFailures: reports.filter((report) => !report.evidenceOk).length,
     legacyReports: reports.filter((report) => report.legacyEvidence).length,
     routePlanReports: reports.filter((report) => report.lanRoutePlan.available).length,
+    realMicReports: reports.filter((report) => report.windowsRealMic.included).length,
     reports
   };
 
@@ -549,6 +571,7 @@ function main(argv) {
           evidenceFailures: index.evidenceFailures,
           legacyReports: index.legacyReports,
           routePlanReports: index.routePlanReports,
+          realMicReports: index.realMicReports,
           latestReport: reports[0]?.id || ""
         },
         null,

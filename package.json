@@ -45,6 +45,7 @@
     "test:remote:conference:lan": "node scripts/remote-cross-conference-smoke.cjs --manage-devtools",
     "test:remote:cross": "node scripts/cross-machine-validation.cjs",
     "test:remote:cross:strict": "node scripts/cross-machine-validation.cjs --strict",
+    "test:remote:cross:real-mic": "node scripts/cross-machine-validation.cjs --require-windows-117 --require-windows-real-mic",
     "test:remote:cross:index": "node scripts/validation-report-index.cjs",
     "test:remote:cross:resources": "node scripts/validation-resource-index.cjs",
     "test:remote:cross:loop": "node scripts/continuous-cross-validation.cjs",

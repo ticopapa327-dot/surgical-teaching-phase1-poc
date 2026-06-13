@@ -17,6 +17,10 @@ function usage() {
     "Options:",
     "  --strict                 Require 117, 137 and the concurrent conference smoke",
     "  --require-windows-117    Fail if the 117 Windows validation path is skipped",
+    "  --include-windows-real-mic  Include 117 physical microphone stability validation",
+    "  --require-windows-real-mic  Fail if the 117 physical microphone validation is skipped",
+    "  --windows-real-mic-hold-seconds <seconds>  Physical microphone hold duration",
+    "  --windows-real-mic-sample-interval-seconds <seconds>  Physical microphone sample interval",
     "  --require-kylin-137      Fail if the 137 Kylin validation path is skipped",
     "  --require-conference     Fail if the 117+137 conference validation is skipped",
     "  --help                   Show this help",
@@ -28,6 +32,11 @@ function usage() {
     "  UST_CROSS_SKIP_KYLIN_137          Skip 137 Kylin steps",
     "  UST_CROSS_STRICT_REMOTE_COVERAGE  Same as --strict",
     "  UST_CROSS_REQUIRE_WINDOWS_117     Same as --require-windows-117",
+    "  UST_CROSS_INCLUDE_WINDOWS_REAL_MIC Same as --include-windows-real-mic",
+    "  UST_CROSS_REQUIRE_WINDOWS_REAL_MIC Same as --require-windows-real-mic",
+    "  UST_CROSS_WINDOWS_REAL_MIC_HOLD_SECONDS Default: 1800",
+    "  UST_CROSS_WINDOWS_REAL_MIC_SAMPLE_INTERVAL_SECONDS Default: 30",
+    "  UST_CROSS_WINDOWS_REAL_MIC_ARTIFACT_DIR Default: test-results/remote-windows-real-mic-stability",
     "  UST_CROSS_REQUIRE_KYLIN_137       Same as --require-kylin-137",
     "  UST_CROSS_REQUIRE_CONFERENCE      Same as --require-conference",
     "  UST_KYLIN_SUDO_PASSWORD           Required for restricted 137 LAN DevTools validation"
@@ -59,16 +68,32 @@ function hasArg(argv, name) {
   return argv.includes(name);
 }
 
-function npmCommandParts(script) {
+function readArg(argv, name) {
+  const index = argv.indexOf(name);
+  if (index === -1) return "";
+  return argv[index + 1] || "";
+}
+
+function parseNonNegativeNumber(value, fallback, name) {
+  const text = String(value ?? "").trim();
+  if (!text) return fallback;
+  const number = Number(text);
+  if (!Number.isFinite(number) || number < 0) {
+    throw new Error(`${name} must be a non-negative number`);
+  }
+  return number;
+}
+
+function npmCommandParts(script, extraArgs = []) {
   if (process.platform === "win32") {
     return {
       command: "cmd.exe",
-      args: ["/d", "/s", "/c", "npm", "run", script]
+      args: ["/d", "/s", "/c", "npm", "run", script, ...extraArgs]
     };
   }
   return {
     command: "npm",
-    args: ["run", script]
+    args: ["run", script, ...extraArgs]
   };
 }
 
@@ -254,7 +279,7 @@ function walkFiles(dir) {
   return files;
 }
 
-function archiveDiagnosticArtifacts(reportDir, reportId, startedAt) {
+function archiveDiagnosticArtifacts(reportDir, reportId, startedAt, extraSources = []) {
   const sources = [
     path.join("test-results", "remote-lan-topology"),
     path.join("test-results", "remote-windows-probe"),
@@ -262,11 +287,13 @@ function archiveDiagnosticArtifacts(reportDir, reportId, startedAt) {
     path.join("test-results", "remote-kylin-discovery"),
     path.join("test-results", "remote-windows-media-smoke"),
     path.join("test-results", "remote-windows-audio-smoke"),
+    path.join("test-results", "remote-windows-real-mic-stability"),
     path.join("test-results", "remote-kylin-media-smoke"),
     path.join("test-results", "remote-kylin-audio-smoke"),
     path.join("test-results", "remote-cross-conference-smoke"),
     path.join(reportDir, "lan-route-remediation-plan.md"),
-    path.join(reportDir, "lan-route-remediation-plan.json")
+    path.join(reportDir, "lan-route-remediation-plan.json"),
+    ...extraSources
   ];
   const allowedExtensions = new Set([".json", ".csv", ".md"]);
   const artifactsDir = path.join(reportDir, `${reportId}-artifacts`);
@@ -417,6 +444,7 @@ function runStepAttempt(step, attempt, totalAttempts) {
     id: step.id,
     title: step.title,
     command: [step.command, ...step.args].join(" "),
+    optional: step.optional === true,
     startedAt: startedAt.toISOString(),
     finishedAt: finishedAt.toISOString(),
     durationMs: finishedAt - startedAt,
@@ -492,11 +520,15 @@ function failRequirement(id, title, report, reason) {
 
 function step(id, title, script, timeoutMs) {
   const commandParts = npmCommandParts(script);
+  return commandStep(id, title, commandParts.command, commandParts.args, timeoutMs);
+}
+
+function commandStep(id, title, command, args, timeoutMs) {
   return {
     id,
     title,
-    command: commandParts.command,
-    args: commandParts.args,
+    command,
+    args,
     timeoutMs,
     retries: 0
   };
@@ -522,13 +554,38 @@ async function main(argv = []) {
     skipWindows117: envFlag("UST_CROSS_SKIP_WINDOWS_117"),
     skipKylin137: envFlag("UST_CROSS_SKIP_KYLIN_137"),
     strictRemoteCoverage,
+    includeWindowsRealMic:
+      hasArg(argv, "--include-windows-real-mic") ||
+      envFlag("UST_CROSS_INCLUDE_WINDOWS_REAL_MIC") ||
+      hasArg(argv, "--require-windows-real-mic") ||
+      envFlag("UST_CROSS_REQUIRE_WINDOWS_REAL_MIC"),
     requireWindows117:
       strictRemoteCoverage || hasArg(argv, "--require-windows-117") || envFlag("UST_CROSS_REQUIRE_WINDOWS_117"),
+    requireWindowsRealMic:
+      hasArg(argv, "--require-windows-real-mic") || envFlag("UST_CROSS_REQUIRE_WINDOWS_REAL_MIC"),
     requireKylin137:
       strictRemoteCoverage || hasArg(argv, "--require-kylin-137") || envFlag("UST_CROSS_REQUIRE_KYLIN_137"),
     requireConference:
       strictRemoteCoverage || hasArg(argv, "--require-conference") || envFlag("UST_CROSS_REQUIRE_CONFERENCE"),
-    hasKylinSudoPassword: Boolean(env("UST_KYLIN_SUDO_PASSWORD", ""))
+    hasKylinSudoPassword: Boolean(env("UST_KYLIN_SUDO_PASSWORD", "")),
+    windowsRealMic: {
+      holdSeconds: parseNonNegativeNumber(
+        readArg(argv, "--windows-real-mic-hold-seconds") ||
+          env("UST_CROSS_WINDOWS_REAL_MIC_HOLD_SECONDS", "1800"),
+        1800,
+        "--windows-real-mic-hold-seconds"
+      ),
+      sampleIntervalSeconds: parseNonNegativeNumber(
+        readArg(argv, "--windows-real-mic-sample-interval-seconds") ||
+          env("UST_CROSS_WINDOWS_REAL_MIC_SAMPLE_INTERVAL_SECONDS", "30"),
+        30,
+        "--windows-real-mic-sample-interval-seconds"
+      ),
+      artifactDir: env(
+        "UST_CROSS_WINDOWS_REAL_MIC_ARTIFACT_DIR",
+        path.join("test-results", "remote-windows-real-mic-stability")
+      )
+    }
   };
 
   ensureDir(config.reportDir);
@@ -567,6 +624,40 @@ async function main(argv = []) {
     step("117-audio-diagnostics", "117 Windows audio diagnostics", "test:remote:audio:diagnostics", 60000)
   ];
 
+  const realMicRunCommand = npmCommandParts("remote:devtools:real-mic:run", [
+    "--",
+    "npm",
+    "run",
+    "test:remote:audio"
+  ]);
+  const realMicTimeoutMs = Math.max(180000, Math.ceil((config.windowsRealMic.holdSeconds + 120) * 1000));
+  const windowsRealMicSteps = [
+    commandStep(
+      "117-real-mic",
+      "117 Windows physical microphone stability smoke",
+      realMicRunCommand.command,
+      realMicRunCommand.args,
+      realMicTimeoutMs
+    ),
+    commandStep(
+      "117-real-mic-diagnostics",
+      "117 Windows physical microphone stability diagnostics",
+      process.execPath,
+      [
+        "scripts/remote-windows-diagnostics-report.cjs",
+        "--artifact-dir",
+        config.windowsRealMic.artifactDir,
+        "--allow-non-publisher-runtime-warn"
+      ],
+      60000
+    )
+  ];
+  windowsRealMicSteps[0].env = {
+    UST_REMOTE_HOLD_SECONDS: String(config.windowsRealMic.holdSeconds),
+    UST_REMOTE_SAMPLE_INTERVAL_SECONDS: String(config.windowsRealMic.sampleIntervalSeconds),
+    UST_REMOTE_ARTIFACT_DIR: config.windowsRealMic.artifactDir
+  };
+
   const kylinSteps = [
     step("137-probe", "137 Kylin environment probe", "test:remote:kylin:probe", 60000),
     retryingStep("137-signal", "137 Kylin signal smoke", "test:remote:kylin:signal:lan", 180000),
@@ -590,6 +681,7 @@ async function main(argv = []) {
     "test:remote:kylin:discover",
     120000
   );
+  kylinDiscoveryStep.optional = true;
   const lanTopologyStep = step(
     "lan-topology",
     "118/117/137 LAN topology diagnostic",
@@ -618,12 +710,23 @@ async function main(argv = []) {
     skipStep(lanTopologyStep, report, "UST_CROSS_SKIP_WINDOWS_117 is enabled");
     skipStep(lanRoutePlanStep, report, "UST_CROSS_SKIP_WINDOWS_117 is enabled");
     windowsSteps.forEach((item) => skipStep(item, report, "UST_CROSS_SKIP_WINDOWS_117 is enabled"));
+    if (config.includeWindowsRealMic) {
+      windowsRealMicSteps.forEach((item) => skipStep(item, report, "UST_CROSS_SKIP_WINDOWS_117 is enabled"));
+    }
     if (config.requireWindows117) {
       failRequirement(
         "117-required-coverage",
         "117 Windows required coverage",
         report,
         "117 Windows validation is required but UST_CROSS_SKIP_WINDOWS_117 is enabled"
+      );
+    }
+    if (config.requireWindowsRealMic) {
+      failRequirement(
+        "117-real-mic-required-coverage",
+        "117 Windows physical microphone required coverage",
+        report,
+        "117 physical microphone validation is required but UST_CROSS_SKIP_WINDOWS_117 is enabled"
       );
     }
   } else {
@@ -636,6 +739,29 @@ async function main(argv = []) {
     for (const item of windowsSteps) {
       const entry = runStep(item, report);
       if (entry.status !== "passed") break;
+    }
+    if (config.includeWindowsRealMic) {
+      const failedWindowsBaseStep = report.steps.find(
+        (entry) => windowsSteps.some((item) => item.id === entry.id) && entry.status !== "passed"
+      );
+      if (failedWindowsBaseStep) {
+        windowsRealMicSteps.forEach((item) =>
+          skipStep(item, report, `117 base validation did not pass: ${failedWindowsBaseStep.id}`)
+        );
+        if (config.requireWindowsRealMic) {
+          failRequirement(
+            "117-real-mic-required-coverage",
+            "117 Windows physical microphone required coverage",
+            report,
+            `117 physical microphone validation is required but ${failedWindowsBaseStep.id} did not pass`
+          );
+        }
+      } else {
+        for (const item of windowsRealMicSteps) {
+          const entry = runStep(item, report);
+          if (entry.status !== "passed") break;
+        }
+      }
     }
   }
 
@@ -720,14 +846,16 @@ async function main(argv = []) {
   report.systemResources.after = captureLocalResources("after");
 
   report.finishedAt = new Date().toISOString();
-  const failed = report.steps.filter((item) => item.status === "failed");
+  const failed = report.steps.filter((item) => item.status === "failed" && item.optional !== true);
   report.healthClean =
     report.healthAfter?.ok === true &&
     Number(report.healthAfter.endpoints) === 0 &&
     Number(report.healthAfter.sessions) === 0 &&
     Number(report.healthAfter.pendingCalls) === 0;
   report.ok = failed.length === 0 && report.healthClean;
-  report.artifactArchive = archiveDiagnosticArtifacts(config.reportDir, reportId, report.startedAt);
+  report.artifactArchive = archiveDiagnosticArtifacts(config.reportDir, reportId, report.startedAt, [
+    config.windowsRealMic.artifactDir
+  ]);
 
   const reportJson = `${JSON.stringify(report, null, 2)}\n`;
   const reportSha256 = sha256(reportJson);
@@ -743,6 +871,9 @@ async function main(argv = []) {
         checksumPath,
         reportSha256,
         failedSteps: failed.map((item) => item.id),
+        optionalFailedSteps: report.steps
+          .filter((item) => item.status === "failed" && item.optional === true)
+          .map((item) => item.id),
         skippedSteps: report.steps.filter((item) => item.status === "skipped").map((item) => item.id),
         healthAfter: report.healthAfter
       },
@@ -762,5 +893,7 @@ if (require.main === module) {
 }
 
 module.exports = {
-  describeExitCode
+  describeExitCode,
+  npmCommandParts,
+  parseNonNegativeNumber
 };

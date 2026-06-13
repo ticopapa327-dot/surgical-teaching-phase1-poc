@@ -54,6 +54,15 @@ Remove-Item Env:UST_REMOTE_HOLD_SECONDS,Env:UST_REMOTE_SAMPLE_INTERVAL_SECONDS,E
 
 真实麦克风入口使用 117 已登录用户的交互式计划任务启动 Edge，不加 `--headless`，也不加 `--use-fake-device-for-media-stream`，因此能读取 117 物理麦克风；脚本只清理带 `ust-edge-real-mic-interactive` 标记的 Edge 和计划任务，不删除现场已有 portproxy 或防火墙规则。如果为真实麦克风验证临时开放 `9222` DevTools，测试结束后必须执行 `npm run remote:devtools:real-mic:stop`；长期保留 DevTools 活跃实例不符合 public 仓库的测试安全边界。
 
+如需把真实麦克风长稳纳入可审计报告链路，使用专门的交叉验证入口：
+
+```powershell
+npm run test:remote:cross:real-mic
+npm run test:remote:cross:index
+```
+
+该入口会要求 117 Windows 基础验证和真实麦克风验证必须通过；137 麒麟与三端会议在未提供 137 临时授权时仍会记录为 skipped，不作为本入口失败条件。默认真实麦克风保持时间为 `1800` 秒，可用 `UST_CROSS_WINDOWS_REAL_MIC_HOLD_SECONDS` 和 `UST_CROSS_WINDOWS_REAL_MIC_SAMPLE_INTERVAL_SECONDS` 调整。报告与归档仍写入 `validation-results/cross-machine-validation/`，索引中会显示 `117 Real Mic` 列。
+
 ## 三、137 麒麟自动化验证
 
 137 当前 SSHD 配置禁止端口转发，因此不能采用 117 的 SSH 隧道模式。现阶段使用临时 LAN DevTools 模式：118 通过 SSH 在 137 启动 headless 麒麟浏览器，并临时放行 137 的 `9334` 端口，仅允许 118 访问。
