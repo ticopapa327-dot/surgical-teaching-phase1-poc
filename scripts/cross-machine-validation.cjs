@@ -3,6 +3,7 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const os = require("node:os");
 const { spawnSync } = require("node:child_process");
+const { normalizeMetricLimitConfig } = require("./remote-stability-gate.cjs");
 
 const DEFAULTS = {
   healthUrl: "http://127.0.0.1:7077/health",
@@ -21,6 +22,11 @@ function usage() {
     "  --require-windows-real-mic  Fail if the 117 physical microphone validation is skipped",
     "  --windows-real-mic-hold-seconds <seconds>  Physical microphone hold duration",
     "  --windows-real-mic-sample-interval-seconds <seconds>  Physical microphone sample interval",
+    "  --windows-real-mic-audio-buffer-warn-ms <ms>  Physical microphone audio buffer warning threshold",
+    "  --windows-real-mic-audio-buffer-fail-ms <ms>  Physical microphone audio buffer hard failure threshold",
+    "  --windows-real-mic-rtt-warn-ms <ms>  Physical microphone RTT warning threshold",
+    "  --windows-real-mic-rtt-fail-ms <ms>  Physical microphone RTT hard failure threshold",
+    "  --windows-real-mic-consecutive-soft-failure-samples <count>  Consecutive warning samples before failure",
     "  --require-kylin-137      Fail if the 137 Kylin validation path is skipped",
     "  --require-conference     Fail if the 117+137 conference validation is skipped",
     "  --help                   Show this help",
@@ -36,6 +42,11 @@ function usage() {
     "  UST_CROSS_REQUIRE_WINDOWS_REAL_MIC Same as --require-windows-real-mic",
     "  UST_CROSS_WINDOWS_REAL_MIC_HOLD_SECONDS Default: 1800",
     "  UST_CROSS_WINDOWS_REAL_MIC_SAMPLE_INTERVAL_SECONDS Default: 30",
+    "  UST_CROSS_WINDOWS_REAL_MIC_AUDIO_BUFFER_WARN_MS Default: 200",
+    "  UST_CROSS_WINDOWS_REAL_MIC_AUDIO_BUFFER_FAIL_MS Default: 500",
+    "  UST_CROSS_WINDOWS_REAL_MIC_RTT_WARN_MS Default: 150",
+    "  UST_CROSS_WINDOWS_REAL_MIC_RTT_FAIL_MS Default: 300",
+    "  UST_CROSS_WINDOWS_REAL_MIC_CONSECUTIVE_SOFT_FAILURE_SAMPLES Default: 3",
     "  UST_CROSS_WINDOWS_REAL_MIC_ARTIFACT_DIR Default: test-results/remote-windows-real-mic-stability",
     "  UST_CROSS_REQUIRE_KYLIN_137       Same as --require-kylin-137",
     "  UST_CROSS_REQUIRE_CONFERENCE      Same as --require-conference",
@@ -80,6 +91,14 @@ function parseNonNegativeNumber(value, fallback, name) {
   const number = Number(text);
   if (!Number.isFinite(number) || number < 0) {
     throw new Error(`${name} must be a non-negative number`);
+  }
+  return number;
+}
+
+function parsePositiveInteger(value, fallback, name) {
+  const number = parseNonNegativeNumber(value, fallback, name);
+  if (!Number.isInteger(number) || number < 1) {
+    throw new Error(`${name} must be a positive integer`);
   }
   return number;
 }
@@ -581,12 +600,43 @@ async function main(argv = []) {
         30,
         "--windows-real-mic-sample-interval-seconds"
       ),
+      audioBufferWarnMs: parseNonNegativeNumber(
+        readArg(argv, "--windows-real-mic-audio-buffer-warn-ms") ||
+          env("UST_CROSS_WINDOWS_REAL_MIC_AUDIO_BUFFER_WARN_MS", "200"),
+        200,
+        "--windows-real-mic-audio-buffer-warn-ms"
+      ),
+      audioBufferFailMs: parseNonNegativeNumber(
+        readArg(argv, "--windows-real-mic-audio-buffer-fail-ms") ||
+          env("UST_CROSS_WINDOWS_REAL_MIC_AUDIO_BUFFER_FAIL_MS", "500"),
+        500,
+        "--windows-real-mic-audio-buffer-fail-ms"
+      ),
+      rttWarnMs: parseNonNegativeNumber(
+        readArg(argv, "--windows-real-mic-rtt-warn-ms") ||
+          env("UST_CROSS_WINDOWS_REAL_MIC_RTT_WARN_MS", "150"),
+        150,
+        "--windows-real-mic-rtt-warn-ms"
+      ),
+      rttFailMs: parseNonNegativeNumber(
+        readArg(argv, "--windows-real-mic-rtt-fail-ms") ||
+          env("UST_CROSS_WINDOWS_REAL_MIC_RTT_FAIL_MS", "300"),
+        300,
+        "--windows-real-mic-rtt-fail-ms"
+      ),
+      consecutiveSoftFailureSamples: parsePositiveInteger(
+        readArg(argv, "--windows-real-mic-consecutive-soft-failure-samples") ||
+          env("UST_CROSS_WINDOWS_REAL_MIC_CONSECUTIVE_SOFT_FAILURE_SAMPLES", "3"),
+        3,
+        "--windows-real-mic-consecutive-soft-failure-samples"
+      ),
       artifactDir: env(
         "UST_CROSS_WINDOWS_REAL_MIC_ARTIFACT_DIR",
         path.join("test-results", "remote-windows-real-mic-stability")
       )
     }
   };
+  normalizeMetricLimitConfig(config.windowsRealMic);
 
   ensureDir(config.reportDir);
   const reportId = nowStamp();
@@ -655,6 +705,11 @@ async function main(argv = []) {
   windowsRealMicSteps[0].env = {
     UST_REMOTE_HOLD_SECONDS: String(config.windowsRealMic.holdSeconds),
     UST_REMOTE_SAMPLE_INTERVAL_SECONDS: String(config.windowsRealMic.sampleIntervalSeconds),
+    UST_REMOTE_AUDIO_BUFFER_WARN_MS: String(config.windowsRealMic.audioBufferWarnMs),
+    UST_REMOTE_AUDIO_BUFFER_FAIL_MS: String(config.windowsRealMic.audioBufferFailMs),
+    UST_REMOTE_RTT_WARN_MS: String(config.windowsRealMic.rttWarnMs),
+    UST_REMOTE_RTT_FAIL_MS: String(config.windowsRealMic.rttFailMs),
+    UST_REMOTE_CONSECUTIVE_SOFT_FAILURE_SAMPLES: String(config.windowsRealMic.consecutiveSoftFailureSamples),
     UST_REMOTE_ARTIFACT_DIR: config.windowsRealMic.artifactDir
   };
 

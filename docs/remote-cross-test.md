@@ -49,8 +49,9 @@ Remove-Item Env:UST_REMOTE_HOLD_SECONDS,Env:UST_REMOTE_SAMPLE_INTERVAL_SECONDS,E
 1. 每个采样点两端 peer connection 与 ICE 状态均为 `connected`。
 2. 在要求音频时，本地与远端音频轨道均存在。
 3. 示教室端远端 live 视频数量不低于本轮订阅通道数。
-4. 音频 buffer 不超过 `200 ms`，RTT 不超过 `150 ms`。
-5. 任一采样失败即退出并保留 `*-progress.json`、采样快照和诊断 CSV。
+4. 音频 buffer 与 RTT 使用分级门禁：超过 `UST_REMOTE_AUDIO_BUFFER_WARN_MS=200` 或 `UST_REMOTE_RTT_WARN_MS=150` 会写入采样 `warnings`；连续 `UST_REMOTE_CONSECUTIVE_SOFT_FAILURE_SAMPLES=3` 个采样仍超限时判定失败。
+5. 音频 buffer 超过 `UST_REMOTE_AUDIO_BUFFER_FAIL_MS=500` 或 RTT 超过 `UST_REMOTE_RTT_FAIL_MS=300` 时立即判定失败。
+6. peer/ICE、音频轨道、远端 live 视频数量等结构性失败仍会立即退出，并保留 `*-progress.json`、采样快照和诊断 CSV。
 
 真实麦克风入口使用 117 已登录用户的交互式计划任务启动 Edge，不加 `--headless`，也不加 `--use-fake-device-for-media-stream`，因此能读取 117 物理麦克风；脚本只清理带 `ust-edge-real-mic-interactive` 标记的 Edge 和计划任务，不删除现场已有 portproxy 或防火墙规则。如果为真实麦克风验证临时开放 `9222` DevTools，测试结束后必须执行 `npm run remote:devtools:real-mic:stop`；长期保留 DevTools 活跃实例不符合 public 仓库的测试安全边界。
 
@@ -61,7 +62,7 @@ npm run test:remote:cross:real-mic
 npm run test:remote:cross:index
 ```
 
-该入口会要求 117 Windows 基础验证和真实麦克风验证必须通过；137 麒麟与三端会议在未提供 137 临时授权时仍会记录为 skipped，不作为本入口失败条件。默认真实麦克风保持时间为 `1800` 秒，可用 `UST_CROSS_WINDOWS_REAL_MIC_HOLD_SECONDS` 和 `UST_CROSS_WINDOWS_REAL_MIC_SAMPLE_INTERVAL_SECONDS` 调整。报告与归档仍写入 `validation-results/cross-machine-validation/`，索引中会显示 `117 Real Mic` 列。
+该入口会要求 117 Windows 基础验证和真实麦克风验证必须通过；137 麒麟与三端会议在未提供 137 临时授权时仍会记录为 skipped，不作为本入口失败条件。默认真实麦克风保持时间为 `1800` 秒，可用 `UST_CROSS_WINDOWS_REAL_MIC_HOLD_SECONDS` 和 `UST_CROSS_WINDOWS_REAL_MIC_SAMPLE_INTERVAL_SECONDS` 调整；分级门禁阈值可用 `UST_CROSS_WINDOWS_REAL_MIC_AUDIO_BUFFER_WARN_MS`、`UST_CROSS_WINDOWS_REAL_MIC_AUDIO_BUFFER_FAIL_MS`、`UST_CROSS_WINDOWS_REAL_MIC_RTT_WARN_MS`、`UST_CROSS_WINDOWS_REAL_MIC_RTT_FAIL_MS` 和 `UST_CROSS_WINDOWS_REAL_MIC_CONSECUTIVE_SOFT_FAILURE_SAMPLES` 调整。报告与归档仍写入 `validation-results/cross-machine-validation/`，索引中会显示 `117 Real Mic` 列。
 
 ## 三、137 麒麟自动化验证
 

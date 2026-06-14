@@ -1,8 +1,11 @@
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 
 const DEFAULTS = {
   sshTarget: "HUAWEI@192.168.1.117",
-  remoteHost: "127.0.0.1",
+  remoteHost: "0.0.0.0",
   remotePort: "9222",
   lanDebugUrl: "http://192.168.1.117:9222",
   taskName: "UST Edge Real Mic DevTools",
@@ -52,7 +55,7 @@ function usage() {
     "",
     "Environment:",
     "  UST_REMOTE_REAL_MIC_SSH_TARGET      Default: HUAWEI@192.168.1.117",
-    "  UST_REMOTE_REAL_MIC_REMOTE_HOST     Default: 127.0.0.1",
+    "  UST_REMOTE_REAL_MIC_REMOTE_HOST     Default: 0.0.0.0",
     "  UST_REMOTE_REAL_MIC_REMOTE_PORT     Default: 9222",
     "  UST_REMOTE_REAL_MIC_DEBUG_URL       Default: http://192.168.1.117:9222",
     "  UST_REMOTE_REAL_MIC_TASK_NAME       Default: UST Edge Real Mic DevTools",
@@ -81,13 +84,16 @@ function browserArgs(config) {
     `--remote-debugging-address=${config.remoteHost}`,
     "--remote-allow-origins=*",
     "--no-first-run",
-    "--no-default-browser-check"
+    "--no-default-browser-check",
+    "--disable-background-timer-throttling",
+    "--disable-renderer-backgrounding",
+    "--disable-backgrounding-occluded-windows",
+    "--disable-features=CalculateNativeWinOcclusion"
   ];
   if (config.secureOrigins.length) {
     args.push(`--unsafely-treat-insecure-origin-as-secure=${config.secureOrigins.join(",")}`);
   }
   if (config.fakeUiForMediaStream) args.push("--use-fake-ui-for-media-stream");
-  args.push("about:blank");
   return args;
 }
 
@@ -99,7 +105,16 @@ $taskName = ${psSingleQuoted(config.taskName)}
 $tag = ${psSingleQuoted(config.userDataTag)}
 $remoteHost = ${psSingleQuoted(config.remoteHost)}
 $remotePort = ${psSingleQuoted(config.remotePort)}
-$debugUrl = "http://" + $remoteHost + ":" + $remotePort + "/json/version"
+$logPath = Join-Path $env:TEMP ($tag + "-start.log")
+function Write-Stage {
+  param([string]$Name)
+  Add-Content -LiteralPath $logPath -Encoding UTF8 -Value ((Get-Date).ToUniversalTime().ToString("o") + " " + $Name)
+}
+Write-Stage "start"
+$debugHost = if ($remoteHost -eq "0.0.0.0") { "127.0.0.1" } else { $remoteHost }
+$debugBaseUrl = "http://" + $debugHost + ":" + $remotePort
+$debugUrl = $debugBaseUrl + "/json/version"
+$targetsUrl = $debugBaseUrl + "/json/list"
 $paths = @(
   "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
   "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
@@ -107,45 +122,89 @@ $paths = @(
 )
 $edge = $paths | Where-Object { Test-Path $_ } | Select-Object -First 1
 if (-not $edge) { throw "msedge.exe not found" }
-$userDataDir = Join-Path $env:TEMP $tag
-New-Item -ItemType Directory -Force -Path $userDataDir | Out-Null
+Write-Stage "edge-found"
 Get-CimInstance Win32_Process |
   Where-Object {
     $_.Name -eq "msedge.exe" -and
-    $_.CommandLine -like "*--remote-debugging-port=$remotePort*" -and
-    $_.CommandLine -like "*$tag*"
+    ($_.CommandLine -like "*--remote-debugging-port=$remotePort*" -or $_.CommandLine -like "*$tag*")
   } |
   ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+Write-Stage "old-processes-stopped"
+Start-Sleep -Milliseconds 500
+$removedProfiles = 0
+$runTag = $tag + "-" + [guid]::NewGuid().ToString("N")
+$userDataDir = Join-Path $env:TEMP $runTag
+New-Item -ItemType Directory -Force -Path $userDataDir | Out-Null
+Write-Stage "profile-created"
 Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
+Write-Stage "task-unregistered"
 $args = @(
   ${psArray(browserArgs(config))}
 )
 $args += "--user-data-dir=""$userDataDir"""
+$args += "about:blank"
 $argumentString = $args -join " "
 $action = New-ScheduledTaskAction -Execute $edge -Argument $argumentString
 $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(5)
 $principal = New-ScheduledTaskPrincipal -UserId ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
+Write-Stage "task-registering"
 Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Force | Out-Null
+Write-Stage "task-registered"
 Start-ScheduledTask -TaskName $taskName
+Write-Stage "task-started"
 $ready = $false
 $browser = ""
+$targetCount = 0
+$stableChecks = 0
 $deadline = (Get-Date).AddSeconds(30)
 do {
   Start-Sleep -Milliseconds 500
   try {
     $response = Invoke-WebRequest -UseBasicParsing $debugUrl -TimeoutSec 2
-    if ($response.StatusCode -eq 200) {
-      $ready = $true
+    $targetsResponse = Invoke-WebRequest -UseBasicParsing $targetsUrl -TimeoutSec 2
+    $targets = @()
+    try { $targets = @(ConvertFrom-Json $targetsResponse.Content) } catch {}
+    $targetCount = @($targets | Where-Object { $_.type -eq "page" }).Count
+    if ($response.StatusCode -eq 200 -and $targetsResponse.StatusCode -eq 200 -and $targetCount -ge 1) {
+      $stableChecks += 1
       try { $browser = (ConvertFrom-Json $response.Content).Browser } catch {}
+      if ($stableChecks -ge 3) {
+        $ready = $true
+        Write-Stage "debug-ready"
+        break
+      }
+    } else {
+      $stableChecks = 0
+    }
+  } catch {
+    $stableChecks = 0
+  }
+} while ((Get-Date) -lt $deadline)
+$postReadyDeadline = (Get-Date).AddSeconds(5)
+while ($ready -and (Get-Date) -lt $postReadyDeadline) {
+  Start-Sleep -Milliseconds 500
+  try {
+    $targetsResponse = Invoke-WebRequest -UseBasicParsing $targetsUrl -TimeoutSec 2
+    $targets = @()
+    try { $targets = @(ConvertFrom-Json $targetsResponse.Content) } catch {}
+    $targetCount = @($targets | Where-Object { $_.type -eq "page" }).Count
+    if ($targetCount -lt 1) {
+      $ready = $false
+      Write-Stage "post-ready-target-missing"
       break
     }
-  } catch {}
-} while ((Get-Date) -lt $deadline)
+  } catch {
+    $ready = $false
+    Write-Stage "post-ready-check-failed"
+    break
+  }
+}
+Write-Stage "collecting-processes"
 $processes = @(Get-CimInstance Win32_Process | Where-Object {
   $_.Name -eq "msedge.exe" -and
-  $_.CommandLine -like "*--remote-debugging-port=$remotePort*" -and
   $_.CommandLine -like "*$tag*"
 })
+Write-Stage "result-writing"
 $result = [ordered]@{
   ok = $ready
   action = "start"
@@ -153,6 +212,11 @@ $result = [ordered]@{
   remoteDebugUrl = $debugUrl
   processCount = $processes.Count
   browser = $browser
+  targetCount = $targetCount
+  stableChecks = $stableChecks
+  removedProfiles = $removedProfiles
+  userDataDir = $userDataDir
+  logPath = $logPath
   user = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 }
 $result | ConvertTo-Json -Depth 4
@@ -168,20 +232,28 @@ $taskName = ${psSingleQuoted(config.taskName)}
 $tag = ${psSingleQuoted(config.userDataTag)}
 $remoteHost = ${psSingleQuoted(config.remoteHost)}
 $remotePort = ${psSingleQuoted(config.remotePort)}
-$debugUrl = "http://" + $remoteHost + ":" + $remotePort + "/json/version"
+$debugHost = if ($remoteHost -eq "0.0.0.0") { "127.0.0.1" } else { $remoteHost }
+$debugBaseUrl = "http://" + $debugHost + ":" + $remotePort
+$debugUrl = $debugBaseUrl + "/json/version"
+$targetsUrl = $debugBaseUrl + "/json/list"
 $ok = $false
 $browser = ""
+$targetCount = 0
 $errorText = ""
 try {
   $response = Invoke-WebRequest -UseBasicParsing $debugUrl -TimeoutSec 3
-  $ok = $response.StatusCode -eq 200
+  $targetsResponse = Invoke-WebRequest -UseBasicParsing $targetsUrl -TimeoutSec 3
+  try {
+    $targets = @(ConvertFrom-Json $targetsResponse.Content)
+    $targetCount = @($targets | Where-Object { $_.type -eq "page" }).Count
+  } catch {}
+  $ok = $response.StatusCode -eq 200 -and $targetsResponse.StatusCode -eq 200 -and $targetCount -ge 1
   try { $browser = (ConvertFrom-Json $response.Content).Browser } catch {}
 } catch {
   $errorText = $_.Exception.Message
 }
 $processes = @(Get-CimInstance Win32_Process | Where-Object {
   $_.Name -eq "msedge.exe" -and
-  $_.CommandLine -like "*--remote-debugging-port=$remotePort*" -and
   $_.CommandLine -like "*$tag*"
 })
 $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
@@ -193,6 +265,7 @@ $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
   remoteDebugUrl = $debugUrl
   processCount = $processes.Count
   browser = $browser
+  targetCount = $targetCount
   error = $errorText
 } | ConvertTo-Json -Depth 4
 if (-not $ok) { exit 1 }
@@ -206,42 +279,142 @@ $ProgressPreference = "SilentlyContinue"
 $taskName = ${psSingleQuoted(config.taskName)}
 $tag = ${psSingleQuoted(config.userDataTag)}
 $remotePort = ${psSingleQuoted(config.remotePort)}
+function Remove-TaggedTempProfiles {
+  param([string]$Tag)
+  $tempRoot = [System.IO.Path]::GetFullPath($env:TEMP)
+  if (-not $tempRoot.EndsWith([System.IO.Path]::DirectorySeparatorChar)) {
+    $tempRoot = $tempRoot + [System.IO.Path]::DirectorySeparatorChar
+  }
+  Get-ChildItem -LiteralPath $tempRoot -Directory -Filter ($Tag + "-*") -ErrorAction SilentlyContinue |
+    ForEach-Object {
+      $fullPath = [System.IO.Path]::GetFullPath($_.FullName)
+      if ($fullPath.StartsWith($tempRoot, [System.StringComparison]::OrdinalIgnoreCase) -and $_.Name -like ($Tag + "-*")) {
+        Remove-Item -LiteralPath $fullPath -Recurse -Force -ErrorAction SilentlyContinue
+        if (-not (Test-Path -LiteralPath $fullPath)) { $script:removedProfiles += 1 }
+      }
+    }
+}
 Get-CimInstance Win32_Process |
   Where-Object {
     $_.Name -eq "msedge.exe" -and
-    $_.CommandLine -like "*--remote-debugging-port=$remotePort*" -and
-    $_.CommandLine -like "*$tag*"
+    ($_.CommandLine -like "*--remote-debugging-port=$remotePort*" -or $_.CommandLine -like "*$tag*")
   } |
   ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
 Start-Sleep -Seconds 1
+$script:removedProfiles = 0
+Remove-TaggedTempProfiles -Tag $tag
 $remaining = @(Get-CimInstance Win32_Process | Where-Object {
   $_.Name -eq "msedge.exe" -and
-  $_.CommandLine -like "*--remote-debugging-port=$remotePort*" -and
-  $_.CommandLine -like "*$tag*"
+  ($_.CommandLine -like "*--remote-debugging-port=$remotePort*" -or $_.CommandLine -like "*$tag*")
 }).Count
 $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
 [ordered]@{
   ok = ($remaining -eq 0 -and -not $task)
   action = "stop"
   remaining = $remaining
+  removedProfiles = $script:removedProfiles
   taskExists = [bool]$task
 } | ConvertTo-Json -Depth 4
 if ($remaining -ne 0 -or $task) { exit 1 }
 `.trim();
 }
 
-function runRemotePowerShell(config, script) {
-  const encoded = encodePowerShell(script);
+function remotePowerShellInline(config, script, timeout = 15000) {
   return spawnSync(
     "ssh",
-    ["-o", "BatchMode=yes", "-o", "ConnectTimeout=8", config.sshTarget, "powershell", "-NoProfile", "-EncodedCommand", encoded],
+    [
+      "-o",
+      "BatchMode=yes",
+      "-o",
+      "ConnectTimeout=8",
+      config.sshTarget,
+      "powershell",
+      "-NoProfile",
+      "-EncodedCommand",
+      encodePowerShell(script)
+    ],
     {
       encoding: "utf8",
-      timeout: 45000,
+      timeout,
       windowsHide: true
     }
   );
+}
+
+function remoteTempDir(config) {
+  const result = remotePowerShellInline(
+    config,
+    "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; [Console]::Write($env:TEMP)",
+    15000
+  );
+  if (result.status !== 0 || result.error) {
+    return {
+      ok: false,
+      error: result.error,
+      status: result.status,
+      signal: result.signal,
+      stdout: result.stdout || "",
+      stderr: result.stderr || ""
+    };
+  }
+  const value = String(result.stdout || "").trim();
+  return value ? { ok: true, value } : { ok: false, error: new Error("remote TEMP is empty"), stdout: "", stderr: "" };
+}
+
+function scpTarget(config, remotePath) {
+  return `${config.sshTarget}:${remotePath.replace(/\\/g, "/")}`;
+}
+
+function runRemotePowerShell(config, script) {
+  const scriptName = `ust-real-mic-${process.pid}-${Date.now()}.ps1`;
+  const localPath = path.join(os.tmpdir(), scriptName);
+  const temp = remoteTempDir(config);
+  if (!temp.ok) {
+    return {
+      status: temp.status || 1,
+      signal: temp.signal || null,
+      error: temp.error,
+      stdout: temp.stdout || "",
+      stderr: temp.stderr || "failed to resolve remote TEMP"
+    };
+  }
+  const remotePath = `${temp.value.replace(/[\\\/]+$/, "")}\\${scriptName}`;
+  fs.writeFileSync(localPath, script, "utf8");
+  const scp = spawnSync(
+    "scp",
+    ["-q", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", localPath, scpTarget(config, remotePath)],
+    {
+      encoding: "utf8",
+      timeout: 30000,
+      windowsHide: true
+    }
+  );
+  fs.rmSync(localPath, { force: true });
+  if (scp.status !== 0 || scp.error) {
+    return {
+      status: scp.status || 1,
+      signal: scp.signal || null,
+      error: scp.error,
+      stdout: scp.stdout || "",
+      stderr: scp.stderr || "failed to copy remote PowerShell script"
+    };
+  }
+  const escapedRemotePath = remotePath.replace(/'/g, "''");
+  const runner = [
+    "$ErrorActionPreference = 'Stop'",
+    "$ProgressPreference = 'SilentlyContinue'",
+    `$path = '${escapedRemotePath}'`,
+    "$code = 1",
+    "try {",
+    "  & powershell -NoProfile -ExecutionPolicy Bypass -File $path",
+    "  $code = if ($LASTEXITCODE -ne $null) { $LASTEXITCODE } else { 0 }",
+    "} finally {",
+    "  Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue",
+    "}",
+    "exit $code"
+  ].join("\n");
+  return remotePowerShellInline(config, runner, 90000);
 }
 
 async function fetchJson(url, timeoutMs = 5000) {
@@ -257,24 +430,32 @@ async function fetchJson(url, timeoutMs = 5000) {
 }
 
 async function waitForLanDebug(config) {
-  const url = `${config.lanDebugUrl}/json/version`;
+  const versionUrl = `${config.lanDebugUrl}/json/version`;
+  const targetsUrl = `${config.lanDebugUrl}/json/list`;
   const startedAt = Date.now();
   let lastError = "";
   while (Date.now() - startedAt < 10000) {
     try {
-      const version = await fetchJson(url, 2500);
-      return { ok: true, url, browser: version.Browser || "" };
+      const version = await fetchJson(versionUrl, 2500);
+      const targets = await fetchJson(targetsUrl, 2500);
+      const targetCount = (Array.isArray(targets) ? targets : [targets]).filter((target) => target?.type === "page").length;
+      if (targetCount >= 1) {
+        return { ok: true, url: versionUrl, browser: version.Browser || "", targetCount };
+      }
+      lastError = `no page target at ${targetsUrl}`;
     } catch (error) {
       lastError = error.message;
-      await new Promise((resolve) => setTimeout(resolve, 500));
     }
+    await new Promise((resolve) => setTimeout(resolve, 500));
   }
-  return { ok: false, url, error: lastError || "timeout" };
+  return { ok: false, url: versionUrl, error: lastError || "timeout" };
 }
 
 function printRemoteResult(result) {
   if (result.stdout.trim()) console.log(result.stdout.trim());
   if (result.stderr.trim()) console.error(result.stderr.trim());
+  if (result.error) console.error(result.error.message);
+  if (result.signal) console.error(`remote command terminated by signal ${result.signal}`);
 }
 
 async function start(config) {

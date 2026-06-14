@@ -540,6 +540,8 @@ textarea {
   display: grid;
   gap: 10px;
   min-height: 0;
+  align-content: start;
+  align-self: start;
 }
 
 .remote-grid.layout-single {

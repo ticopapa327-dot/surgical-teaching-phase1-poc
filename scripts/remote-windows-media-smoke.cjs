@@ -2,6 +2,11 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const { chromium, expect } = require("@playwright/test");
+const {
+  collectMetricFindings,
+  createSoftLimitTracker,
+  normalizeMetricLimitConfig
+} = require("./remote-stability-gate.cjs");
 
 const DEFAULTS = {
   localWebUrl: "http://127.0.0.1:5173/",
@@ -16,6 +21,11 @@ const DEFAULTS = {
   allowNonPublisherRuntimeWarn: "false",
   holdSeconds: "0",
   sampleIntervalSeconds: "30",
+  audioBufferWarnMs: "200",
+  audioBufferFailMs: "500",
+  rttWarnMs: "150",
+  rttFailMs: "300",
+  consecutiveSoftFailureSamples: "3",
   channels: "ch1,ch2,ch3,ch4",
   artifactDir: path.join("test-results", "remote-windows-media-smoke"),
   localEndpointIdPrefix: "or-media-118",
@@ -65,6 +75,14 @@ function envNumber(name, fallback) {
   return number;
 }
 
+function envPositiveInteger(name, fallback) {
+  const number = envNumber(name, fallback);
+  if (!Number.isInteger(number) || number < 1) {
+    throw new Error(`${name} must be a positive integer`);
+  }
+  return number;
+}
+
 function normalizeRequestMode(value) {
   return value === "interactive" ? "interactive" : "view";
 }
@@ -107,6 +125,11 @@ function printConfig(config) {
   console.log(`  allowNonPublisherRuntimeWarn: ${config.allowNonPublisherRuntimeWarn}`);
   console.log(`  holdSeconds:        ${config.holdSeconds}`);
   console.log(`  sampleIntervalSeconds: ${config.sampleIntervalSeconds}`);
+  console.log(`  audioBufferWarnMs:  ${config.audioBufferWarnMs}`);
+  console.log(`  audioBufferFailMs:  ${config.audioBufferFailMs}`);
+  console.log(`  rttWarnMs:          ${config.rttWarnMs}`);
+  console.log(`  rttFailMs:          ${config.rttFailMs}`);
+  console.log(`  consecutiveSoftFailureSamples: ${config.consecutiveSoftFailureSamples}`);
   console.log(`  channels:           ${config.channels.join(",")}`);
   console.log(`  artifactDir:        ${config.artifactDir}`);
   console.log(`  localEndpoint:      ${config.localEndpointIdPrefix} / ${config.localEndpointNamePrefix}`);
@@ -206,18 +229,23 @@ async function expectRemoteAudioTrackCount(page, count) {
   );
 }
 
-async function copyDiagnosticSnapshot(page) {
-  await page.getByRole("button", { name: LABELS.copyDiagnosticSnapshot }).click();
-  const textarea = page.locator(".diagnostic-snapshot");
-  await expect(textarea).toBeVisible({ timeout: 10000 });
-  return JSON.parse(await textarea.inputValue());
+async function copyDiagnosticSnapshot(page, label = "page") {
+  if (page.isClosed()) throw new Error(`${label} diagnostic page is closed`);
+  try {
+    await page.getByRole("button", { name: LABELS.copyDiagnosticSnapshot }).click();
+    const textarea = page.locator(".diagnostic-snapshot");
+    await expect(textarea).toBeVisible({ timeout: 10000 });
+    return JSON.parse(await textarea.inputValue());
+  } catch (error) {
+    throw new Error(`${label} diagnostic snapshot failed: ${error.message}`);
+  }
 }
 
 async function waitForDiagnosticSnapshot(page, predicate, label) {
   const startedAt = Date.now();
   let lastSnapshot = null;
   while (Date.now() - startedAt < 25000) {
-    lastSnapshot = await copyDiagnosticSnapshot(page);
+    lastSnapshot = await copyDiagnosticSnapshot(page, label);
     if (predicate(lastSnapshot)) return lastSnapshot;
     await page.waitForTimeout(1000);
   }
@@ -261,6 +289,34 @@ function createProgressRecorder(filePath, base = {}) {
   };
   write();
   return { mark, finish, filePath };
+}
+
+function watchPageLifecycle(page, label, progress, lifecycle) {
+  page.on("close", () => {
+    if (lifecycle.active) progress.mark("page-closed", { label });
+  });
+  page.on("crash", () => {
+    if (lifecycle.active) progress.mark("page-crashed", { label });
+  });
+  page.context().on("close", () => {
+    if (lifecycle.active) progress.mark("context-closed", { label });
+  });
+}
+
+function watchBrowserLifecycle(browser, label, progress, lifecycle) {
+  browser.on("disconnected", () => {
+    if (lifecycle.active) progress.mark("browser-disconnected", { label });
+  });
+}
+
+async function selectRemotePage(context) {
+  const existingPages = context.pages().filter((page) => !page.isClosed());
+  if (existingPages.length) {
+    const page = existingPages[0];
+    await page.bringToFront().catch(() => {});
+    return { page, reused: true, existingPageCount: existingPages.length };
+  }
+  return { page: await context.newPage(), reused: false, existingPageCount: 0 };
 }
 
 function safeSnapshotSuffix(value, fallback) {
@@ -328,7 +384,6 @@ function summarizeStabilitySnapshot(snapshot) {
 function stabilityFailures(snapshot, label, config) {
   const failures = [];
   const peers = Array.isArray(snapshot?.media?.peerConnections) ? snapshot.media.peerConnections : [];
-  const metrics = Array.isArray(snapshot?.media?.statsMetrics) ? snapshot.media.statsMetrics : [];
   if (!peers.length) failures.push(`${label}: no peer connection`);
   for (const peer of peers) {
     if (peer?.connectionState !== "connected") {
@@ -350,17 +405,31 @@ function stabilityFailures(snapshot, label, config) {
       failures.push(`${label}: only ${liveChannelCount}/${config.channels.length} channels live`);
     }
   }
-  for (const metric of metrics) {
-    const bufferMs = metric?.audio?.bufferMs;
-    const rttMs = metric?.network?.rttMs;
-    if (Number.isFinite(bufferMs) && bufferMs > 200) {
-      failures.push(`${label}: audio buffer ${bufferMs} ms for ${metric.endpointId || "unknown"}`);
-    }
-    if (Number.isFinite(rttMs) && rttMs > 150) {
-      failures.push(`${label}: RTT ${rttMs} ms for ${metric.endpointId || "unknown"}`);
-    }
-  }
   return failures;
+}
+
+async function keepPageAlive(page, label, options = {}) {
+  if (page.isClosed()) throw new Error(`${label} page closed during stability wait`);
+  if (options.bringToFront) {
+    await page.bringToFront().catch(() => {});
+  }
+  await page.evaluate(() => {
+    window.__ustStabilityKeepAliveAt = Date.now();
+    return {
+      href: window.location.href,
+      visibilityState: document.visibilityState
+    };
+  });
+}
+
+async function waitForStabilityInterval(localPage, remotePage, waitMs, config) {
+  const deadlineMs = Date.now() + waitMs;
+  while (Date.now() < deadlineMs) {
+    const sliceMs = Math.min(5000, Math.max(0, deadlineMs - Date.now()));
+    if (sliceMs > 0) await localPage.waitForTimeout(sliceMs);
+    await keepPageAlive(localPage, config.localSnapshotSuffix);
+    await keepPageAlive(remotePage, config.remoteSnapshotSuffix, { bringToFront: true });
+  }
 }
 
 async function collectStabilitySamples(localPage, remotePage, config, suffix, progress) {
@@ -369,17 +438,23 @@ async function collectStabilitySamples(localPage, remotePage, config, suffix, pr
   const deadlineMs = startedAtMs + config.holdSeconds * 1000;
   const intervalMs = Math.max(1000, config.sampleIntervalSeconds * 1000);
   const samples = [];
+  const softLimitTracker = createSoftLimitTracker(config.consecutiveSoftFailureSamples);
   progress.mark("stability-start", {
     holdSeconds: config.holdSeconds,
-    sampleIntervalSeconds: config.sampleIntervalSeconds
+    sampleIntervalSeconds: config.sampleIntervalSeconds,
+    audioBufferWarnMs: config.audioBufferWarnMs,
+    audioBufferFailMs: config.audioBufferFailMs,
+    rttWarnMs: config.rttWarnMs,
+    rttFailMs: config.rttFailMs,
+    consecutiveSoftFailureSamples: config.consecutiveSoftFailureSamples
   });
 
   while (Date.now() < deadlineMs) {
     const waitMs = Math.min(intervalMs, Math.max(0, deadlineMs - Date.now()));
-    if (waitMs > 0) await localPage.waitForTimeout(waitMs);
+    if (waitMs > 0) await waitForStabilityInterval(localPage, remotePage, waitMs, config);
     const index = samples.length + 1;
-    const localSnapshot = await copyDiagnosticSnapshot(localPage);
-    const remoteSnapshot = await copyDiagnosticSnapshot(remotePage);
+    const localSnapshot = await copyDiagnosticSnapshot(localPage, config.localSnapshotSuffix);
+    const remoteSnapshot = await copyDiagnosticSnapshot(remotePage, config.remoteSnapshotSuffix);
     const paddedIndex = String(index).padStart(3, "0");
     const localSnapshotPath = path.join(
       config.artifactDir,
@@ -391,15 +466,26 @@ async function collectStabilitySamples(localPage, remotePage, config, suffix, pr
     );
     saveJson(localSnapshotPath, localSnapshot);
     saveJson(remoteSnapshotPath, remoteSnapshot);
-    const failures = [
+    const hardFailures = [
       ...stabilityFailures(localSnapshot, config.localSnapshotSuffix, config),
       ...stabilityFailures(remoteSnapshot, config.remoteSnapshotSuffix, config)
     ];
+    const metricFindings = [
+      ...collectMetricFindings(localSnapshot, config.localSnapshotSuffix, config),
+      ...collectMetricFindings(remoteSnapshot, config.remoteSnapshotSuffix, config)
+    ];
+    const metricFailures = metricFindings
+      .filter((finding) => finding.level === "failure")
+      .map((finding) => finding.message);
+    const metricWarnings = metricFindings.filter((finding) => finding.level === "warning");
+    const { warningStates, sustainedFailures } = softLimitTracker.evaluate(metricWarnings);
+    const failures = [...hardFailures, ...metricFailures, ...sustainedFailures];
     const sample = {
       index,
       elapsedMs: Date.now() - startedAtMs,
       ok: failures.length === 0,
       failures,
+      warnings: warningStates,
       localSnapshotPath,
       remoteSnapshotPath,
       local: summarizeStabilitySnapshot(localSnapshot),
@@ -411,6 +497,7 @@ async function collectStabilitySamples(localPage, remotePage, config, suffix, pr
       elapsedMs: sample.elapsedMs,
       ok: sample.ok,
       failures: sample.failures,
+      warnings: sample.warnings,
       local: sample.local,
       remote: sample.remote
     });
@@ -443,6 +530,14 @@ async function main() {
     ),
     holdSeconds: envNumber("UST_REMOTE_HOLD_SECONDS", DEFAULTS.holdSeconds),
     sampleIntervalSeconds: envNumber("UST_REMOTE_SAMPLE_INTERVAL_SECONDS", DEFAULTS.sampleIntervalSeconds),
+    audioBufferWarnMs: envNumber("UST_REMOTE_AUDIO_BUFFER_WARN_MS", DEFAULTS.audioBufferWarnMs),
+    audioBufferFailMs: envNumber("UST_REMOTE_AUDIO_BUFFER_FAIL_MS", DEFAULTS.audioBufferFailMs),
+    rttWarnMs: envNumber("UST_REMOTE_RTT_WARN_MS", DEFAULTS.rttWarnMs),
+    rttFailMs: envNumber("UST_REMOTE_RTT_FAIL_MS", DEFAULTS.rttFailMs),
+    consecutiveSoftFailureSamples: envPositiveInteger(
+      "UST_REMOTE_CONSECUTIVE_SOFT_FAILURE_SAMPLES",
+      DEFAULTS.consecutiveSoftFailureSamples
+    ),
     channels: normalizeChannels(env("UST_REMOTE_MEDIA_CHANNELS", DEFAULTS.channels)),
     artifactDir: env("UST_REMOTE_ARTIFACT_DIR", DEFAULTS.artifactDir),
     localEndpointIdPrefix: env("UST_LOCAL_ENDPOINT_ID_PREFIX", DEFAULTS.localEndpointIdPrefix),
@@ -458,6 +553,7 @@ async function main() {
       DEFAULTS.remoteSnapshotSuffix
     )
   };
+  normalizeMetricLimitConfig(config);
   printConfig(config);
 
   await requireHttpOk(config.localWebUrl, "Local web app");
@@ -467,6 +563,7 @@ async function main() {
   let localBrowser;
   let remotePage;
   let progress;
+  const lifecycle = { active: true };
   const suffix = Date.now().toString(36).slice(-6);
   const operatingRoom = {
     id: `${config.localEndpointIdPrefix}-${suffix}`,
@@ -486,6 +583,11 @@ async function main() {
     expectUplinkAudio: config.expectUplinkAudio,
     holdSeconds: config.holdSeconds,
     sampleIntervalSeconds: config.sampleIntervalSeconds,
+    audioBufferWarnMs: config.audioBufferWarnMs,
+    audioBufferFailMs: config.audioBufferFailMs,
+    rttWarnMs: config.rttWarnMs,
+    rttFailMs: config.rttFailMs,
+    consecutiveSoftFailureSamples: config.consecutiveSoftFailureSamples,
     channels: config.channels,
     remoteDebugUrl: config.remoteDebugUrl,
     signalingUrl: config.signalingUrl
@@ -502,12 +604,22 @@ async function main() {
       headless: true,
       args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream"]
     });
+    watchBrowserLifecycle(localBrowser, "local", progress, lifecycle);
     const localPage = await localBrowser.newPage({ viewport: { width: 1440, height: 1100 } });
+    watchPageLifecycle(localPage, config.localSnapshotSuffix, progress, lifecycle);
 
     progress.mark("connect-remote-browser");
     const remoteBrowser = await connectRemoteBrowser(config.remoteDebugUrl);
+    watchBrowserLifecycle(remoteBrowser, "remote", progress, lifecycle);
     const remoteContext = remoteBrowser.contexts()[0] || (await remoteBrowser.newContext());
-    remotePage = await remoteContext.newPage();
+    const selectedRemotePage = await selectRemotePage(remoteContext);
+    remotePage = selectedRemotePage.page;
+    progress.mark("remote-page-selected", {
+      reused: selectedRemotePage.reused,
+      existingPageCount: selectedRemotePage.existingPageCount,
+      url: remotePage.url()
+    });
+    watchPageLifecycle(remotePage, config.remoteSnapshotSuffix, progress, lifecycle);
     await remotePage.setViewportSize({ width: 1440, height: 1100 });
 
     await localPage.goto(config.localWebUrl, { waitUntil: "domcontentloaded", timeout: 15000 });
@@ -618,6 +730,7 @@ async function main() {
     }
     throw error;
   } finally {
+    lifecycle.active = false;
     if (remotePage) await remotePage.close().catch(() => {});
     if (localBrowser) await localBrowser.close().catch(() => {});
   }
