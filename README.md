@@ -154,6 +154,8 @@ npm run test:smoke
 npm run test:media
 npm run test:media:repeat
 npm run test:signaling
+npm run test:local:118
+npm run test:local:118:status
 ```
 
 `test:smoke` 使用系统 Chrome 打开 Vite 页面，验证页面渲染、模拟预览、呼叫确认、多路拉取、布局切换、标注、参与上限提示、前端连接真实 WebSocket 信令服务器后进入已接受会话，以及双页面/三页面 WebRTC 按订阅多路视频和音频链路。
@@ -161,6 +163,8 @@ npm run test:signaling
 `test:media` 只运行 Phase 3 WebRTC 媒体用例；`test:media:repeat` 对这些用例执行 `--repeat-each=2`，用于提交前或现场复现后做媒体链路稳定性复测。
 
 `test:signaling` 启动本地 WebSocket 信令服务器，模拟手术室端、示教室端和观摩端，验证注册、通讯录、会话目录、呼叫、接受、默认通道、订阅、参与上限拒绝、协议错误分支和心跳清理。
+
+`test:local:118` 是 118 手术室开发机本机门禁，依次执行构建、脚本测试、UI smoke 和信令契约测试，并生成本机 IP、CPU、内存和关键进程摘要报告。当前 137 不可用或被临时放弃时，可以用该命令证明本机主线仍可继续开发；它不能替代 117/137 双机或三机交叉验收。快速只跑脚本级检查时可执行 `npm run test:local:118:quick`。读取最近一次完整本机门禁状态可执行 `npm run test:local:118:status`，该状态会校验报告哈希、必需步骤、`192.168.1.118` 地址和 80% CPU 上限；快速脚本报告可用 `npm run test:local:118:status:quick`。
 
 现场保存的诊断快照 JSON 可用 `node scripts/summarize-diagnostics.cjs snapshot-a.json snapshot-b.json > diagnostics.csv` 汇总为 CSV，输出包含访问主机、安全上下文、采集能力、会话 ID、媒体房间 ID、PeerConnection 连接/ICE/协商状态、视频码率、包计数、RTT 和 ICE 路由。
 也可执行 `npm run diagnostics:analyze -- snapshot-a.json snapshot-b.json`，自动提示媒体房间不一致、非安全上下文、缺少 `peer.signal`、远端画面等待、PeerConnection 异常、无视频码率、音频缓冲过高或 RTT 过高等常见问题。
@@ -179,6 +183,7 @@ npm run test:signaling
 - [Phase 2 交付交接说明](docs/phase2-handoff.md)
 - [Phase 3 按订阅 WebRTC 媒体 PoC 说明](docs/phase3-media-poc.md)
 - [两台电脑手术室与示教室模拟测试使用手册](docs/two-pc-test-manual.md)
+- [118 本机验证说明](docs/local-118-validation.md)
 - [Phase 2 信令协议说明](docs/signaling-protocol.md)
 - [阶段 3 患者绑定测试计划](docs/phase3-test-plan.md)
 - [AI 处理接口预留说明](docs/ai-interface.md)

@@ -28,6 +28,22 @@ npm run test:remote:cross:email
 npm run test:report:email -- --report "D:\CodeX\UST\phase1-poc\validation-results\cross-machine-validation\index.md"
 ```
 
+使用本地经典 Outlook 客户端发送指定报告：
+
+```powershell
+npm run test:report:email -- --transport outlook --from "wangmaohua0303@outlook.com" --report "D:\CodeX\UST\phase1-poc\validation-results\local-118-validation"
+```
+
+该方式依赖本机已安装经典 Outlook 桌面版并注册 `Outlook.Application` COM 接口，且 Outlook 配置中存在对应发件账户。新版 Outlook 应用包或网页版容器通常不提供该 COM 自动发送接口。当前开发验证不把 Outlook 账户配置作为门禁；只有显式传入 `--transport outlook` 时才会调用本地 Outlook。
+
+使用本地 Foxmail 客户端发送指定报告：
+
+```powershell
+npm run test:report:email -- --transport foxmail --from "2012@mvbs.com.cn" --report "D:\CodeX\UST\phase1-poc\validation-results\local-118-validation"
+```
+
+该方式通过 Windows Simple MAPI 调用本机默认邮件客户端。Foxmail 必须已配置 `2012@mvbs.com.cn` 账户；MAPI 会提交 originator，但实际发件账户仍由 Foxmail 当前默认账户和客户端策略决定。若命令超时，表示 Foxmail 未完成后台发送，不能按已发出处理；此时应改用人工确认的 Foxmail 写信窗口或恢复服务器侧 SMTP/API 通道。当前开发验证不自动配置或启动 Foxmail；只有显式传入 `--transport foxmail` 时才会调用本地 Foxmail/MAPI。
+
 附加截图或日志：
 
 ```powershell

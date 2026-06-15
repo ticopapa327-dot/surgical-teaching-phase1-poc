@@ -5,6 +5,7 @@ const crypto = require("node:crypto");
 const DEFAULTS = {
   reportDir: path.join("validation-results", "cross-machine-validation"),
   outputPath: path.join("validation-results", "cross-machine-validation", "status.json"),
+  profile: "strict",
   expectedCrossScript: "test:remote:cross:strict",
   maxAgeMinutes: 720
 };
@@ -27,6 +28,17 @@ const REQUIRED_STRICT_STEPS = [
   "117-137-conference"
 ];
 
+const REQUIRED_MAINLINE_STEPS = [
+  "lan-topology",
+  "lan-route-plan",
+  "117-probe",
+  "117-signal",
+  "117-media",
+  "117-audio",
+  "117-media-diagnostics",
+  "117-audio-diagnostics"
+];
+
 function env(name, fallback) {
   return String(process.env[name] || fallback).trim();
 }
@@ -35,6 +47,21 @@ function readArg(argv, name) {
   const index = argv.indexOf(name);
   if (index === -1) return "";
   return argv[index + 1] || "";
+}
+
+function normalizeProfile(value) {
+  const profile = String(value || DEFAULTS.profile).trim().toLowerCase();
+  if (profile !== "strict" && profile !== "mainline") {
+    throw new Error("--profile must be strict or mainline");
+  }
+  return profile;
+}
+
+function defaultOutputPath(profile) {
+  if (profile === "mainline") {
+    return path.join(DEFAULTS.reportDir, "status-mainline.json");
+  }
+  return DEFAULTS.outputPath;
 }
 
 function parseNonNegativeNumber(value, fallback, name) {
@@ -53,6 +80,7 @@ function usage() {
     "  node scripts/validation-status.cjs [options]",
     "",
     "Options:",
+    "  --profile <strict|mainline>     strict requires 117+137+conference ledger; mainline gates current 117 path",
     "  --json                         Print status as JSON",
     "  --no-write                     Do not write status.json",
     "  --max-age-minutes <minutes>    Fail when latest strict ledger is older than this; 0 disables",
@@ -62,21 +90,25 @@ function usage() {
     "Environment:",
     "  UST_VALIDATION_REPORT_DIR             Default validation report directory",
     "  UST_VALIDATION_STATUS_PATH            Default status JSON output path",
+    "  UST_VALIDATION_STATUS_PROFILE         strict or mainline",
     "  UST_VALIDATION_STATUS_CROSS_SCRIPT    Expected strict cross script",
     "  UST_VALIDATION_STATUS_MAX_AGE_MINUTES Default freshness limit"
   ].join("\n");
 }
 
 function parseArgs(argv) {
+  const profile = normalizeProfile(readArg(argv, "--profile") || env("UST_VALIDATION_STATUS_PROFILE", DEFAULTS.profile));
+  const expectedCrossScriptFallback = profile === "mainline" ? "test:remote:cross" : DEFAULTS.expectedCrossScript;
   return {
+    profile,
     json: argv.includes("--json"),
     noWrite: argv.includes("--no-write"),
     help: argv.includes("--help") || argv.includes("-h"),
     reportDir: env("UST_VALIDATION_REPORT_DIR", DEFAULTS.reportDir),
-    outputPath: env("UST_VALIDATION_STATUS_PATH", DEFAULTS.outputPath),
+    outputPath: env("UST_VALIDATION_STATUS_PATH", defaultOutputPath(profile)),
     expectedCrossScript:
       readArg(argv, "--cross-script") ||
-      env("UST_VALIDATION_STATUS_CROSS_SCRIPT", DEFAULTS.expectedCrossScript),
+      env("UST_VALIDATION_STATUS_CROSS_SCRIPT", expectedCrossScriptFallback),
     maxAgeMinutes: parseNonNegativeNumber(
       readArg(argv, "--max-age-minutes") || env("UST_VALIDATION_STATUS_MAX_AGE_MINUTES", DEFAULTS.maxAgeMinutes),
       DEFAULTS.maxAgeMinutes,
@@ -241,7 +273,7 @@ function readTextArtifact(manifest, sourceName, extension = "") {
   }
 }
 
-function remoteResourcesStatus(report, reportPath) {
+function remoteResourcesStatus(report, reportPath, { requireKylin137 = true, requireWindowsLanTargets = true } = {}) {
   const manifestPath = resolveArtifactManifestPath(report, reportPath);
   if (!manifestPath) {
     return {
@@ -269,7 +301,10 @@ function remoteResourcesStatus(report, reportPath) {
       target?.policyOk !== false
   );
   return {
-    ok: windows117Ok && kylin137Ok && windowsLanTargetsOk,
+    ok:
+      windows117Ok &&
+      (!requireKylin137 || kylin137Ok) &&
+      (!requireWindowsLanTargets || windowsLanTargetsOk),
     windows117Ok,
     kylin137Ok,
     windowsLanTargetsOk,
@@ -299,7 +334,7 @@ function probeFailureText(probe) {
   return String(probe?.sshError || probe?.sshValue || probe?.error || "unknown").trim();
 }
 
-function remoteProbeConnectionStatus(report, reportPath) {
+function remoteProbeConnectionStatus(report, reportPath, { requireKylin137 = true } = {}) {
   const manifestPath = resolveArtifactManifestPath(report, reportPath);
   if (!manifestPath) {
     return {
@@ -340,7 +375,7 @@ function remoteProbeConnectionStatus(report, reportPath) {
   const windows117 = summarizeWindows(windowsProbe);
   const kylin137 = summarizeKylin(kylinProbe);
   return {
-    ok: windows117.sshOk && kylin137.sshOk,
+    ok: windows117.sshOk && (!requireKylin137 || kylin137.sshOk),
     windows117,
     kylin137,
     error: ""
@@ -574,31 +609,74 @@ function collectLedgers(reportDir, expectedCrossScript) {
     .sort((a, b) => String(b.ledger.startedAt || "").localeCompare(String(a.ledger.startedAt || "")));
 }
 
+function collectReports(reportDir, profile) {
+  if (!fs.existsSync(reportDir) || !fs.statSync(reportDir).isDirectory()) return [];
+  return fs
+    .readdirSync(reportDir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+    .filter((entry) => !entry.name.startsWith("continuous-"))
+    .filter((entry) => !["index.json", "resource-index.json", "status.json", "status-mainline.json", "lan-route-remediation-plan.json"].includes(entry.name))
+    .map((entry) => {
+      const reportPath = path.join(reportDir, entry.name);
+      return { reportPath, report: readJson(reportPath), checksum: readChecksum(reportPath) };
+    })
+    .filter((item) => Array.isArray(item.report?.steps))
+    .filter((item) => {
+      if (profile === "mainline") return item.report?.config?.strictRemoteCoverage !== true;
+      return item.report?.config?.strictRemoteCoverage === true;
+    })
+    .sort((a, b) =>
+      String(b.report.finishedAt || b.report.startedAt || "").localeCompare(
+        String(a.report.finishedAt || a.report.startedAt || "")
+      )
+    );
+}
+
 function latestCycle(ledger) {
   const cycles = Array.isArray(ledger.cycles) ? ledger.cycles : [];
   return cycles[cycles.length - 1] || null;
 }
 
-function stepStatus(report) {
+function stepStatus(report, requiredSteps = REQUIRED_STRICT_STEPS, { failOnAnySkipped = true } = {}) {
   const steps = Array.isArray(report.steps) ? report.steps : [];
   const byId = new Map(steps.map((step) => [step.id, step]));
-  const missing = REQUIRED_STRICT_STEPS.filter((id) => !byId.has(id));
+  const missing = requiredSteps.filter((id) => !byId.has(id));
   const failed = steps.filter((step) => step.status === "failed" && step.optional !== true).map((step) => step.id);
   const skipped = steps.filter((step) => step.status === "skipped").map((step) => step.id);
-  const requiredNotPassed = REQUIRED_STRICT_STEPS.filter((id) => byId.get(id)?.status !== "passed");
+  const requiredSkipped = requiredSteps.filter((id) => byId.get(id)?.status === "skipped");
+  const requiredNotPassed = requiredSteps.filter((id) => byId.get(id)?.status !== "passed");
   return {
-    ok: missing.length === 0 && failed.length === 0 && skipped.length === 0 && requiredNotPassed.length === 0,
-    required: REQUIRED_STRICT_STEPS,
+    ok:
+      missing.length === 0 &&
+      failed.length === 0 &&
+      requiredSkipped.length === 0 &&
+      requiredNotPassed.length === 0 &&
+      (!failOnAnySkipped || skipped.length === 0),
+    required: requiredSteps,
     missing,
     failed,
     skipped,
+    requiredSkipped,
     requiredNotPassed,
     count: steps.length
   };
 }
 
-function strictCoverage(report) {
+function coverageStatus(report, profile) {
   const config = report.config || {};
+  if (profile === "mainline") {
+    const ok = config.strictRemoteCoverage !== true && config.skipWindows117 !== true;
+    return {
+      ok,
+      profile,
+      strictRemoteCoverage: config.strictRemoteCoverage === true,
+      requireWindows117: config.requireWindows117 === true,
+      requireKylin137: config.requireKylin137 === true,
+      requireConference: config.requireConference === true,
+      skipWindows117: config.skipWindows117 === true,
+      skipKylin137: config.skipKylin137 === true
+    };
+  }
   const ok =
     config.strictRemoteCoverage === true &&
     config.requireWindows117 === true &&
@@ -608,6 +686,7 @@ function strictCoverage(report) {
     config.skipKylin137 === false;
   return {
     ok,
+    profile,
     strictRemoteCoverage: config.strictRemoteCoverage === true,
     requireWindows117: config.requireWindows117 === true,
     requireKylin137: config.requireKylin137 === true,
@@ -634,13 +713,13 @@ function localResourcesStatus(report) {
   };
 }
 
-function ageStatus(finishedAt, maxAgeMinutes) {
+function ageStatus(finishedAt, maxAgeMinutes, label = "strict ledger") {
   if (!maxAgeMinutes) {
     return { ok: true, disabled: true, ageMinutes: null, maxAgeMinutes };
   }
   const finishedMs = Date.parse(finishedAt || "");
   if (!Number.isFinite(finishedMs)) {
-    return { ok: false, disabled: false, ageMinutes: null, maxAgeMinutes, error: "latest strict ledger has no valid finishedAt" };
+    return { ok: false, disabled: false, ageMinutes: null, maxAgeMinutes, error: `latest ${label} has no valid finishedAt` };
   }
   const ageMinutes = Math.max(0, (Date.now() - finishedMs) / 60000);
   return {
@@ -648,146 +727,194 @@ function ageStatus(finishedAt, maxAgeMinutes) {
     disabled: false,
     ageMinutes: Math.round(ageMinutes * 10) / 10,
     maxAgeMinutes,
-    error: ageMinutes <= maxAgeMinutes ? "" : "latest strict ledger is stale"
+    error: ageMinutes <= maxAgeMinutes ? "" : `latest ${label} is stale`
   };
 }
 
 function buildStatus(options) {
+  const profile = options.profile;
+  const label = profile === "mainline" ? "mainline" : "strict";
+  const requireStrictCoverage = profile === "strict";
+  const requireKylin137 = profile === "strict";
+  const requiredSteps = profile === "mainline" ? REQUIRED_MAINLINE_STEPS : REQUIRED_STRICT_STEPS;
   const ledgers = collectLedgers(options.reportDir, options.expectedCrossScript);
   const latest = ledgers[0] || null;
-  if (!latest) {
+  let cycle = latest ? latestCycle(latest.ledger) : null;
+  let reportPath = resolveReportPath(options.reportDir, cycle?.crossReport?.reportPath || "");
+  let reportExists = Boolean(reportPath && fs.existsSync(reportPath));
+  let report = reportExists ? readJson(reportPath) : null;
+  let reportChecksum = reportExists ? readChecksum(reportPath) : null;
+  let reportSource = latest ? "continuous-ledger" : "";
+
+  if (!latest && profile === "mainline") {
+    const reports = collectReports(options.reportDir, profile);
+    const latestReport = reports[0] || null;
+    reportPath = latestReport?.reportPath || "";
+    reportExists = Boolean(latestReport);
+    report = latestReport?.report || null;
+    reportChecksum = latestReport?.checksum || null;
+    reportSource = latestReport ? "single-report" : "";
+  }
+
+  if (!latest && !reportExists) {
     return {
       ok: false,
+      profile,
       generatedAt: new Date().toISOString(),
       reportDir: options.reportDir,
       expectedCrossScript: options.expectedCrossScript,
-      failures: ["no strict continuous ledger found"],
+      failures: [`no ${label} ${profile === "strict" ? "continuous ledger" : "report"} found`],
+      latestLedger: null,
+      latestReport: null,
       latestStrictLedger: null,
-      latestStrictReport: null
+      latestStrictReport: null,
+      latestMainlineLedger: null,
+      latestMainlineReport: null
     };
   }
 
-  const cycle = latestCycle(latest.ledger);
-  const reportPath = resolveReportPath(options.reportDir, cycle?.crossReport?.reportPath || "");
-  const reportExists = Boolean(reportPath && fs.existsSync(reportPath));
-  const report = reportExists ? readJson(reportPath) : null;
-  const reportChecksum = reportExists ? readChecksum(reportPath) : null;
   const artifacts = report ? inspectArtifactArchive(report, reportPath) : null;
-  const steps = report ? stepStatus(report) : null;
-  const coverage = report ? strictCoverage(report) : null;
+  const steps = report ? stepStatus(report, requiredSteps, { failOnAnySkipped: requireStrictCoverage }) : null;
+  const coverage = report ? coverageStatus(report, profile) : null;
   const localResources = report ? localResourcesStatus(report) : null;
-  const remoteResources = report ? remoteResourcesStatus(report, reportPath) : null;
-  const remoteProbes = report ? remoteProbeConnectionStatus(report, reportPath) : null;
+  const remoteResources = report
+    ? remoteResourcesStatus(report, reportPath, {
+        requireKylin137,
+        requireWindowsLanTargets: requireStrictCoverage
+      })
+    : null;
+  const remoteProbes = report ? remoteProbeConnectionStatus(report, reportPath, { requireKylin137 }) : null;
   const kylinDiscovery = report ? kylinDiscoveryStatus(report, reportPath) : null;
   const lanTopology = report ? lanTopologyStatus(report, reportPath) : null;
   const lanRoutePlan = report ? lanRoutePlanStatus(report, reportPath) : null;
-  const effectiveFinishedAt = latest.ledger.finishedAt || cycle?.finishedAt || "";
-  const age = ageStatus(effectiveFinishedAt, options.maxAgeMinutes);
+  const effectiveFinishedAt = latest
+    ? latest.ledger.finishedAt || cycle?.finishedAt || ""
+    : report?.finishedAt || report?.startedAt || "";
+  const age = ageStatus(effectiveFinishedAt, options.maxAgeMinutes, latest ? `${label} ledger` : `${label} report`);
   const healthAfter = report?.healthAfter || {};
 
   const failures = [];
-  if (!latest.checksum.ok) failures.push(latest.checksum.error);
-  if (!latest.ledger.ok) failures.push("latest strict ledger result is not ok");
-  if (!cycle) failures.push("latest strict ledger has no cycle");
-  if (cycle && !cycle.ok) failures.push("latest strict cycle is not ok");
-  if (cycle && cycle.cross?.status !== "passed") failures.push("strict cross command did not pass");
+  if (latest && !latest.checksum.ok) failures.push(latest.checksum.error);
+  if (latest && !latest.ledger.ok) failures.push(`latest ${label} ledger result is not ok`);
+  if (latest && !cycle) failures.push(`latest ${label} ledger has no cycle`);
+  if (cycle && !cycle.ok) failures.push(`latest ${label} cycle is not ok`);
+  if (cycle && cycle.cross?.status !== "passed") failures.push(`${label} cross command did not pass`);
   if (cycle && cycle.index?.status !== "passed") failures.push("validation index command did not pass");
-  if (!reportExists) failures.push("strict cross report missing");
+  if (!reportExists) failures.push(`${label} cross report missing`);
   if (reportChecksum && !reportChecksum.ok) failures.push(reportChecksum.error);
-  if (report && !report.ok) failures.push("strict cross report result is not ok");
-  if (report && !report.healthClean) failures.push("strict cross report health is not clean");
+  if (report && !report.ok) failures.push(`${label} cross report result is not ok`);
+  if (report && !report.healthClean) failures.push(`${label} cross report health is not clean`);
   if (report && (Number(healthAfter.endpoints) !== 0 || Number(healthAfter.sessions) !== 0 || Number(healthAfter.pendingCalls) !== 0)) {
-    failures.push("strict cross report health counters are not zero");
+    failures.push(`${label} cross report health counters are not zero`);
   }
   if (artifacts && !artifacts.ok) failures.push(artifacts.error);
-  if (steps && !steps.ok) failures.push("strict cross report did not pass every required step");
-  if (coverage && !coverage.ok) failures.push("strict cross report did not require full remote coverage");
-  if (localResources && !localResources.ok) failures.push("strict cross report local resources missing");
-  if (remoteResources && !remoteResources.ok) failures.push("strict cross report remote resources missing");
-  if (remoteProbes?.windows117 && !remoteProbes.windows117.sshOk) {
-    failures.push(`strict cross report Windows 117 SSH probe failed: ${probeFailureText(remoteProbes.windows117)}`);
+  if (steps && !steps.ok) failures.push(`${label} cross report did not pass every required step`);
+  if (coverage && !coverage.ok) {
+    failures.push(
+      profile === "strict"
+        ? "strict cross report did not require full remote coverage"
+        : "mainline cross report skipped Windows 117 or was generated from strict coverage"
+    );
   }
-  if (remoteProbes?.kylin137 && !remoteProbes.kylin137.sshOk) {
+  if (localResources && !localResources.ok) failures.push(`${label} cross report local resources missing`);
+  if (remoteResources && !remoteResources.ok) failures.push(`${label} cross report remote resources missing`);
+  if (remoteProbes?.windows117 && !remoteProbes.windows117.sshOk) {
+    failures.push(`${label} cross report Windows 117 SSH probe failed: ${probeFailureText(remoteProbes.windows117)}`);
+  }
+  if (requireKylin137 && remoteProbes?.kylin137 && !remoteProbes.kylin137.sshOk) {
     failures.push(`strict cross report Kylin 137 SSH probe failed: ${probeFailureText(remoteProbes.kylin137)}`);
   }
-  if (remoteResources && remoteResources.windowsLanTargetsOk === false) {
+  if (requireStrictCoverage && remoteResources && remoteResources.windowsLanTargetsOk === false) {
     failures.push("strict cross report Windows 117 LAN target route is not on expected LAN");
   }
   if (
+    requireStrictCoverage &&
     remoteResources?.windowsLanTargets?.some((target) => target.usesDisallowedRoute === true)
   ) {
     failures.push("strict cross report Windows 117 LAN target route uses a disallowed interface");
   }
   if (lanTopology && !lanTopology.available) {
-    failures.push("strict cross report LAN topology artifact missing");
-  } else if (lanTopology && lanTopology.topologyOk === false) {
+    failures.push(`${label} cross report LAN topology artifact missing`);
+  } else if (requireStrictCoverage && lanTopology && lanTopology.topologyOk === false) {
     failures.push(
       `strict cross report LAN topology check failed: ${lanTopology.diagnosis.classification || "warnings"}`
     );
   }
   if (lanRoutePlan && !lanRoutePlan.available) {
-    failures.push("strict cross report LAN route remediation plan missing");
+    failures.push(`${label} cross report LAN route remediation plan missing`);
   } else if (lanRoutePlan && !lanRoutePlan.ok) {
-    failures.push("strict cross report LAN route remediation plan unreadable");
+    failures.push(`${label} cross report LAN route remediation plan unreadable`);
   }
-  if (kylinDiscovery?.available && !kylinDiscovery.ok) {
+  if (requireStrictCoverage && kylinDiscovery?.available && !kylinDiscovery.ok) {
     failures.push(`strict cross report Kylin discovery failed: ${kylinDiscovery.classification || "unknown"}`);
   }
-  if (kylinDiscovery?.available && kylinDiscovery.routeOnExpectedLan === false) {
+  if (requireStrictCoverage && kylinDiscovery?.available && kylinDiscovery.routeOnExpectedLan === false) {
     failures.push("strict cross report Kylin discovery OS route is not using expected LAN source");
   }
   if (!age.ok) failures.push(age.error);
 
+  const latestLedger = latest
+    ? {
+        id: path.basename(latest.ledgerPath, ".json"),
+        ledgerPath: latest.ledgerPath,
+        startedAt: latest.ledger.startedAt || "",
+        finishedAt: effectiveFinishedAt,
+        ok: Boolean(latest.ledger.ok),
+        checksum: latest.checksum,
+        cycleCount: Array.isArray(latest.ledger.cycles) ? latest.ledger.cycles.length : 0,
+        latestCycle: cycle
+          ? {
+              iteration: cycle.iteration,
+              ok: Boolean(cycle.ok),
+              crossStatus: cycle.cross?.status || "",
+              indexStatus: cycle.index?.status || "",
+              crossReportPath: cycle.crossReport?.reportPath || ""
+            }
+          : null
+      }
+    : null;
+  const latestReport = reportExists
+    ? {
+        id: path.basename(reportPath, ".json"),
+        reportPath,
+        source: reportSource,
+        startedAt: report.startedAt || "",
+        finishedAt: report.finishedAt || "",
+        ok: Boolean(report.ok),
+        healthClean: Boolean(report.healthClean),
+        healthAfter: {
+          endpoints: healthAfter.endpoints,
+          sessions: healthAfter.sessions,
+          pendingCalls: healthAfter.pendingCalls
+        },
+        checksum: reportChecksum,
+        artifacts,
+        coverage,
+        strictCoverage: coverage,
+        localResources,
+        remoteResources,
+        remoteProbes,
+        kylinDiscovery,
+        lanTopology,
+        lanRoutePlan,
+        steps
+      }
+    : null;
+
   return {
     ok: failures.length === 0,
+    profile,
     generatedAt: new Date().toISOString(),
     reportDir: options.reportDir,
     expectedCrossScript: options.expectedCrossScript,
     failures,
     freshness: age,
-    latestStrictLedger: {
-      id: path.basename(latest.ledgerPath, ".json"),
-      ledgerPath: latest.ledgerPath,
-      startedAt: latest.ledger.startedAt || "",
-      finishedAt: effectiveFinishedAt,
-      ok: Boolean(latest.ledger.ok),
-      checksum: latest.checksum,
-      cycleCount: Array.isArray(latest.ledger.cycles) ? latest.ledger.cycles.length : 0,
-      latestCycle: cycle
-        ? {
-            iteration: cycle.iteration,
-            ok: Boolean(cycle.ok),
-            crossStatus: cycle.cross?.status || "",
-            indexStatus: cycle.index?.status || "",
-            crossReportPath: cycle.crossReport?.reportPath || ""
-          }
-        : null
-    },
-    latestStrictReport: reportExists
-      ? {
-          id: path.basename(reportPath, ".json"),
-          reportPath,
-          startedAt: report.startedAt || "",
-          finishedAt: report.finishedAt || "",
-          ok: Boolean(report.ok),
-          healthClean: Boolean(report.healthClean),
-          healthAfter: {
-            endpoints: healthAfter.endpoints,
-            sessions: healthAfter.sessions,
-            pendingCalls: healthAfter.pendingCalls
-          },
-          checksum: reportChecksum,
-          artifacts,
-          strictCoverage: coverage,
-          localResources,
-          remoteResources,
-          remoteProbes,
-          kylinDiscovery,
-          lanTopology,
-          lanRoutePlan,
-          steps
-        }
-      : null
+    latestLedger,
+    latestReport,
+    latestStrictLedger: profile === "strict" ? latestLedger : null,
+    latestStrictReport: profile === "strict" ? latestReport : null,
+    latestMainlineLedger: profile === "mainline" ? latestLedger : null,
+    latestMainlineReport: profile === "mainline" ? latestReport : null
   };
 }
 
@@ -812,9 +939,14 @@ function main(argv) {
       JSON.stringify(
         {
           ok: status.ok,
+          profile: status.profile,
           outputPath: options.noWrite ? "" : options.outputPath,
+          latestLedger: status.latestLedger?.id || "",
+          latestReport: status.latestReport?.id || "",
           latestStrictLedger: status.latestStrictLedger?.id || "",
           latestStrictReport: status.latestStrictReport?.id || "",
+          latestMainlineLedger: status.latestMainlineLedger?.id || "",
+          latestMainlineReport: status.latestMainlineReport?.id || "",
           failures: status.failures
         },
         null,

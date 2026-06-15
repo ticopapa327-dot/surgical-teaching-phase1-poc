@@ -24,6 +24,16 @@ const requiredStrictStepIds = [
   "137-audio-diagnostics",
   "117-137-conference"
 ];
+const requiredMainlineStepIds = [
+  "lan-topology",
+  "lan-route-plan",
+  "117-probe",
+  "117-signal",
+  "117-media",
+  "117-audio",
+  "117-media-diagnostics",
+  "117-audio-diagnostics"
+];
 
 function sha256(textOrBuffer) {
   return crypto.createHash("sha256").update(textOrBuffer).digest("hex");
@@ -551,6 +561,111 @@ try {
   assert.equal(strictReportIndexJson.reports[0].lanRoutePlan.source, "json");
   assert.equal(strictReportIndexJson.reports[0].lanRoutePlan.classification, "ok");
   assert.equal(strictReportIndexJson.reports[0].lanRoutePlan.requiresManualAction, false);
+
+  const mainlineStatusDir = path.join(tempDir, "status-mainline-ok-with-137-blocked");
+  await mkdir(mainlineStatusDir, { recursive: true });
+  const mainlineReport = await writeCrossReport(mainlineStatusDir, "2026-06-11T00-06-05-000Z", {
+    strict: true,
+    kylinDiscovery: splitRouteDiscovery(),
+    lanTopology: {
+      ok: true,
+      bothProbesOk: true,
+      topologyOk: false,
+      diagnosis: {
+        classification: "overlay_route_hijack_and_lan_target_unresolved",
+        blocking: true,
+        evidence: [
+          "default_route_tcp_works_but_lan_bound_tcp_fails",
+          "route_source_is_not_expected_lan_on_all_available_probes",
+          "target_neighbor_unresolved_on_all_available_probes"
+        ],
+        recommendations: ["Confirm 137 is connected to the same LAN."]
+      },
+      warnings: ["or118_kylin137_route_source_not_expected_lan"],
+      local: {
+        probe: {
+          routeHint: {
+            destinationPrefix: "192.168.1.137/32",
+            interfaceAlias: "CMYNetwork",
+            sourceAddress: "198.19.0.1"
+          },
+          tcp: { bound: { ok: false } }
+        }
+      },
+      remoteWindows: {
+        probe: {
+          routeHint: {
+            destinationPrefix: "192.168.1.137/32",
+            interfaceAlias: "CMYNetwork",
+            sourceAddress: "198.19.0.1"
+          },
+          tcp: { bound: { ok: false } }
+        }
+      }
+    },
+    windowsLanTargets: [
+      {
+        name: "kylin137",
+        host: "192.168.1.137",
+        port: 22,
+        ok: true,
+        onExpectedLan: false,
+        usesDisallowedRoute: true,
+        policyOk: false,
+        expectedLanSourcePrefix: "192.168.1.",
+        route: {
+          interfaceAlias: "CMYNetwork",
+          sourceAddress: "198.19.0.1"
+        }
+      }
+    ]
+  });
+  const mainlineJson = JSON.parse(await readFile(mainlineReport.reportPath, "utf8"));
+  mainlineJson.config = {
+    strictRemoteCoverage: false,
+    skipWindows117: false,
+    skipKylin137: false,
+    requireWindows117: false,
+    requireKylin137: false,
+    requireConference: false
+  };
+  mainlineJson.steps = [
+    ...requiredMainlineStepIds.map((stepId) => ({
+      id: stepId,
+      status: "passed",
+      attemptCount: 1,
+      maxAttempts: 1
+    })),
+    ...["137-probe", "137-signal", "137-media", "137-audio", "137-media-diagnostics", "137-audio-diagnostics", "117-137-conference"].map((stepId) => ({
+      id: stepId,
+      status: "skipped",
+      reason: "137 unavailable in current LAN test window"
+    })),
+    {
+      id: "137-discovery",
+      status: "failed",
+      optional: true
+    }
+  ];
+  await writeJsonWithChecksum(mainlineReport.reportPath, mainlineJson);
+  const mainlineStatus = await runNode(
+    "scripts/validation-status.cjs",
+    {
+      UST_VALIDATION_REPORT_DIR: mainlineStatusDir,
+      UST_VALIDATION_STATUS_MAX_AGE_MINUTES: "0"
+    },
+    ["--profile", "mainline"]
+  );
+  assert.equal(mainlineStatus.code, 0, `${mainlineStatus.stdout}\n${mainlineStatus.stderr}`);
+  const mainlineStatusJson = JSON.parse(mainlineStatus.stdout);
+  assert.equal(mainlineStatusJson.profile, "mainline");
+  assert.equal(mainlineStatusJson.latestLedger, null);
+  assert.equal(mainlineStatusJson.latestMainlineReport.id, "2026-06-11T00-06-05-000Z");
+  assert.equal(mainlineStatusJson.latestMainlineReport.source, "single-report");
+  assert.equal(mainlineStatusJson.latestMainlineReport.steps.ok, true);
+  assert.equal(mainlineStatusJson.latestMainlineReport.lanTopology.topologyOk, false);
+  assert.equal(mainlineStatusJson.latestMainlineReport.remoteResources.windowsLanTargetsOk, false);
+  assert.deepEqual(mainlineStatusJson.failures, []);
 
   const activeLedgerDir = path.join(tempDir, "status-active-ledger");
   await mkdir(activeLedgerDir, { recursive: true });

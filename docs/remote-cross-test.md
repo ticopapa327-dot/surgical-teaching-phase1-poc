@@ -230,6 +230,14 @@ npm run test:remote:cross:status
 npm run test:remote:cross:status -- --max-age-minutes 0
 ```
 
+当前 137 未稳定接入有线 LAN 或缺少临时授权时，不应放宽严格门禁。若仅需要判断 118 与 117 主线是否可继续推进，使用主线门禁：
+
+```powershell
+npm run test:remote:cross:status:mainline
+```
+
+主线门禁要求最新普通交叉报告中的 `117-probe`、`117-signal`、`117-media`、`117-audio` 与对应诊断步骤全部通过，要求报告健康计数清零、SHA256 与 artifact 完整；但允许 137 与 `117-137-conference` 步骤因当前网络条件被跳过，`137-discovery` 失败只作为诊断证据保留。该入口不能替代严格三机验收。
+
 ## 七、三端并发会议验证
 
 顺序验证 117 和 137 只能证明两台远端分别可用，不能证明会议模式下多个远端同时接入同一手术室会话时订阅、媒体发布和清理逻辑可靠。因此在 117 与 137 均可用、且 137 已提供临时防火墙授权时，可执行三端并发 smoke：
