@@ -73,7 +73,7 @@
     "@vitejs/plugin-react": "^6.0.2",
     "basic-ftp": "^6.0.1",
     "concurrently": "^10.0.3",
-    "electron": "^39.2.7",
+    "electron": "^42.4.1",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "typescript": "^5.9.3",
