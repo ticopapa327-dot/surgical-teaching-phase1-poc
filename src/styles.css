@@ -645,10 +645,31 @@ textarea {
   min-height: 36px;
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
   padding: 0 18px;
   border-top: 1px solid #d9e1ea;
   background: #ffffff;
   color: #435160;
+}
+
+.footer-status {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.footer-beian {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: #53616f;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.footer-beian:hover {
+  color: #1b6fd8;
+  text-decoration: underline;
 }
 
 .remote-audio-sinks {

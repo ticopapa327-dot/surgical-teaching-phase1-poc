@@ -600,7 +600,7 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
   const [audioOutputDeviceId, setAudioOutputDeviceId] = useState("");
   const [includeAudio, setIncludeAudio] = useState(true);
   const [recordings, setRecordings] = useState([]);
-  const [status, setStatus] = useState("准备就绪");
+  const [status, setStatus] = useState("");
   const [selectedPlayback, setSelectedPlayback] = useState(null);
   const [recordingFilter, setRecordingFilter] = useState("");
   const [isPermissionReady, setPermissionReady] = useState(false);
@@ -3740,7 +3740,15 @@ function App({ initialConfig = DEFAULT_APP_CONFIG }) {
       </section>
 
       <footer className="footer">
-        <span>{status}</span>
+        {status && <span className="footer-status">{status}</span>}
+        <a
+          className="footer-beian"
+          href="https://beian.mps.gov.cn/#/query/webSearch?code=31011202022682"
+          rel="noreferrer"
+          target="_blank"
+        >
+          沪公网安备31011202022682号
+        </a>
       </footer>
 
       <div className="remote-audio-sinks" aria-hidden="true">
